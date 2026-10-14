@@ -92,8 +92,6 @@ interface CustomerOrder {
   deliveryFee: string | null;
   deliveryDistanceKm: string | null;
   deliveryFeeSource: string;
-  isFirstOrderFreeDelivery?: boolean;
-  usedFreeDeliveryTicket?: boolean;
   total: string;
   status: string;
   paymentMethod?: string | null;
@@ -136,9 +134,6 @@ export const CustomerAccountPage: React.FC = () => {
     apiFetch,
     toast,
     refreshUser,
-    freeDeliveryTickets,
-    eligibleForFirstOrderFreeDelivery,
-    loyalty,
     logout,
     notifications,
     unreadNotificationsCount,
@@ -260,7 +255,7 @@ export const CustomerAccountPage: React.FC = () => {
     }
   }, [user, loading, orders]);
 
-  const handleOpenSandboxPayment = async (order: CustomerOrder) => {
+  const handleOpenMercadoPagoPayment = async (order: CustomerOrder) => {
     setPaymentActionOrderId(order.id);
     try {
       let idempotencyKey = paymentKeysRef.current.get(order.id);
@@ -274,35 +269,11 @@ export const CustomerAccountPage: React.FC = () => {
       });
       const checkout = new URL(result.checkoutUrl);
       if (checkout.protocol !== 'https:' || !/(^|\.)mercadopago\.com(\.br)?$/i.test(checkout.hostname)) {
-        throw new Error('O servidor não retornou um endereço seguro de checkout sandbox.');
+        throw new Error('O servidor não retornou um endereço seguro de checkout do Mercado Pago.');
       }
       window.location.assign(checkout.toString());
     } catch (err: any) {
-      toast(err.message || 'Não foi possível abrir o checkout sandbox.', 'error');
-      setPaymentActionOrderId(null);
-    }
-  };
-
-  const handleRefreshPaymentStatus = async (order: CustomerOrder) => {
-    setPaymentActionOrderId(order.id);
-    try {
-      const result = await apiFetch<{
-        payment: CustomerPaymentSummary | null;
-        orderStatus: string;
-      }>(`/api/orders/${order.id}/payments/confirm`, {
-        method: 'POST',
-        body: JSON.stringify({}),
-      });
-      setOrders((previous) => previous.map((item) => item.id === order.id
-        ? { ...item, payment: result.payment, status: result.orderStatus }
-        : item));
-      setSelectedOrder((previous) => previous?.id === order.id
-        ? { ...previous, payment: result.payment, status: result.orderStatus }
-        : previous);
-      toast(`Status financeiro atualizado: ${result.payment?.status || 'indisponível'}.`, 'info');
-    } catch (err: any) {
-      toast(err.message || 'Não foi possível atualizar o pagamento.', 'error');
-    } finally {
+      toast(err.message || 'Não foi possível abrir o checkout do Mercado Pago.', 'error');
       setPaymentActionOrderId(null);
     }
   };
@@ -727,111 +698,6 @@ export const CustomerAccountPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Card de Entrega Grátis */}
-      <div className="bg-emerald-50/90 border border-emerald-200 rounded-xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="space-y-1.5">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 text-sm font-bold text-emerald-950">
-              <Ticket className="w-4 h-4 text-emerald-700" />
-              <span>
-                {eligibleForFirstOrderFreeDelivery
-                  ? `🎉 Parabéns, ${user.name.split(' ')[0]}! Você tem Entrega Grátis para o seu 1º Pedido!`
-                  : 'Fidelidade DeepShop: 1º Pedido Grátis e no 4º Pedido ganha Entrega Grátis!'}
-              </span>
-            </span>
-            {eligibleForFirstOrderFreeDelivery && (
-              <span className="px-2.5 py-0.5 rounded-full bg-emerald-700 text-white text-xs font-bold">
-                1º Pedido: Entrega Grátis Liberada
-              </span>
-            )}
-            <span className="px-2.5 py-0.5 rounded-full bg-amber-600 text-white text-xs font-bold tabular-nums">
-              {freeDeliveryTickets} Ticket{freeDeliveryTickets === 1 ? '' : 's'} de Fidelidade disponível{freeDeliveryTickets === 1 ? '' : 'is'}
-            </span>
-          </div>
-          <p className="text-xs text-emerald-900 leading-relaxed">
-            {eligibleForFirstOrderFreeDelivery
-              ? 'Você tem direito a Entrega Grátis no seu 1º pedido! Lembrando: o 2º e o 3º pedidos serão pagos normalmente e, no 4º pedido, você entra na promoção da Entrega Grátis também (ganhando +1 Ticket de Entrega Grátis acumulativo)!'
-              : freeDeliveryTickets > 0
-              ? `Você tem ${freeDeliveryTickets} Ticket(s) de Entrega Grátis acumulativo(s) pronto(s) para usar quando quiser no Checkout!`
-              : `Você está com ${
-                  loyalty?.ordersInCurrentCycle || 0
-                }/3 pedidos no ciclo atual. O 2º e 3º pedidos são pagos e faltam ${
-                  loyalty?.ordersRemainingForNextTicket ?? 3
-                } pedido(s) para liberar a Entrega Grátis do 4º pedido!`}
-          </p>
-          <div className="flex flex-wrap items-center gap-3 text-[11px] text-emerald-800 pt-0.5">
-            <span>
-              1º Pedido Grátis:{' '}
-              <strong>
-                {eligibleForFirstOrderFreeDelivery ? 'Disponível para uso!' : 'Já utilizado'}
-              </strong>
-            </span>
-            <span>•</span>
-            <span>
-              Pedidos realizados: <strong>{loyalty?.qualifyingOrdersCount || 0}</strong>
-            </span>
-            <span>•</span>
-            <span>
-              Tickets ganhos (a cada 3 pedidos): <strong>{loyalty?.earnedAutoTickets || 0}</strong>
-            </span>
-            {(loyalty?.manualFreeDeliveryTickets || 0) > 0 && (
-              <>
-                <span>•</span>
-                <span>
-                  Tickets bônus da loja: <strong>{loyalty?.manualFreeDeliveryTickets}</strong>
-                </span>
-              </>
-            )}
-            <span>•</span>
-            <span>
-              Tickets já usados: <strong>{loyalty?.usedFreeDeliveryTickets || 0}</strong>
-            </span>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <div className="flex items-center gap-1.5 bg-white/90 border border-emerald-200 rounded-lg px-3 py-2 font-mono text-xs font-bold">
-            <span
-              className={`px-2 py-1 rounded ${
-                eligibleForFirstOrderFreeDelivery
-                  ? 'bg-emerald-700 text-white ring-2 ring-emerald-300'
-                  : 'bg-emerald-700 text-white'
-              }`}
-              title="1º Pedido: Entrega Grátis"
-            >
-              1º Grátis
-            </span>
-            <span className="text-emerald-700">➔</span>
-            <span
-              className={`px-2 py-1 rounded ${
-                (loyalty?.ordersInCurrentCycle || 0) >= 2
-                  ? 'bg-emerald-700 text-white'
-                  : 'bg-stone-100 text-zinc-600 border border-stone-200'
-              }`}
-              title="2º Pedido: Frete Pago"
-            >
-              2º Pago
-            </span>
-            <span
-              className={`px-2 py-1 rounded ${
-                (loyalty?.ordersInCurrentCycle || 0) >= 3
-                  ? 'bg-emerald-700 text-white'
-                  : 'bg-stone-100 text-zinc-600 border border-stone-200'
-              }`}
-              title="3º Pedido: Frete Pago"
-            >
-              3º Pago
-            </span>
-            <span className="text-emerald-700">➔</span>
-            <span
-              className="px-2 py-1 rounded bg-amber-100 border border-amber-300 text-amber-900"
-              title="4º Pedido: Entrega Grátis (Ticket Acumulativo)"
-            >
-              4º Grátis!
-            </span>
-          </div>
-        </div>
-      </div>
-
       {needsLegalAcceptance && (
         <section className="p-4 rounded-xl bg-amber-50 border border-amber-300 space-y-3">
           <div><h2 className="text-sm font-bold text-amber-950">Atualização dos documentos legais</h2><p className="text-xs text-amber-900 mt-1">A Política de Privacidade e/ou os Termos de Uso foram atualizados. Consulte os documentos e registre seu novo aceite.</p></div>
@@ -859,19 +725,8 @@ export const CustomerAccountPage: React.FC = () => {
             <div className="space-y-4">
               {orders.map((order) => {
                 const isExpanded = selectedOrder?.id === order.id;
-                const isFirstOrderFree = Boolean(
-                  order.usedFreeDeliveryTicket ||
-                    order.isFirstOrderFreeDelivery ||
-                    order.deliveryFeeSource === 'FREE_DELIVERY_TICKET' ||
-                    order.deliveryFeeSource === 'MANUAL_FREE_DELIVERY' ||
-                    order.deliveryFeeSource === 'FIRST_ORDER_FREE'
-                );
-                const freeDeliveryLabel =
-                  order.deliveryFeeSource === 'FIRST_ORDER_FREE'
-                    ? 'Entrega Grátis de 1º Pedido'
-                    : order.deliveryFeeSource === 'MANUAL_FREE_DELIVERY'
-                    ? 'Entrega Grátis (Cortesia da Loja)'
-                    : 'Ticket de Entrega Grátis (4º Pedido / Fidelidade)';
+                const isFirstOrderFree = Number(order.deliveryFee) === 0;
+                const freeDeliveryLabel = 'Frete grátis';
                 const hasConfirmedFreight =
                   isFirstOrderFree ||
                   (order.deliveryFee !== null &&
@@ -1048,13 +903,15 @@ export const CustomerAccountPage: React.FC = () => {
                     {isExpanded && (
                       <div className="border-t border-stone-200 bg-stone-50/70 p-5 space-y-5">
                         <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="text-xs font-semibold text-zinc-700">Precisa de ajuda com este pedido?</span>
+                          <span className="text-xs font-semibold text-zinc-700">Dúvidas sobre o pedido?</span>
                           <Link
-                            to={`/minha-conta/central-ajuda?orderId=${order.id}`}
+                            to={order.status === 'DELIVERED'
+                              ? `/minha-conta/central-ajuda?orderId=${order.id}&postDelivery=1`
+                              : `/minha-conta/central-ajuda?orderId=${order.id}&create=1`}
                             className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors"
                           >
                             <LifeBuoy className="w-3.5 h-3.5" />
-                            <span>Precisa de ajuda com este pedido?</span>
+                            <span>{order.status === 'DELIVERED' ? 'Precisa de ajuda com este pedido?' : 'Falar com a loja sobre este pedido'}</span>
                           </Link>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1115,74 +972,20 @@ export const CustomerAccountPage: React.FC = () => {
                               </div>
                             </div>
 
-                            {String(order.paymentMethod || '').toUpperCase() === 'MERCADOPAGO' && (
-                              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3.5 space-y-2.5">
-                                <div className="flex flex-wrap items-center justify-between gap-2">
-                                  <div>
-                                    <div className="text-xs font-bold text-blue-950">Pagamento Mercado Pago</div>
-                                    <div className="mt-0.5 text-xs text-blue-900">
-                                      Situação:{' '}
-                                      <strong>{order.payment?.status || 'Ainda não iniciado'}</strong>
-                                      {order.payment?.providerStatus ? ` · provedor: ${order.payment.providerStatus}` : ''}
-                                    </div>
-                                  </div>
-                                  {order.payment?.providerPaymentId && (
-                                    <span className="font-mono text-[10px] text-blue-900 break-all">
-                                      ID {order.payment.providerPaymentId}
-                                    </span>
-                                  )}
+                            {String(order.paymentMethod || '').toUpperCase() === 'MERCADOPAGO' &&
+                              ['NEW', 'AWAITING_PAYMENT'].includes(order.status) &&
+                              order.payment?.status !== 'PAID' && hasConfirmedFreight && (
+                                <div className="pt-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleOpenMercadoPagoPayment(order)}
+                                    disabled={paymentActionOrderId === order.id}
+                                    className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-800 disabled:opacity-60"
+                                  >
+                                    {paymentActionOrderId === order.id ? 'Abrindo checkout…' : 'Pagar ou retomar pagamento'}
+                                  </button>
                                 </div>
-                                <div className="flex flex-wrap gap-2">
-                                  {['NEW', 'AWAITING_PAYMENT'].includes(order.status) &&
-                                    order.payment?.status !== 'PAID' && hasConfirmedFreight && (
-                                      <button
-                                        type="button"
-                                        onClick={() => void handleOpenSandboxPayment(order)}
-                                        disabled={paymentActionOrderId === order.id}
-                                        className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-800 disabled:opacity-60"
-                                      >
-                                        {paymentActionOrderId === order.id ? 'Abrindo checkout…' : 'Pagar / retomar checkout sandbox'}
-                                      </button>
-                                    )}
-                                  {order.payment?.providerPaymentId && (
-                                    <button
-                                      type="button"
-                                      onClick={() => void handleRefreshPaymentStatus(order)}
-                                      disabled={paymentActionOrderId === order.id}
-                                      className="rounded-lg border border-blue-300 bg-white px-3 py-2 text-xs font-semibold text-blue-900 hover:bg-blue-100 disabled:opacity-60"
-                                    >
-                                      Atualizar situação no provedor
-                                    </button>
-                                  )}
-                                </div>
-                                <p className="text-[11px] leading-relaxed text-blue-900">
-                                  O pedido só muda para pago após consulta autenticada do servidor ao Mercado Pago. Este fluxo está em sandbox; use somente dados de teste.
-                                </p>
-                              </div>
-                            )}
-
-                            <div className="space-y-1.5 pt-1">
-                              <h4 className="text-xs font-bold text-zinc-900">
-                                Histórico de Status
-                              </h4>
-                              <div className="space-y-1 text-xs text-zinc-600">
-                                {order.history.map((h) => (
-                                  <div key={h.id} className="flex items-center justify-between">
-                                    <span>
-                                      {h.oldStatus
-                                        ? `${ORDER_STATUS_LABELS[h.oldStatus] || h.oldStatus} ➔ `
-                                        : ''}
-                                      <strong className="text-zinc-900">
-                                        {ORDER_STATUS_LABELS[h.newStatus] || h.newStatus}
-                                      </strong>
-                                    </span>
-                                    <span className="text-zinc-400 tabular-nums">
-                                      {formatDateTime(h.createdAt)}
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
+                              )}
                           </div>
 
                           <div className="space-y-3">
@@ -1544,6 +1347,26 @@ export const CustomerAccountPage: React.FC = () => {
               );
             })}
           </div>
+        </section>
+      )}
+
+      {activeTab === 'NOTIFICATIONS' && (
+        <section className="max-w-3xl space-y-3" aria-label="Notificações">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-stone-200 bg-white p-4">
+            <div><h2 className="text-base font-bold text-zinc-900">Notificações</h2><p className="mt-1 text-xs text-zinc-600">Avisos de pedidos e novas mensagens da loja.</p></div>
+            {unreadNotificationsCount > 0 && <button type="button" onClick={() => void markAllNotificationsRead()} className="text-xs font-semibold text-emerald-800 underline">Marcar todas como lidas</button>}
+          </div>
+          {notifications.length === 0 ? <div className="rounded-xl border border-stone-200 bg-white p-8 text-center text-sm text-zinc-500">Você não tem notificações.</div> : notifications.map((notification) => (
+            <article key={notification.id} className={`rounded-xl border p-4 ${notification.isRead ? 'border-stone-200 bg-white' : 'border-emerald-200 bg-emerald-50/50'}`}>
+              <div className="flex flex-wrap items-start justify-between gap-2"><h3 className="text-sm font-bold text-zinc-900">{notification.title}</h3><time className="text-[11px] text-zinc-500">{formatDateTime(notification.createdAt)}</time></div>
+              <p className="mt-1 text-xs leading-relaxed text-zinc-700">{notification.message}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {notification.supportTicketId ? <Link to={`/minha-conta/central-ajuda?ticketId=${notification.supportTicketId}`} onClick={() => void markNotificationRead(notification.id)} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white">Abrir conversa #{notification.supportTicketId}</Link> : notification.orderId ? <Link to="/minha-conta/pedidos" onClick={() => void markNotificationRead(notification.id)} className="rounded-lg bg-zinc-900 px-3 py-2 text-xs font-semibold text-white">Ver pedido</Link> : null}
+                {!notification.isRead && <button type="button" onClick={() => void markNotificationRead(notification.id)} className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs font-semibold text-zinc-700">Marcar como lida</button>}
+              </div>
+            </article>
+          ))}
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4"><p className="text-xs text-emerald-950">Precisa de ajuda? <Link to="/minha-conta/central-ajuda" className="font-bold underline">Acesse a Central de Ajuda</Link> para ver conversas ativas e encerradas.</p></div>
         </section>
       )}
 

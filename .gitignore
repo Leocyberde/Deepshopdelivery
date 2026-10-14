@@ -7,12 +7,24 @@ coverage/
 *.log
 .env*
 !.env.example
-
 # Dados de clientes e backups nunca vão para o repositório
 .pgdata/
 backups/
 achadinhos-backups/
 *.sql
 !drizzle/*.sql
+*.sql.gz
+*.dump
 *.zip
-achadinhos_snapshot*.json
+*.tar.gz
+*.key
+*.pem
+*.crt
+*.p12
+*.sqlite
+*.db
+*.jsonl
+*.bak
+*.before-*
+.latest-review-backup
+.review-backup-*/

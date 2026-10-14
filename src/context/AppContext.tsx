@@ -1,8 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import {
-  CustomerLoyaltySummary,
   UserProfile,
-  isAdminRole,
   CartItem,
   ToastMessage,
   CustomerNotification,
@@ -48,11 +46,6 @@ export interface AppContextType {
   dismissNotificationPopup: (id: number) => Promise<void>;
   markNotificationRead: (id: number) => Promise<void>;
   markAllNotificationsRead: () => Promise<void>;
-  eligibleForFirstOrderFreeDelivery: boolean;
-  setEligibleForFirstOrderFreeDelivery: (val: boolean) => void;
-  freeDeliveryTickets: number;
-  loyalty: CustomerLoyaltySummary | null;
-  setLoyalty: (val: CustomerLoyaltySummary | null) => void;
   toast: (text: string, type?: 'success' | 'error' | 'info') => void;
   apiFetch: <T = any>(url: string, options?: RequestInit) => Promise<T>;
   nativeNotificationPermission: NotificationPermission;
@@ -109,53 +102,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [authLoading, setAuthLoading] = useState<boolean>(!!token);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [loyalty, setLoyaltyState] = useState<CustomerLoyaltySummary | null>(() => {
-    if (!user || isAdminRole(user.role)) return null;
-    return user.loyalty || null;
-  });
-  const [eligibleForFirstOrderFreeDeliveryState, setEligibleForFirstOrderFreeDeliveryState] =
-    useState<boolean>(() => {
-      if (!user || isAdminRole(user.role)) return false;
-      if (user.loyalty && typeof user.loyalty.isFirstOrderEligible === 'boolean') {
-        return user.loyalty.isFirstOrderEligible;
-      }
-      return Boolean(user.eligibleForFirstOrderFreeDelivery);
-    });
-
-  const setLoyalty = useCallback(
-    (val: CustomerLoyaltySummary | null) => {
-      if (isAdminRole(user?.role)) {
-        setLoyaltyState(null);
-        return;
-      }
-      setLoyaltyState(val);
-    },
-    [user?.role]
-  );
-
-  const setEligibleForFirstOrderFreeDelivery = useCallback(
-    (val: boolean) => {
-      if (isAdminRole(user?.role)) {
-        setEligibleForFirstOrderFreeDeliveryState(false);
-        return;
-      }
-      setEligibleForFirstOrderFreeDeliveryState(Boolean(val));
-    },
-    [user?.role]
-  );
-
-  const eligibleForFirstOrderFreeDelivery =
-    isAdminRole(user?.role)
-      ? false
-      : loyalty && typeof loyalty.isFirstOrderEligible === 'boolean'
-      ? loyalty.isFirstOrderEligible
-      : eligibleForFirstOrderFreeDeliveryState;
-
-  const freeDeliveryTickets =
-    isAdminRole(user?.role)
-      ? 0
-      : loyalty?.freeDeliveryTickets ?? user?.freeDeliveryTickets ?? 0;
-
   const [cart, setCart] = useState<CartItem[]>(() => {
     try {
       const saved = localStorage.getItem(CART_STORAGE_KEY);
@@ -186,17 +132,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const loginWithToken = useCallback((newToken: string, newUser: UserProfile) => {
     setToken(newToken);
     setUser(newUser);
-    if (isAdminRole(newUser.role)) {
-      setLoyaltyState(null);
-      setEligibleForFirstOrderFreeDeliveryState(false);
-    } else {
-      setLoyaltyState(newUser.loyalty || null);
-      setEligibleForFirstOrderFreeDeliveryState(
-        newUser.loyalty && typeof newUser.loyalty.isFirstOrderEligible === 'boolean'
-          ? newUser.loyalty.isFirstOrderEligible
-          : Boolean(newUser.eligibleForFirstOrderFreeDelivery)
-      );
-    }
     try {
       localStorage.setItem(TOKEN_STORAGE_KEY, newToken);
       localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(newUser));
@@ -208,8 +143,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const logout = useCallback(() => {
     setToken(null);
     setUser(null);
-    setLoyaltyState(null);
-    setEligibleForFirstOrderFreeDeliveryState(false);
     try {
       localStorage.removeItem(TOKEN_STORAGE_KEY);
       localStorage.removeItem(USER_STORAGE_KEY);
@@ -267,8 +200,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const refreshUser = useCallback(async () => {
     if (!token) {
-      setLoyaltyState(null);
-      setEligibleForFirstOrderFreeDeliveryState(false);
       setAuthLoading(false);
       return;
     }
@@ -280,17 +211,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
         return profile;
       });
-      if (isAdminRole(profile.role)) {
-        setLoyaltyState(null);
-        setEligibleForFirstOrderFreeDeliveryState(false);
-      } else {
-        setLoyaltyState(profile.loyalty || null);
-        setEligibleForFirstOrderFreeDeliveryState(
-          profile.loyalty && typeof profile.loyalty.isFirstOrderEligible === 'boolean'
-            ? profile.loyalty.isFirstOrderEligible
-            : Boolean(profile.eligibleForFirstOrderFreeDelivery)
-        );
-      }
       localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(profile));
     } catch {
       logout();
@@ -357,9 +277,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         notifications: CustomerNotification[];
         unreadCount: number;
         activePopups: CustomerNotification[];
-        freeDeliveryTickets?: number;
-        loyalty?: CustomerLoyaltySummary;
-        eligibleForFirstOrderFreeDelivery?: boolean;
       }>('/api/notifications');
       if (res && Array.isArray(res.notifications)) {
         setNotifications(res.notifications);
@@ -391,12 +308,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         } catch {
           // ignore notification trigger errors
         }
-      }
-      if (res && res.loyalty) {
-        setLoyaltyState(res.loyalty);
-        setEligibleForFirstOrderFreeDeliveryState(Boolean(res.loyalty.isFirstOrderEligible));
-      } else if (res && typeof res.eligibleForFirstOrderFreeDelivery === 'boolean') {
-        setEligibleForFirstOrderFreeDeliveryState(res.eligibleForFirstOrderFreeDelivery);
       }
     } catch {
       // Ignore background poll error
@@ -679,11 +590,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         dismissNotificationPopup,
         markNotificationRead,
         markAllNotificationsRead,
-        eligibleForFirstOrderFreeDelivery,
-        setEligibleForFirstOrderFreeDelivery,
-        freeDeliveryTickets,
-        loyalty,
-        setLoyalty,
         toast,
         apiFetch,
         nativeNotificationPermission,

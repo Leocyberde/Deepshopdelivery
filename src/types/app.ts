@@ -1,16 +1,3 @@
-export interface CustomerLoyaltySummary {
-  freeDeliveryTickets: number;
-  earnedAutoTickets: number;
-  manualFreeDeliveryTickets: number;
-  usedFreeDeliveryTickets: number;
-  qualifyingOrdersCount: number;
-  ordersInCurrentCycle: number;
-  ordersRemainingForNextTicket: number;
-  isFirstOrderEligible?: boolean;
-  eligibleForFirstOrderFreeDelivery?: boolean;
-  eligibleForFreeDelivery: boolean;
-}
-
 export type AdminRole = 'ADMIN' | 'SUPER_ADMIN' | 'GERENTE' | 'OPERADOR';
 export type UserRole = AdminRole | 'CUSTOMER';
 
@@ -26,10 +13,6 @@ export interface UserProfile {
   phone: string;
   role: UserRole;
   status?: string;
-  freeDeliveryTickets?: number;
-  manualFreeDeliveryTickets?: number;
-  loyalty?: CustomerLoyaltySummary;
-  eligibleForFirstOrderFreeDelivery?: boolean;
   mustChangePassword?: boolean;
   privacyVersion?: string | null;
   termsVersion?: string | null;
@@ -60,6 +43,7 @@ export interface CustomerNotification {
   id: number;
   userId: number;
   orderId: number | null;
+  supportTicketId?: number | null;
   orderNumber: string;
   oldStatus: string | null;
   newStatus: string;
@@ -96,9 +80,6 @@ export const ORDER_STATUS_LABELS: Record<string, string> = {
   OUT_FOR_DELIVERY: 'Saiu para entrega',
   DELIVERED: 'Entregue',
   CANCELLED: 'Cancelado',
-  FIRST_ORDER_FREE_WELCOME: 'Entrega Grátis no 1° Pedido',
-  FREE_DELIVERY_TICKET_EARNED: 'Ticket de Entrega Grátis',
-  MANUAL_FREE_DELIVERY_GRANTED: 'Entrega Grátis Liberada',
 };
 
 export type PaymentMethodType = 'PIX' | 'CARD_CREDIT' | 'CARD_DEBIT' | 'CASH' | 'MERCADOPAGO';

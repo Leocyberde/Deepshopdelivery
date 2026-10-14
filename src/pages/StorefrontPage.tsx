@@ -72,8 +72,6 @@ export const StorefrontPage: React.FC = () => {
     cart,
     removeFromCart,
     user,
-    setLoyalty,
-    setEligibleForFirstOrderFreeDelivery,
     searchQuery,
     setSearchQuery,
   } = useApp();
@@ -117,17 +115,6 @@ export const StorefrontPage: React.FC = () => {
             removeFromCart(item.productId);
           }
         });
-        if (isAdminRole(user?.role)) {
-          setLoyalty(null);
-          setEligibleForFirstOrderFreeDelivery(false);
-        } else {
-          if (data.loyalty) {
-            setLoyalty(data.loyalty);
-          }
-          if (typeof data.eligibleForFirstOrderFreeDelivery === 'boolean') {
-            setEligibleForFirstOrderFreeDelivery(data.eligibleForFirstOrderFreeDelivery);
-          }
-        }
       })
       .catch((err) => {
         console.error(err);
@@ -138,7 +125,7 @@ export const StorefrontPage: React.FC = () => {
     return () => {
       mounted = false;
     };
-  }, [apiFetch, setLoyalty, setEligibleForFirstOrderFreeDelivery, user?.id, user?.role]);
+  }, [apiFetch, user?.id]);
 
   // Close autocomplete dropdown when clicking outside
   useEffect(() => {

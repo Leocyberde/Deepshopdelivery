@@ -22,9 +22,8 @@ import {
   calculatePromoLinePricing,
   getNextGlobalOrderNumber,
 } from '../services/storeHelpers.ts';
-import { evaluateCustomerLoyaltyTickets } from '../services/loyaltyService.ts';
 import { recordInventoryMovement } from '../services/inventoryService.ts';
-import { expireOverdueUnpaidOrders } from '../services/orderExpirationService.ts';
+import { expireOverdueUnpaidOrders, PAYMENT_TIMEOUT_REASON_PREFIX, LEGACY_PAYMENT_TIMEOUT_REASON_PREFIX } from '../services/orderExpirationService.ts';
 import {
   getFastDeliveryEstimate,
   isDeliveryMinutes,
@@ -73,6 +72,7 @@ function toPaymentSummary(payment: InferSelectModel<typeof schema.payments> | un
 import { getCurrentStoreState } from '../services/storeStatusService.ts';
 import { notifyNewOrder } from '../services/orderNotificationService.ts';
 
+const notPaymentExpiredOrder = () => sql`COALESCE(${schema.orders.cancellationReason}, '') NOT LIKE ${PAYMENT_TIMEOUT_REASON_PREFIX + '%'} AND COALESCE(${schema.orders.cancellationReason}, '') NOT LIKE ${LEGACY_PAYMENT_TIMEOUT_REASON_PREFIX + '%'}`;
 export function registerOrderRoutes(app: Express) {
   app.post('/api/orders', requireAuth, async (req: AuthRequest, res) => {
     let orderTransactionCommitted = false;
@@ -195,7 +195,7 @@ export function registerOrderRoutes(app: Express) {
       }
       const deadlineHours = Math.max(
         0.1,
-        parseFloat(settingsMap.payment_deadline_hours || '1') || 1
+        parseFloat(settingsMap.payment_deadline_hours || '0.5') || 0.5
       );
 
       const createdOrderResult = await db.transaction(async (tx) => {
@@ -354,19 +354,13 @@ export function registerOrderRoutes(app: Express) {
               };
             })()
           : evaluatedFreight;
-        const loyaltyBefore = await evaluateCustomerLoyaltyTickets(req.user!.id, tx);
-
-        const isFirstOrderWelcomeFree = loyaltyBefore.isFirstOrderEligible;
-
-        const wantsToUseTicket =
-          req.body.useFreeDeliveryTicket !== undefined
-            ? Boolean(req.body.useFreeDeliveryTicket)
-            : true;
-        const usingFreeDeliveryTicket =
-          !isFirstOrderWelcomeFree &&
-          loyaltyBefore.freeDeliveryTickets > 0 &&
-          wantsToUseTicket;
-
+        const [customerPromotion] = await tx
+          .select({ freeDeliveryUntil: schema.users.freeDeliveryUntil })
+          .from(schema.users)
+          .where(eq(schema.users.id, req.user!.id));
+        const manualPeriodFreeDelivery = Boolean(
+          customerPromotion?.freeDeliveryUntil && customerPromotion.freeDeliveryUntil > new Date()
+        );
         const deliveryDistanceStr =
             automaticFreight.status === 'CONFIRMED' && automaticFreight.distanceKm !== null
               ? automaticFreight.distanceKm.toFixed(2)
@@ -375,12 +369,9 @@ export function registerOrderRoutes(app: Express) {
         let deliveryFeeStr: string | null;
         let deliveryFeeSource: string;
 
-        if (isFirstOrderWelcomeFree) {
+        if (manualPeriodFreeDelivery) {
           deliveryFeeStr = '0.00';
-          deliveryFeeSource = 'FIRST_ORDER_FREE';
-        } else if (usingFreeDeliveryTicket) {
-          deliveryFeeStr = '0.00';
-          deliveryFeeSource = 'FREE_DELIVERY_TICKET';
+          deliveryFeeSource = 'MANUAL_FREE_DELIVERY_PERIOD';
         } else {
           deliveryFeeStr =
             automaticFreight.status === 'CONFIRMED' && automaticFreight.fee !== null
@@ -435,8 +426,6 @@ export function registerOrderRoutes(app: Express) {
             paymentMethod: normalizedPaymentMethod,
             changeFor: changeForStr,
             status: 'NEW',
-            isFirstOrderFreeDelivery: isFirstOrderWelcomeFree || usingFreeDeliveryTicket,
-            usedFreeDeliveryTicket: usingFreeDeliveryTicket,
             stockDeducted: true,
             paymentExpiresAt,
             deliveryMode: normalizedDeliveryMode,
@@ -496,30 +485,10 @@ export function registerOrderRoutes(app: Express) {
           popupDismissed: false,
         });
 
-        // Recalcula fidelidade após criar o pedido: se completou mais 3 pedidos, ganha +1 Ticket de Entrega Grátis!
-        const loyaltyAfter = await evaluateCustomerLoyaltyTickets(req.user!.id, tx);
-        const earnedNewTicket = loyaltyAfter.earnedAutoTickets > loyaltyBefore.earnedAutoTickets;
-
-        if (earnedNewTicket) {
-          await tx.insert(schema.notifications).values({
-            userId: req.user!.id,
-            orderId: newOrder.id,
-            orderNumber: newOrder.orderNumber,
-            oldStatus: 'NEW',
-            newStatus: 'FREE_DELIVERY_TICKET_EARNED',
-            title: '🎟️ Você ganhou 1 Ticket de Entrega Grátis!',
-            message: `Parabéns! Você completou 3 pedidos na loja DeepShop Delivery e ganhou +1 Ticket de Entrega Grátis acumulativo (saldo disponível: ${loyaltyAfter.freeDeliveryTickets} ticket(s)). Seu próximo pedido (4º pedido) terá Entrega Grátis!`,
-            isRead: false,
-            popupDismissed: false,
-          });
-        }
-
         return {
           order: newOrder,
           items: preparedItems,
           reservations: reservations.map(({ productId, quantity }) => ({ productId, quantity })),
-          loyalty: loyaltyAfter,
-          earnedNewTicket,
         };
       });
       orderTransactionCommitted = true;
@@ -552,14 +521,6 @@ export function registerOrderRoutes(app: Express) {
         changeFor: createdOrderResult.order.changeFor,
         addressSnapshot: createdOrderResult.order.addressSnapshot,
         notes: createdOrderResult.order.notes,
-        isFirstOrderFreeDelivery: Boolean(
-          createdOrderResult.order.usedFreeDeliveryTicket ||
-            createdOrderResult.order.isFirstOrderFreeDelivery ||
-            createdOrderResult.order.deliveryFeeSource === 'FREE_DELIVERY_TICKET' ||
-            createdOrderResult.order.deliveryFeeSource === 'MANUAL_FREE_DELIVERY' ||
-            createdOrderResult.order.deliveryFeeSource === 'FIRST_ORDER_FREE'
-        ),
-        usedFreeDeliveryTicket: Boolean(createdOrderResult.order.usedFreeDeliveryTicket),
         deliveryFeeSource: createdOrderResult.order.deliveryFeeSource,
       });
       const whatsappUrl = buildWhatsAppLink(whatsappNumber, whatsappMessage);
@@ -581,21 +542,14 @@ export function registerOrderRoutes(app: Express) {
         createdOrderResult.items.reduce((sum, item) => sum + item.quantity, 0)
       ).catch((err) => logServerError('order.notification.failed', err, { orderId: createdOrderResult.order.id }));
 
-      const paymentReleased = Boolean(
-        createdOrderResult.order.isFirstOrderFreeDelivery ||
-          createdOrderResult.order.usedFreeDeliveryTicket ||
-          (createdOrderResult.order.deliveryFee !== null &&
-            createdOrderResult.order.deliveryFee !== undefined &&
-            createdOrderResult.order.deliveryFee !== '')
-      );
+      const paymentReleased = createdOrderResult.order.deliveryFee !== null &&
+        createdOrderResult.order.deliveryFee !== undefined &&
+        createdOrderResult.order.deliveryFee !== '';
 
       res.status(201).json({
         ...createdOrderResult.order,
         paymentReleased,
         paymentDeadlineHours: deadlineHours,
-        freeDeliveryTickets: createdOrderResult.loyalty.freeDeliveryTickets,
-        loyalty: createdOrderResult.loyalty,
-        earnedNewTicket: createdOrderResult.earnedNewTicket,
         canCustomerCancel: true,
         requiresRefundOnCancel: false,
         items: enrichedItems,
@@ -641,8 +595,8 @@ export function registerOrderRoutes(app: Express) {
       const pageSize = Math.max(1, Math.min(50, Number(req.query.pageSize) || 10));
       const offset = (page - 1) * pageSize;
       const [userOrders, [{ total }]] = await Promise.all([
-        db.select().from(schema.orders).where(eq(schema.orders.userId, req.user!.id)).orderBy(desc(schema.orders.id)).limit(pageSize).offset(offset),
-        db.select({ total: count() }).from(schema.orders).where(eq(schema.orders.userId, req.user!.id)),
+        db.select().from(schema.orders).where(and(eq(schema.orders.userId, req.user!.id), notPaymentExpiredOrder())).orderBy(desc(schema.orders.id)).limit(pageSize).offset(offset),
+        db.select({ total: count() }).from(schema.orders).where(and(eq(schema.orders.userId, req.user!.id), notPaymentExpiredOrder())),
       ]);
       const totalOrders = Number(total || 0);
       const totalPages = Math.max(1, Math.ceil(totalOrders / pageSize));
@@ -665,7 +619,6 @@ export function registerOrderRoutes(app: Express) {
       const settingsMap = await getSettingsMap();
       const whatsappNumber = settingsMap.whatsapp_number || '';
 
-      const customerHasDeliveredOrder = userOrders.some((ord) => ord.status === 'DELIVERED');
 
       const enriched = userOrders.map((o) => {
         const items = allItems
@@ -682,13 +635,7 @@ export function registerOrderRoutes(app: Express) {
             };
           });
         const history = allHistory.filter((h) => h.orderId === o.id);
-        const isFirstOrderFreeDelivery = Boolean(
-          o.usedFreeDeliveryTicket ||
-            o.deliveryFeeSource === 'FREE_DELIVERY_TICKET' ||
-            o.deliveryFeeSource === 'MANUAL_FREE_DELIVERY' ||
-            (!customerHasDeliveredOrder &&
-              (o.isFirstOrderFreeDelivery || o.deliveryFeeSource === 'FIRST_ORDER_FREE'))
-        );
+        const isFreeDelivery = o.deliveryFee !== null && Number(o.deliveryFee) === 0;
         const whatsappMessage = buildOrderWhatsAppMessage({
           orderNumber: o.orderNumber,
           items,
@@ -700,15 +647,13 @@ export function registerOrderRoutes(app: Express) {
           changeFor: o.changeFor,
           addressSnapshot: o.addressSnapshot,
           notes: o.notes,
-          isFirstOrderFreeDelivery,
-          usedFreeDeliveryTicket: Boolean(o.usedFreeDeliveryTicket),
           deliveryFeeSource: o.deliveryFeeSource,
         });
 
         const canCustomerCancel = CUSTOMER_CANCELLABLE_STATUSES.includes(o.status);
         const requiresRefundOnCancel = PAID_ORDER_STATUSES.includes(o.status);
         const paymentReleased = Boolean(
-          isFirstOrderFreeDelivery ||
+          isFreeDelivery ||
             (o.deliveryFee !== null && o.deliveryFee !== undefined && o.deliveryFee !== '')
         );
 
@@ -728,7 +673,7 @@ export function registerOrderRoutes(app: Express) {
         return {
           ...o,
           payment: toPaymentSummary(paymentsByOrder.get(o.id)),
-          isFirstOrderFreeDelivery,
+          isFreeDelivery,
           paymentReleased,
           canCustomerCancel,
           requiresRefundOnCancel,
@@ -759,7 +704,7 @@ export function registerOrderRoutes(app: Express) {
       const [order] = await db
         .select()
         .from(schema.orders)
-        .where(eq(schema.orders.id, orderId));
+        .where(and(eq(schema.orders.id, orderId), notPaymentExpiredOrder()));
 
       if (!order) {
         res.status(404).json({ error: 'Pedido não encontrado.' });
@@ -802,13 +747,7 @@ export function registerOrderRoutes(app: Express) {
 
       const settingsMap = await getSettingsMap();
       const whatsappNumber = settingsMap.whatsapp_number || '';
-      const isFirstOrderFreeDelivery = Boolean(
-        order.usedFreeDeliveryTicket ||
-          order.deliveryFeeSource === 'FREE_DELIVERY_TICKET' ||
-          order.deliveryFeeSource === 'MANUAL_FREE_DELIVERY' ||
-          order.isFirstOrderFreeDelivery ||
-          order.deliveryFeeSource === 'FIRST_ORDER_FREE'
-      );
+      const isFreeDelivery = order.deliveryFee !== null && Number(order.deliveryFee) === 0;
       const whatsappMessage = buildOrderWhatsAppMessage({
         orderNumber: order.orderNumber,
         items,
@@ -820,15 +759,13 @@ export function registerOrderRoutes(app: Express) {
         changeFor: order.changeFor,
         addressSnapshot: order.addressSnapshot,
         notes: order.notes,
-        isFirstOrderFreeDelivery,
-        usedFreeDeliveryTicket: Boolean(order.usedFreeDeliveryTicket),
         deliveryFeeSource: order.deliveryFeeSource,
       });
 
       const canCustomerCancel = CUSTOMER_CANCELLABLE_STATUSES.includes(order.status);
       const requiresRefundOnCancel = PAID_ORDER_STATUSES.includes(order.status);
       const paymentReleased = Boolean(
-        isFirstOrderFreeDelivery ||
+        isFreeDelivery ||
           (order.deliveryFee !== null &&
             order.deliveryFee !== undefined &&
             order.deliveryFee !== '')
@@ -849,7 +786,7 @@ export function registerOrderRoutes(app: Express) {
       res.json({
         ...order,
         payment: toPaymentSummary(payment),
-        isFirstOrderFreeDelivery,
+        isFreeDelivery,
         paymentReleased,
         canCustomerCancel,
         requiresRefundOnCancel,
@@ -931,7 +868,6 @@ export function registerOrderRoutes(app: Express) {
           return {
             updatedOrder: freshOrder,
             items,
-            loyaltyAfterCancel: await evaluateCustomerLoyaltyTickets(freshOrder.userId, tx),
             changed: false,
             wasPaid: Boolean(freshOrder.refundRequested),
           };
@@ -965,7 +901,6 @@ export function registerOrderRoutes(app: Express) {
             return {
               updatedOrder: currentOrder,
               items,
-              loyaltyAfterCancel: await evaluateCustomerLoyaltyTickets(currentOrder.userId, tx),
               changed: false,
               wasPaid: Boolean(currentOrder.refundRequested),
             };
@@ -1002,12 +937,7 @@ export function registerOrderRoutes(app: Express) {
           changedBy: req.user!.id,
         });
 
-        const loyaltyAfterCancel = await evaluateCustomerLoyaltyTickets(
-          freshOrder.userId,
-          tx
-        );
-
-        return { updatedOrder, items, loyaltyAfterCancel, changed: true, wasPaid };
+        return { updatedOrder, items, changed: true, wasPaid };
       });
 
       if (result.changed) {
@@ -1059,7 +989,6 @@ export function registerOrderRoutes(app: Express) {
 
       res.json({
         ...result.updatedOrder,
-        loyalty: result.loyaltyAfterCancel,
         canCustomerCancel: false,
         requiresRefundOnCancel: false,
         wasPaid: result.wasPaid,
@@ -1087,31 +1016,19 @@ export function registerOrderRoutes(app: Express) {
   // Notificações do Cliente
   app.get('/api/notifications', requireAuth, async (req: AuthRequest, res) => {
     try {
-      const loyalty =
-        req.user!.role === 'CUSTOMER'
-          ? await evaluateCustomerLoyaltyTickets(req.user!.id)
-          : null;
-      const eligibleForFirstOrderFreeDelivery = loyalty ? loyalty.isFirstOrderEligible : false;
-
-      const list =
-        req.user!.role === 'CUSTOMER'
-          ? await db
-              .select()
-              .from(schema.notifications)
-              .where(eq(schema.notifications.userId, req.user!.id))
-              .orderBy(desc(schema.notifications.id))
-          : [];
-
-      const unreadCount = list.filter((n) => !n.isRead).length;
-      const activePopups = list.filter((n) => !n.popupDismissed);
-
-      res.json({
-        notifications: list,
-        unreadCount,
-        activePopups,
-        eligibleForFirstOrderFreeDelivery,
-        loyalty,
-      });
+      const list = req.user!.role === 'CUSTOMER'
+        ? await db.select().from(schema.notifications)
+            .where(eq(schema.notifications.userId, req.user!.id))
+            .orderBy(desc(schema.notifications.id))
+        : [];
+      const notifications = list.filter((n) => ![
+        'FIRST_ORDER_FREE_WELCOME',
+        'FREE_DELIVERY_TICKET_EARNED',
+        'MANUAL_FREE_DELIVERY_GRANTED',
+      ].includes(String(n.newStatus || '')));
+      const unreadCount = notifications.filter((n) => !n.isRead).length;
+      const activePopups = notifications.filter((n) => !n.popupDismissed);
+      res.json({ notifications, unreadCount, activePopups });
     } catch (error) {
       logServerError('server_operation_failed', error);
       res.status(500).json({ error: 'Erro ao carregar notificações.' });

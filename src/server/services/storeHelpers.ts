@@ -39,7 +39,7 @@ export const VALID_ORDER_STATUSES = [
   'CANCELLED',
 ];
 
-export function computePaymentExpiresAt(deadlineHours = 1): Date {
+export function computePaymentExpiresAt(deadlineHours = 0.5): Date {
   const validHours = !isNaN(deadlineHours) && deadlineHours > 0 ? deadlineHours : 1;
   return new Date(Date.now() + validHours * 3600 * 1000);
 }

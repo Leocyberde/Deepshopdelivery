@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ShoppingBag, Minus, Plus, Share2, Copy } from 'lucide-react';
+import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
+import { ArrowLeft, ShoppingBag, Minus, Plus, Share2, Copy, MessageCircle } from 'lucide-react';
 import {
   useApp,
   isAdminRole,
@@ -53,36 +53,33 @@ interface ProductDetail {
 export const ProductDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const {
     apiFetch,
     addToCart,
     toast,
     user,
-    freeDeliveryTickets,
-    eligibleForFirstOrderFreeDelivery,
-    setEligibleForFirstOrderFreeDelivery,
   } = useApp();
   const isAdmin = isAdminRole(user?.role);
   const [product, setProduct] = useState<ProductDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [quantity, setQuantity] = useState(1);
+  const [askOpen, setAskOpen] = useState(false);
+  const [askMessage, setAskMessage] = useState('');
+  const [askError, setAskError] = useState('');
+  const [sendingAsk, setSendingAsk] = useState(false);
 
   useEffect(() => {
     let mounted = true;
     setLoading(true);
     setError(null);
 
-    apiFetch<ProductDetail & { eligibleForFirstOrderFreeDelivery?: boolean }>(`/api/products/${id}`)
+    apiFetch<ProductDetail>(`/api/products/${id}`)
       .then((data) => {
         if (!mounted) return;
         setProduct(data);
         setQuantity(1);
-        if (isAdminRole(user?.role)) {
-          setEligibleForFirstOrderFreeDelivery(false);
-        } else if (typeof data.eligibleForFirstOrderFreeDelivery === 'boolean') {
-          setEligibleForFirstOrderFreeDelivery(data.eligibleForFirstOrderFreeDelivery);
-        }
       })
       .catch((err: any) => {
         if (!mounted) return;
@@ -95,7 +92,17 @@ export const ProductDetailPage: React.FC = () => {
     return () => {
       mounted = false;
     };
-  }, [id, apiFetch, setEligibleForFirstOrderFreeDelivery, user?.role]);
+  }, [id, apiFetch]);
+
+  useEffect(() => {
+    if (!product || new URLSearchParams(location.search).get('ask') !== '1') return;
+    if (!user) {
+      navigate(`/login?redirect=${encodeURIComponent(`/produto/${product.id}?ask=1`)}`, { replace: true });
+      return;
+    }
+    if (isAdmin) { navigate('/admin/central-ajuda', { replace: true }); return; }
+    setAskOpen(true);
+  }, [id, isAdmin, location.search, navigate, product, user]);
 
   if (loading) {
     return (
@@ -143,6 +150,31 @@ export const ProductDetailPage: React.FC = () => {
     promoMaxUnits: product.promoMaxUnits,
     quantity,
   });
+
+  const openProductQuestion = () => {
+    setAskError('');
+    if (!user) {
+      navigate(`/login?redirect=${encodeURIComponent(`/produto/${product.id}?ask=1`)}`);
+      return;
+    }
+    if (isAdmin) { navigate('/admin/central-ajuda'); return; }
+    setAskOpen(true);
+  };
+
+  const submitProductQuestion = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!askMessage.trim()) { setAskError('Escreva sua pergunta para a loja.'); return; }
+    setSendingAsk(true); setAskError('');
+    try {
+      const result = await apiFetch<{ ticket: { id: number } }>('/api/support/tickets', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subject: 'PRODUTO', productId: product.id, body: askMessage }),
+      });
+      toast('Pergunta enviada. Continue a conversa pela Central de Ajuda.', 'success');
+      navigate(`/minha-conta/central-ajuda?ticketId=${result.ticket.id}`);
+    } catch (err: any) { setAskError(err?.message || 'Não foi possível enviar a pergunta.'); }
+    finally { setSendingAsk(false); }
+  };
 
   const handleAdd = (goToCheckout = false) => {
     if (outOfStock) return;
@@ -365,6 +397,22 @@ export const ProductDetailPage: React.FC = () => {
             )}
           </div>
 
+          {!isAdmin && (
+            <div className="border-t border-stone-100 pt-4">
+              <button type="button" onClick={openProductQuestion} className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900 hover:bg-emerald-100">
+                <MessageCircle className="h-4 w-4" /> Perguntar à loja sobre este produto
+              </button>
+              {askOpen && (
+                <form onSubmit={(event) => void submitProductQuestion(event)} className="mt-3 space-y-3 rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
+                  <div><h2 className="text-sm font-bold text-zinc-900">Pergunta sobre {product.name}</h2><p className="mt-1 text-xs text-zinc-600">A loja receberá o vínculo deste produto. A conversa continua na Central de Ajuda.</p></div>
+                  {askError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900">{askError}</p>}
+                  <label className="block space-y-1.5"><span className="text-xs font-semibold text-zinc-800">Sua pergunta</span><textarea value={askMessage} onChange={(event) => setAskMessage(event.target.value)} maxLength={4000} rows={4} required placeholder="Escreva sua dúvida sobre o produto…" className="w-full resize-y rounded-lg border border-stone-300 bg-white px-3 py-2.5 text-sm" /><span className="block text-right text-[11px] text-zinc-500">{askMessage.length}/4000</span></label>
+                  <div className="flex flex-wrap gap-2"><button type="submit" disabled={sendingAsk} className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2.5 text-xs font-semibold text-white disabled:opacity-50"><MessageCircle className="h-4 w-4" />{sendingAsk ? 'Enviando…' : 'Enviar pergunta'}</button><button type="button" onClick={() => { setAskOpen(false); setAskError(''); if (location.search) navigate(`/produto/${product.id}`, { replace: true }); }} className="rounded-lg border border-stone-300 bg-white px-4 py-2.5 text-xs font-semibold text-zinc-700">Cancelar</button></div>
+                </form>
+              )}
+            </div>
+          )}
+
           <div className="border-t border-stone-100 pt-4 space-y-3">
             {/* Indicador de Visualizações e Prova Social */}
             <div className="flex items-center justify-between text-xs text-zinc-500">
@@ -417,16 +465,6 @@ export const ProductDetailPage: React.FC = () => {
             </div>
 
             <div className="text-xs text-zinc-500 space-y-1.5">
-              {!isAdmin && eligibleForFirstOrderFreeDelivery && (
-              <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 font-semibold">
-                🎉 Você tem direito a Entrega Grátis no seu 1º Pedido! (2º e 3º pagos e no 4º ganha Entrega Grátis novamente)
-              </div>
-            )}
-            {!isAdmin && !eligibleForFirstOrderFreeDelivery && freeDeliveryTickets > 0 && (
-              <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 font-semibold">
-                🎟️ Você tem {freeDeliveryTickets} Ticket(s) de Entrega Grátis disponível(is) para usar no checkout!
-              </div>
-            )}
               <p>• Pagamento via Pix, Cartão ou Dinheiro na entrega.</p>
               <p>• Frete conforme endereço cadastrado ou combinado pelo WhatsApp da loja.</p>
             </div>

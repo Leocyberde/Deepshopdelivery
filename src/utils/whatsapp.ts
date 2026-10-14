@@ -16,8 +16,6 @@ export interface WhatsAppOrderPayload {
   total: string | number;
   addressSnapshot: AddressSnapshot;
   notes?: string | null;
-  isFirstOrderFreeDelivery?: boolean;
-  usedFreeDeliveryTicket?: boolean;
   deliveryFeeSource?: string | null;
   paymentMethod?: string | null;
   changeFor?: string | number | null;
@@ -75,26 +73,16 @@ export function buildOrderWhatsAppMessage(order: WhatsAppOrderPayload): string {
   }
   lines.push(`Subtotal: R$${formatBrlPlain(order.subtotal)}`);
 
-  const isFreeTicket = Boolean(
-    order.usedFreeDeliveryTicket ||
-      order.deliveryFeeSource === 'FREE_DELIVERY_TICKET' ||
-      order.deliveryFeeSource === 'MANUAL_FREE_DELIVERY' ||
-      order.isFirstOrderFreeDelivery
-  );
+  const isFreeDelivery = order.deliveryFee !== null &&
+    order.deliveryFee !== undefined &&
+    order.deliveryFee !== '' &&
+    Number(order.deliveryFee) === 0;
 
-  if (isFreeTicket) {
-    if (order.deliveryFeeSource === 'FIRST_ORDER_FREE') {
-      lines.push('Entrega: Grátis (Entrega Grátis de 1º Pedido)');
-    } else if (order.deliveryFeeSource === 'MANUAL_FREE_DELIVERY') {
-      lines.push('Entrega: Grátis (Entrega grátis concedida pela loja)');
-    } else if (
-      order.usedFreeDeliveryTicket ||
-      order.deliveryFeeSource === 'FREE_DELIVERY_TICKET'
-    ) {
-      lines.push('Entrega: Grátis (Ticket de Entrega Grátis - Promoção Fidelidade)');
-    } else {
-      lines.push('Entrega: Grátis (Cortesia DeepShop Delivery)');
-    }
+  if (isFreeDelivery) {
+    const isStoreCourtesy = ['MANUAL_FREE_DELIVERY', 'MANUAL_FREE_DELIVERY_PERIOD'].includes(
+      String(order.deliveryFeeSource || '').toUpperCase()
+    );
+    lines.push(isStoreCourtesy ? 'Entrega: Grátis (cortesia da loja)' : 'Entrega: Grátis');
     if (!isItatiba) {
       lines.push('Modalidade: Entrega através dos Correios — conferir valor no WhatsApp');
     } else {

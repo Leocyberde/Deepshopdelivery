@@ -503,11 +503,12 @@ psql -U postgres -d achadinhos -f achadinhos-postgresql-vps.sql`}
 
             <div className="space-y-1">
               <label className="block text-xs font-semibold text-zinc-700">
-                Prazo de Reserva / Pagamento em Horas (Padrão: 1h)
+                Prazo de Reserva / Pagamento em Horas (0,5 = 30 minutos)
               </label>
               <input
                 type="number"
-                min="1"
+                min="0.5"
+                step="0.5"
                 required
                 value={settingsForm.payment_deadline_hours}
                 onChange={(e) =>
@@ -519,7 +520,7 @@ psql -U postgres -d achadinhos -f achadinhos-postgresql-vps.sql`}
                 className="w-full px-3.5 py-2 text-sm bg-white border border-stone-300 rounded-lg font-mono"
               />
               <p className="text-[11px] text-zinc-500">
-                Após esse prazo sem confirmação de pagamento, o pedido é cancelado automaticamente e o saldo volta ao estoque.
+                Após esse prazo sem confirmação de pagamento, o pedido é cancelado automaticamente e os produtos voltam ao estoque.
               </p>
             </div>
           </div>

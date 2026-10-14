@@ -3,15 +3,16 @@ import { eq, sql, inArray, and } from 'drizzle-orm';
 import { db } from '../../db/index.ts';
 import * as schema from '../../db/schema.ts';
 import { getSettingsMap } from './storeHelpers.ts';
-import { evaluateCustomerLoyaltyTickets } from './loyaltyService.ts';
 import { recordInventoryMovement } from './inventoryService.ts';
 
+export const PAYMENT_TIMEOUT_REASON_PREFIX = 'Prazo de pagamento expirado após ';
+export const LEGACY_PAYMENT_TIMEOUT_REASON_PREFIX = 'Prazo de 1 hora para pagamento expirou.';
 let isExpiringOrders = false;
 let expirationWatcherStarted = false;
 
 /**
  * Verifica todos os pedidos pendentes de pagamento ('NEW' ou 'AWAITING_PAYMENT')
- * cujo prazo de pagamento (1h após a liberação do pagamento) já expirou.
+ * cujo prazo configurado após a liberação do pagamento já expirou.
  * Cancela automaticamente o pedido e devolve o saldo reservado para os produtos na vitrine.
  */
 export async function expireOverdueUnpaidOrders(): Promise<number> {
@@ -29,17 +30,14 @@ export async function expireOverdueUnpaidOrders(): Promise<number> {
     const settingsMap = await getSettingsMap();
     const deadlineHours = Math.max(
       0.1,
-      parseFloat(settingsMap.payment_deadline_hours || '1') || 1
+      parseFloat(settingsMap.payment_deadline_hours || '0.5') || 0.5
     );
     const nowMs = Date.now();
 
     const expiredCandidates = unpaidOrders.filter((ord) => {
-      // Se o frete ainda está "A combinar" (deliveryFee === null e não é entrega grátis)
-      // e paymentExpiresAt ainda é nulo, o cliente ainda aguarda o Admin definir o frete.
+      // Frete nulo significa que o cliente ainda aguarda a loja definir o valor.
       const hasConfirmedFreight =
-        ord.isFirstOrderFreeDelivery ||
-        ord.usedFreeDeliveryTicket ||
-        (ord.deliveryFee !== null && ord.deliveryFee !== undefined && ord.deliveryFee !== '');
+        ord.deliveryFee !== null && ord.deliveryFee !== undefined && ord.deliveryFee !== '';
 
       if (ord.paymentExpiresAt) {
         return new Date(ord.paymentExpiresAt).getTime() <= nowMs;
@@ -73,9 +71,7 @@ export async function expireOverdueUnpaidOrders(): Promise<number> {
           }
 
           const hasConfirmedFreight =
-            freshOrder.isFirstOrderFreeDelivery ||
-            freshOrder.usedFreeDeliveryTicket ||
-            (freshOrder.deliveryFee !== null && freshOrder.deliveryFee !== undefined && freshOrder.deliveryFee !== '');
+            freshOrder.deliveryFee !== null && freshOrder.deliveryFee !== undefined && freshOrder.deliveryFee !== '';
           const freshIsExpired = freshOrder.paymentExpiresAt
             ? new Date(freshOrder.paymentExpiresAt).getTime() <= nowMs
             : hasConfirmedFreight && nowMs - new Date(freshOrder.createdAt).getTime() >= deadlineHours * 3600 * 1000;
@@ -89,7 +85,7 @@ export async function expireOverdueUnpaidOrders(): Promise<number> {
               status: 'CANCELLED',
               stockDeducted: false,
               paymentExpiresAt: null,
-              cancellationReason: 'Prazo de 1 hora para pagamento expirou. O pedido foi cancelado automaticamente e os itens voltaram para o estoque da vitrine.',
+              cancellationReason: `${PAYMENT_TIMEOUT_REASON_PREFIX}${Math.round(deadlineHours * 60)} minutos. O pedido foi cancelado automaticamente e os itens voltaram para o estoque da vitrine.`,
               updatedAt: new Date(),
             })
             .where(and(
@@ -140,13 +136,12 @@ export async function expireOverdueUnpaidOrders(): Promise<number> {
             orderNumber: freshOrder.orderNumber,
             oldStatus: freshOrder.status,
             newStatus: 'CANCELLED',
-            title: `⏰ Prazo de 1h expirado — Pedido #${freshOrder.orderNumber}`,
-            message: `O prazo de 1 hora para pagamento do pedido #${freshOrder.orderNumber} terminou e a reserva dos produtos foi cancelada automaticamente. Caso ainda queira os itens, basta fazer um novo pedido na vitrine!`,
+            title: `⏰ Prazo de ${Math.round(deadlineHours * 60)} minutos expirado — Pedido #${freshOrder.orderNumber}`,
+            message: `O prazo de ${Math.round(deadlineHours * 60)} minutos para pagamento do pedido #${freshOrder.orderNumber} terminou. A reserva foi cancelada e os produtos voltaram ao estoque; se ainda quiser os itens, faça um novo pedido na vitrine.`,
             isRead: false,
             popupDismissed: false,
           });
 
-          await evaluateCustomerLoyaltyTickets(freshOrder.userId, tx);
           return true;
         });
         if (didExpire) expiredCount += 1;

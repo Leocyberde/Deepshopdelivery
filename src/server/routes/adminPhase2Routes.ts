@@ -16,10 +16,11 @@ import {
   resolvePromoTiming,
   validateAndNormalizeCode,
 } from '../services/storeHelpers.ts';
-import { evaluateCustomerLoyaltyTickets } from '../services/loyaltyService.ts';
 import { resolveAddressFreight } from '../../services/freightService.ts';
 import { recordInventoryMovement } from '../services/inventoryService.ts';
+import { PAYMENT_TIMEOUT_REASON_PREFIX, LEGACY_PAYMENT_TIMEOUT_REASON_PREFIX } from '../services/orderExpirationService.ts';
 
+const notPaymentExpiredOrder = () => sql`COALESCE(${schema.orders.cancellationReason}, '') NOT LIKE ${PAYMENT_TIMEOUT_REASON_PREFIX + '%'} AND COALESCE(${schema.orders.cancellationReason}, '') NOT LIKE ${LEGACY_PAYMENT_TIMEOUT_REASON_PREFIX + '%'}`;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_STOCK = 1_000_000;
 
@@ -490,7 +491,7 @@ export function registerAdminPhase2Routes(app: Express) {
       if (lgpd === 'PENDING') filters.push(isNotNull(schema.users.deletionRequestedAt));
       if (lgpd === 'NONE') filters.push(sql`${schema.users.deletionRequestedAt} IS NULL`);
       if (segment === 'PENDING_FREIGHT') filters.push(sql`EXISTS (SELECT 1 FROM addresses a WHERE a.user_id = ${schema.users.id} AND a.delivery_fee_status = 'PENDING')`);
-      if (segment === 'WITH_FREE_DELIVERY') filters.push(or(gte(schema.users.freeDeliveryTickets, 1), sql`NOT EXISTS (SELECT 1 FROM orders o WHERE o.user_id = ${schema.users.id})`));
+      if (segment === 'WITH_FREE_DELIVERY') filters.push(sql`${schema.users.freeDeliveryUntil} > NOW()`);
       if (search) {
         const pattern = `%${escapedLike(search)}%`;
         filters.push(or(ilike(schema.users.name, pattern), ilike(schema.users.email, pattern), ilike(schema.users.phone, pattern), ilike(schema.users.cpf, pattern)));
@@ -498,12 +499,12 @@ export function registerAdminPhase2Routes(app: Express) {
       const where = and(...filters);
       const [totalRows, rows] = await Promise.all([
         db.select({ value: count() }).from(schema.users).where(where),
-        db.select({ id: schema.users.id, name: schema.users.name, cpf: schema.users.cpf, email: schema.users.email, phone: schema.users.phone, status: schema.users.status, deletionRequestedAt: schema.users.deletionRequestedAt, createdAt: schema.users.createdAt, freeDeliveryTickets: schema.users.freeDeliveryTickets })
+        db.select({ id: schema.users.id, name: schema.users.name, cpf: schema.users.cpf, email: schema.users.email, phone: schema.users.phone, status: schema.users.status, deletionRequestedAt: schema.users.deletionRequestedAt, createdAt: schema.users.createdAt, freeDeliveryUntil: schema.users.freeDeliveryUntil })
           .from(schema.users).where(where).orderBy(...customerSorts[sort]).limit(pageSize).offset((page - 1) * pageSize),
       ]);
       const ids = rows.map((row) => row.id);
       const [orderStats, addressRows, freightRule, settingsMap] = await Promise.all([
-        ids.length ? db.select({ userId: schema.orders.userId, ordersCount: count(), totalSpent: sql<string>`COALESCE(SUM(CASE WHEN ${schema.orders.status} <> 'CANCELLED' THEN ${schema.orders.total} ELSE 0 END), 0)`, lastOrderAt: sql<Date | null>`MAX(${schema.orders.createdAt})` }).from(schema.orders).where(inArray(schema.orders.userId, ids)).groupBy(schema.orders.userId) : Promise.resolve([]),
+        ids.length ? db.select({ userId: schema.orders.userId, ordersCount: count(), totalSpent: sql<string>`COALESCE(SUM(CASE WHEN ${schema.orders.status} <> 'CANCELLED' THEN ${schema.orders.total} ELSE 0 END), 0)`, lastOrderAt: sql<Date | null>`MAX(${schema.orders.createdAt})` }).from(schema.orders).where(and(inArray(schema.orders.userId, ids), notPaymentExpiredOrder())).groupBy(schema.orders.userId) : Promise.resolve([]),
         ids.length ? db.select({ userId: schema.addresses.userId, deliveryFeeStatus: schema.addresses.deliveryFeeStatus }).from(schema.addresses).where(inArray(schema.addresses.userId, ids)) : Promise.resolve([]),
         getFreightRuleConfig(), getSettingsMap(),
       ]);
@@ -532,18 +533,17 @@ export function registerAdminPhase2Routes(app: Express) {
     try {
       const id = Number(req.params.id);
       if (!Number.isSafeInteger(id) || id <= 0) { res.status(400).json({ error: 'ID de cliente inválido.' }); return; }
-      const [customer] = await db.select({ id: schema.users.id, name: schema.users.name, cpf: schema.users.cpf, email: schema.users.email, phone: schema.users.phone, status: schema.users.status, deletionRequestedAt: schema.users.deletionRequestedAt, createdAt: schema.users.createdAt, privacyVersion: schema.users.privacyVersion, privacyAcceptedAt: schema.users.privacyAcceptedAt, termsVersion: schema.users.termsVersion, termsAcceptedAt: schema.users.termsAcceptedAt, freeDeliveryTickets: schema.users.freeDeliveryTickets, manualFreeDeliveryTickets: schema.users.manualFreeDeliveryTickets })
+      const [customer] = await db.select({ id: schema.users.id, name: schema.users.name, cpf: schema.users.cpf, email: schema.users.email, phone: schema.users.phone, status: schema.users.status, deletionRequestedAt: schema.users.deletionRequestedAt, createdAt: schema.users.createdAt, privacyVersion: schema.users.privacyVersion, privacyAcceptedAt: schema.users.privacyAcceptedAt, termsVersion: schema.users.termsVersion, termsAcceptedAt: schema.users.termsAcceptedAt, freeDeliveryUntil: schema.users.freeDeliveryUntil })
         .from(schema.users).where(and(eq(schema.users.id, id), eq(schema.users.role, 'CUSTOMER'))).limit(1);
       if (!customer) { res.status(404).json({ error: 'Cliente não encontrado.' }); return; }
-      const [addresses, aggregates, loyalty] = await Promise.all([
+      const [addresses, aggregates] = await Promise.all([
         db.select().from(schema.addresses).where(eq(schema.addresses.userId, id)).orderBy(desc(schema.addresses.id)),
-        db.select({ ordersCount: count(), totalSpent: sql<string>`COALESCE(SUM(CASE WHEN ${schema.orders.status} <> 'CANCELLED' THEN ${schema.orders.total} ELSE 0 END), 0)`, lastOrderAt: sql<Date | null>`MAX(${schema.orders.createdAt})` }).from(schema.orders).where(eq(schema.orders.userId, id)),
-        evaluateCustomerLoyaltyTickets(id),
+        db.select({ ordersCount: count(), totalSpent: sql<string>`COALESCE(SUM(CASE WHEN ${schema.orders.status} <> 'CANCELLED' THEN ${schema.orders.total} ELSE 0 END), 0)`, lastOrderAt: sql<Date | null>`MAX(${schema.orders.createdAt})` }).from(schema.orders).where(and(eq(schema.orders.userId, id), notPaymentExpiredOrder())),
       ]);
       const updaterIds = [...new Set(addresses.map((address) => address.deliveryUpdatedBy).filter((value): value is number => value !== null))];
       const users = updaterIds.length ? await db.select({ id: schema.users.id, name: schema.users.name }).from(schema.users).where(inArray(schema.users.id, updaterIds)) : [];
       const userNames = new Map(users.map((row) => [row.id, row.name]));
-      res.json({ ...customer, cpf: maskCpf(customer.cpf), addresses: addresses.map((address) => ({ ...address, updatedByName: address.deliveryUpdatedBy ? userNames.get(address.deliveryUpdatedBy) || 'Administrador' : null, freight: resolveAddressFreight(address) })), ordersCount: Number(aggregates[0]?.ordersCount || 0), totalSpent: String(aggregates[0]?.totalSpent || '0'), lastOrderAt: aggregates[0]?.lastOrderAt || null, loyalty, freightRule: await getFreightRuleConfig(), defaultOrigin: (await getSettingsMap()).store_origin_address || 'Matriz DeepShop' });
+      res.json({ ...customer, cpf: maskCpf(customer.cpf), addresses: addresses.map((address) => ({ ...address, updatedByName: address.deliveryUpdatedBy ? userNames.get(address.deliveryUpdatedBy) || 'Administrador' : null, freight: resolveAddressFreight(address) })), ordersCount: Number(aggregates[0]?.ordersCount || 0), totalSpent: String(aggregates[0]?.totalSpent || '0'), lastOrderAt: aggregates[0]?.lastOrderAt || null, freightRule: await getFreightRuleConfig(), defaultOrigin: (await getSettingsMap()).store_origin_address || 'Matriz DeepShop' });
     } catch (error) {
       logServerError('admin_customer_detail_failed', error); res.status(500).json({ error: 'Não foi possível carregar o cliente.' });
     }
@@ -555,7 +555,7 @@ export function registerAdminPhase2Routes(app: Express) {
       if (!Number.isSafeInteger(id) || id <= 0) { res.status(400).json({ error: 'Cliente inválido.' }); return; }
       const [customer] = await db.select({ id: schema.users.id }).from(schema.users).where(and(eq(schema.users.id, id), eq(schema.users.role, 'CUSTOMER'))).limit(1);
       if (!customer) { res.status(404).json({ error: 'Cliente não encontrado.' }); return; }
-      const orders = await db.select({ id: schema.orders.id, orderNumber: schema.orders.orderNumber, status: schema.orders.status, total: schema.orders.total, createdAt: schema.orders.createdAt, paymentMethod: schema.orders.paymentMethod }).from(schema.orders).where(eq(schema.orders.userId, id)).orderBy(desc(schema.orders.id)).limit(limit);
+      const orders = await db.select({ id: schema.orders.id, orderNumber: schema.orders.orderNumber, status: schema.orders.status, total: schema.orders.total, createdAt: schema.orders.createdAt, paymentMethod: schema.orders.paymentMethod }).from(schema.orders).where(and(eq(schema.orders.userId, id), notPaymentExpiredOrder())).orderBy(desc(schema.orders.id)).limit(limit);
       const orderIds = orders.map((order) => order.id);
       const items = orderIds.length ? await db.select({ orderId: schema.orderItems.orderId, productName: schema.orderItems.productName, quantity: schema.orderItems.quantity, subtotal: schema.orderItems.subtotal }).from(schema.orderItems).where(inArray(schema.orderItems.orderId, orderIds)) : [];
       res.json({ orders: orders.map((order) => ({ ...order, items: items.filter((item) => item.orderId === order.id) })) });
@@ -574,6 +574,30 @@ export function registerAdminPhase2Routes(app: Express) {
     } catch (error) { logServerError('admin_customer_status_failed', error); res.status(500).json({ error: 'Não foi possível atualizar o cliente.' }); }
   });
 
+  app.put('/api/admin/customers/:id/free-delivery-period', requireAuth, requireAdmin, async (req: AuthRequest, res) => {
+    try {
+      const id = Number(req.params.id);
+      const days = Number(req.body?.days);
+      if (!Number.isSafeInteger(id) || id <= 0 || !Number.isSafeInteger(days) || days < 0 || days > 3650) {
+        res.status(400).json({ error: 'Informe uma quantidade de dias válida entre 0 e 3650.' });
+        return;
+      }
+      const [customer] = await db.select({ id: schema.users.id, name: schema.users.name })
+        .from(schema.users)
+        .where(and(eq(schema.users.id, id), eq(schema.users.role, 'CUSTOMER')));
+      if (!customer) { res.status(404).json({ error: 'Cliente não encontrado.' }); return; }
+      const until = days === 0 ? null : new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+      const [updated] = await db.update(schema.users)
+        .set({ freeDeliveryUntil: until, updatedAt: new Date() })
+        .where(eq(schema.users.id, id))
+        .returning({ id: schema.users.id, freeDeliveryUntil: schema.users.freeDeliveryUntil });
+      logServerEvent('admin.customer.free_delivery_period.updated', 'info', { customerId: id, days, result: 'updated' });
+      res.json({ customerId: id, customerName: customer.name, days, freeDeliveryUntil: updated?.freeDeliveryUntil || null, message: days > 0 ? `Frete grátis liberado para ${customer.name} por ${days} dia(s).` : `Frete grátis por período removido de ${customer.name}.` });
+    } catch (error) {
+      logServerError('admin.customer.free_delivery_period.failed', error);
+      res.status(500).json({ error: 'Não foi possível atualizar o período de frete grátis.' });
+    }
+  });
   // O reset assistido permanece desativado até existir entrega verificável do código ao cliente.
   // Nunca retorna código, hash, token ou segredo ao painel administrativo.
   app.post('/api/admin/customers/:id/reset-code', requireAuth, requireAdmin, (_req, res) => {

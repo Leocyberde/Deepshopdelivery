@@ -78,6 +78,8 @@ export async function initializeDatabase() {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS cpf TEXT;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS free_delivery_tickets INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS manual_free_delivery_tickets INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS free_delivery_until TIMESTAMP;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS free_delivery_until TIMESTAMP;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions TEXT;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 1;
@@ -270,9 +272,25 @@ export async function initializeDatabase() {
       updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
       closed_at TIMESTAMP
     );
+    ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS product_id INTEGER REFERENCES products(id) ON DELETE SET NULL;
+    ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS product_name_snapshot TEXT;
+    ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS product_slug_snapshot TEXT;
+    ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS product_link_snapshot TEXT;
+    ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS initiated_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
+    ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS support_reason TEXT;
+    ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS post_delivery BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS closed_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
+    ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS closed_reason TEXT;
+    ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS customer_last_read_at TIMESTAMP;
+    ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS store_last_read_at TIMESTAMP;
+    ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS last_store_message_at TIMESTAMP;
     CREATE INDEX IF NOT EXISTS idx_support_tickets_user ON support_tickets(user_id);
     CREATE INDEX IF NOT EXISTS idx_support_tickets_status ON support_tickets(status);
     CREATE INDEX IF NOT EXISTS idx_support_tickets_updated_at ON support_tickets(updated_at);
+    CREATE INDEX IF NOT EXISTS idx_support_tickets_order ON support_tickets(order_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_support_ticket_post_delivery_active_reason
+      ON support_tickets(order_id, user_id, support_reason)
+      WHERE post_delivery = TRUE AND support_reason IS NOT NULL AND status <> 'CLOSED';
 
     CREATE TABLE IF NOT EXISTS support_messages (
       id SERIAL PRIMARY KEY,
@@ -287,6 +305,7 @@ export async function initializeDatabase() {
       id SERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
+      support_ticket_id INTEGER REFERENCES support_tickets(id) ON DELETE SET NULL,
       order_number TEXT NOT NULL,
       old_status TEXT,
       new_status TEXT NOT NULL,
@@ -296,6 +315,7 @@ export async function initializeDatabase() {
       popup_dismissed BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE notifications ADD COLUMN IF NOT EXISTS support_ticket_id INTEGER REFERENCES support_tickets(id) ON DELETE SET NULL;
 
     ALTER TABLE notifications ALTER COLUMN order_id DROP NOT NULL;
 
@@ -304,6 +324,7 @@ export async function initializeDatabase() {
       type TEXT NOT NULL DEFAULT 'NEW_CUSTOMER',
       customer_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
       order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
+      support_ticket_id INTEGER REFERENCES support_tickets(id) ON DELETE SET NULL,
       address_id INTEGER REFERENCES addresses(id) ON DELETE SET NULL,
       title TEXT NOT NULL,
       message TEXT NOT NULL,
@@ -313,6 +334,7 @@ export async function initializeDatabase() {
     );
     ALTER TABLE admin_notifications ALTER COLUMN customer_id DROP NOT NULL;
     ALTER TABLE admin_notifications ADD COLUMN IF NOT EXISTS order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE;
+    ALTER TABLE admin_notifications ADD COLUMN IF NOT EXISTS support_ticket_id INTEGER REFERENCES support_tickets(id) ON DELETE SET NULL;
 
     CREATE TABLE IF NOT EXISTS order_items (
       id SERIAL PRIMARY KEY,

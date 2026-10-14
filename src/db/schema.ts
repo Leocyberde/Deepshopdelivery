@@ -23,6 +23,7 @@ export const users = pgTable('users', {
   sessionVersion: integer('session_version').notNull().default(1),
   freeDeliveryTickets: integer('free_delivery_tickets').notNull().default(0),
   manualFreeDeliveryTickets: integer('manual_free_delivery_tickets').notNull().default(0),
+  freeDeliveryUntil: timestamp('free_delivery_until'),
   mustChangePassword: boolean('must_change_password').notNull().default(false),
   resetCodeHash: text('reset_code_hash'),
   resetCodeExpiresAt: timestamp('reset_code_expires_at'),
@@ -221,16 +222,29 @@ export const supportTickets = pgTable(
     id: serial('id').primaryKey(),
     userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
     orderId: integer('order_id').references(() => orders.id, { onDelete: 'set null' }),
+    productId: integer('product_id').references(() => products.id, { onDelete: 'set null' }),
+    productNameSnapshot: text('product_name_snapshot'),
+    productSlugSnapshot: text('product_slug_snapshot'),
+    productLinkSnapshot: text('product_link_snapshot'),
+    initiatedByUserId: integer('initiated_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    supportReason: text('support_reason'),
+    postDelivery: boolean('post_delivery').notNull().default(false),
     subject: text('subject').notNull(),
     status: text('status').notNull().default('OPEN'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
     closedAt: timestamp('closed_at'),
+    closedByUserId: integer('closed_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    closedReason: text('closed_reason'),
+    customerLastReadAt: timestamp('customer_last_read_at'),
+    storeLastReadAt: timestamp('store_last_read_at'),
+    lastStoreMessageAt: timestamp('last_store_message_at'),
   },
   (table) => [
     index('idx_support_tickets_user').on(table.userId),
     index('idx_support_tickets_status').on(table.status),
     index('idx_support_tickets_updated_at').on(table.updatedAt),
+    index('idx_support_tickets_order').on(table.orderId),
   ]
 );
 
@@ -252,6 +266,7 @@ export const notifications = pgTable('notifications', {
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' }),
   orderId: integer('order_id').references(() => orders.id, { onDelete: 'cascade' }),
+  supportTicketId: integer('support_ticket_id').references(() => supportTickets.id, { onDelete: 'set null' }),
   orderNumber: text('order_number').notNull(),
   oldStatus: text('old_status'),
   newStatus: text('new_status').notNull(),
@@ -267,6 +282,7 @@ export const adminNotifications = pgTable('admin_notifications', {
   type: text('type').notNull().default('NEW_CUSTOMER'), // 'NEW_CUSTOMER' | 'NEW_ORDER'
   customerId: integer('customer_id').references(() => users.id, { onDelete: 'cascade' }),
   orderId: integer('order_id').references(() => orders.id, { onDelete: 'cascade' }),
+  supportTicketId: integer('support_ticket_id').references(() => supportTickets.id, { onDelete: 'set null' }),
   addressId: integer('address_id').references(() => addresses.id, { onDelete: 'set null' }),
   title: text('title').notNull(),
   message: text('message').notNull(),

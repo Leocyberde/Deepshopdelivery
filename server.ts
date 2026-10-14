@@ -19,6 +19,7 @@ import { registerAdminPhase2Routes } from './src/server/routes/adminPhase2Routes
 import { registerAdminPhase3Routes } from './src/server/routes/adminPhase3Routes.ts';
 import { startOrderExpirationWatcher } from './src/server/services/orderExpirationService.ts';
 import { startOrderNotificationWatcher } from './src/server/services/orderNotificationService.ts';
+import { startSupportLifecycleWatcher } from './src/server/services/supportLifecycleService.ts';
 import { logServerError, logServerEvent, runWithRequestLogContext } from './src/server/logger.ts';
 import { parseSiteUrl } from './src/config/siteUrl.ts';
 import { createApiCorsMiddleware } from './src/server/middleware/cors.ts';
@@ -28,7 +29,6 @@ import { isAdminRole } from './src/server/governance.ts';
 import * as schema from './src/db/schema.ts';
 
 export type { AuthUserPayload, AuthRequest } from './src/server/middleware/auth.ts';
-export type { CustomerLoyaltySummary } from './src/server/services/loyaltyService.ts';
 
 const IS_PROD = process.env.NODE_ENV === 'production';
 const PORT = Number(process.env.PORT) || 3000;
@@ -54,6 +54,7 @@ async function startServer() {
   }
   startOrderExpirationWatcher();
   startOrderNotificationWatcher();
+  startSupportLifecycleWatcher();
   startDailyBackup();
 
   const app = express();
@@ -270,7 +271,7 @@ async function startServer() {
     }
   });
 
-  server.listen(PORT, '0.0.0.0', () => {
+  server.listen(PORT, '127.0.0.1', () => {
     logServerEvent('http.server.listening', 'info', { port: PORT });
     logServerEvent('application.ready', 'info', { port: PORT });
   });

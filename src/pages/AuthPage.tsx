@@ -22,11 +22,23 @@ import {
 
 type AuthMode = 'LOGIN' | 'REGISTER' | 'RECOVER';
 
+function safeInternalRedirect(value: string | null): string {
+  const path = value?.trim() || '';
+  if (!path.startsWith('/') || path.startsWith('//') || path.includes('\\')) return '';
+  try {
+    const parsed = new URL(path, window.location.origin);
+    if (parsed.origin !== window.location.origin || !parsed.pathname.startsWith('/')) return '';
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return '';
+  }
+}
+
 export const AuthPage: React.FC = () => {
   const { apiFetch, loginWithToken, toast } = useApp();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const redirectPath = searchParams.get('redirect') || '';
+  const redirectPath = safeInternalRedirect(searchParams.get('redirect'));
 
   const [mode, setMode] = useState<AuthMode>('LOGIN');
   const [submitting, setSubmitting] = useState(false);
@@ -219,10 +231,7 @@ export const AuthPage: React.FC = () => {
         }),
       });
       loginWithToken(res.token, res.user);
-      toast(
-        '🎉 Conta criada! Você ganhou Entrega Grátis para o seu 1º Pedido! (2º e 3º pagos e no 4º ganha Entrega Grátis novamente).',
-        'success'
-      );
+      toast('Conta criada com sucesso!', 'success');
       navigate(redirectPath || '/minha-conta');
     } catch (err: any) {
       setErrorMsg(err.message);
@@ -384,16 +393,6 @@ export const AuthPage: React.FC = () => {
 
         {mode === 'REGISTER' && (
           <form onSubmit={handleRegister} className="space-y-4">
-            <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-950 space-y-1.5">
-              <div className="flex items-center gap-1.5 font-bold text-emerald-900">
-                <Truck className="w-4 h-4 text-emerald-700 shrink-0" />
-                <span>Você ganha Entrega Grátis para o 1º Pedido ao criar sua conta!</span>
-              </div>
-              <p className="text-[11px] text-emerald-800 leading-relaxed">
-                Seu <strong>1º pedido tem Entrega Grátis</strong> garantida! O <strong>2º e o 3º pedidos</strong> têm frete normal e, no <strong>4º pedido</strong>, você entra na promoção e ganha mais <strong>1 Ticket de Entrega Grátis acumulativo</strong>!
-              </p>
-            </div>
-
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <label className="block text-xs font-semibold text-zinc-800">Nome completo</label>

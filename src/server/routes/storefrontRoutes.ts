@@ -1,16 +1,15 @@
-import { isAdminRole } from '../governance.ts';
 import { logServerError } from '../logger.ts';
 import { Express } from 'express';
 import { eq, desc, and, sql } from 'drizzle-orm';
 import { db } from '../../db/index.ts';
 import * as schema from '../../db/schema.ts';
 import { getOptionalAuthUser } from '../middleware/auth.ts';
+import { isAdminRole } from '../governance.ts';
 import {
   getSettingsMap,
   isPromoCurrentlyActive,
   calculateDiscountPercent,
 } from '../services/storeHelpers.ts';
-import { evaluateCustomerLoyaltyTickets } from '../services/loyaltyService.ts';
 import { expireOverdueUnpaidOrders } from '../services/orderExpirationService.ts';
 import { getStoreState } from '../services/storeStatusService.ts';
 
@@ -19,16 +18,15 @@ export function registerStorefrontRoutes(app: Express) {
     try {
       await expireOverdueUnpaidOrders();
       const optUser = await getOptionalAuthUser(req);
-      const loyalty =
-        optUser && optUser.role === 'CUSTOMER'
-          ? await evaluateCustomerLoyaltyTickets(optUser.id)
-          : null;
-      const eligibleForFirstOrderFreeDelivery =
-        isAdminRole(optUser?.role)
-          ? false
-          : loyalty
-          ? loyalty.isFirstOrderEligible
-          : true;
+      const [customerPromotion] = optUser?.role === 'CUSTOMER'
+        ? await db.select({ freeDeliveryUntil: schema.users.freeDeliveryUntil })
+            .from(schema.users)
+            .where(eq(schema.users.id, optUser.id))
+            .limit(1)
+        : [];
+      const manualFreeDeliveryActive = Boolean(
+        customerPromotion?.freeDeliveryUntil && customerPromotion.freeDeliveryUntil > new Date()
+      );
 
       const allStores = await db.select().from(schema.stores);
       const store = allStores[0] || null;
@@ -95,13 +93,12 @@ export function registerStorefrontRoutes(app: Express) {
         store,
         categories: activeCategories,
         products: visibleProducts,
-        eligibleForFirstOrderFreeDelivery,
-        loyalty,
+        manualFreeDeliveryActive,
         settings: {
           whatsappNumber: settingsMap.whatsapp_number || '',
           pixKey: settingsMap.pix_key || '',
           pixInstructions: settingsMap.pix_instructions || '',
-          paymentDeadlineHours: Number(settingsMap.payment_deadline_hours || 24),
+          paymentDeadlineHours: Number(settingsMap.payment_deadline_hours || 0.5),
           store: storeState,
         },
       });
@@ -196,17 +193,6 @@ export function registerStorefrontRoutes(app: Express) {
         });
       }
 
-      const optUser = await getOptionalAuthUser(req);
-      const loyalty =
-        optUser && optUser.role === 'CUSTOMER'
-          ? await evaluateCustomerLoyaltyTickets(optUser.id)
-          : null;
-      const eligibleForFirstOrderFreeDelivery =
-        isAdminRole(optUser?.role)
-          ? false
-          : loyalty
-          ? loyalty.isFirstOrderEligible
-          : true;
 
       // Item 7: REMOVER o "+1" automático de GET /api/products/:id.
       // A visualização passa a ser enviada pelo frontend uma única vez por abertura.
@@ -217,8 +203,6 @@ export function registerStorefrontRoutes(app: Express) {
         effectivePrice,
         discountPercent,
         kitComponents,
-        eligibleForFirstOrderFreeDelivery,
-        loyalty,
         categoryName: category ? category.name : 'Geral',
         imageUrl: primaryImg ? primaryImg.imageUrl : null,
         images,

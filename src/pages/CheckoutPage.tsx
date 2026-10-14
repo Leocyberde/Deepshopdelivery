@@ -8,7 +8,6 @@ import {
   Store,
   XCircle,
   Truck,
-  Ticket,
 } from 'lucide-react';
 import {
   useApp,
@@ -20,7 +19,6 @@ import {
   ProductImage,
   formatCepMask,
   lookupCepAddress,
-  CustomerLoyaltySummary,
 } from '../context/AppContext.tsx';
 import {
   DELIVERY_MINUTE_OPTIONS,
@@ -62,12 +60,7 @@ interface CreatedOrderResponse {
   subtotal: string;
   deliveryFee: string | null;
   deliveryFeeSource?: string;
-  isFirstOrderFreeDelivery?: boolean;
-  usedFreeDeliveryTicket?: boolean;
   paymentMethod?: string;
-  earnedNewTicket?: boolean;
-  freeDeliveryTickets?: number;
-  loyalty?: CustomerLoyaltySummary;
   deliveryDistanceKm: string | null;
   total: string;
   status: string;
@@ -89,11 +82,6 @@ export const CheckoutPage: React.FC = () => {
     clearCart,
     apiFetch,
     toast,
-    freeDeliveryTickets,
-    loyalty,
-    setLoyalty,
-    eligibleForFirstOrderFreeDelivery,
-    setEligibleForFirstOrderFreeDelivery,
   } = useApp();
   const navigate = useNavigate();
   const isAdmin = isAdminRole(user?.role);
@@ -103,7 +91,6 @@ export const CheckoutPage: React.FC = () => {
   const [loadingAddresses, setLoadingAddresses] = useState(true);
   const [showNewAddressForm, setShowNewAddressForm] = useState(false);
   const [notes, setNotes] = useState('');
-  const [useFreeDeliveryTicket, setUseFreeDeliveryTicket] = useState<boolean>(true);
   const [submittingOrder, setSubmittingOrder] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
   const [createdOrder, setCreatedOrder] = useState<CreatedOrderResponse | null>(null);
@@ -117,6 +104,7 @@ export const CheckoutPage: React.FC = () => {
   const [storeTimezone, setStoreTimezone] = useState('America/Sao_Paulo');
   const [storeClosed, setStoreClosed] = useState(false);
   const [storeClosedMessage, setStoreClosedMessage] = useState('A loja está fechada no momento.');
+  const [manualFreeDeliveryActive, setManualFreeDeliveryActive] = useState(false);
   const orderIdempotencyKeyRef = useRef<string | null>(null);
   const paymentIdempotencyKeyRef = useRef<string | null>(null);
 
@@ -182,17 +170,9 @@ export const CheckoutPage: React.FC = () => {
           setStoreHours(storefront.settings.store?.hours || {});
           setStoreTimezone(storefront.settings.store?.timezone || 'America/Sao_Paulo');
         }
-        if (isAdminRole(user.role)) {
-          setLoyalty(null);
-          setEligibleForFirstOrderFreeDelivery(false);
-        } else {
-          if (storefront?.loyalty) {
-            setLoyalty(storefront.loyalty);
-          }
-          if (typeof storefront?.eligibleForFirstOrderFreeDelivery === 'boolean') {
-            setEligibleForFirstOrderFreeDelivery(storefront.eligibleForFirstOrderFreeDelivery);
-          }
-        }
+        setManualFreeDeliveryActive(
+          !isAdminRole(user.role) && Boolean(storefront?.manualFreeDeliveryActive)
+        );
       })
       .catch((err) => {
         console.error(err);
@@ -200,9 +180,9 @@ export const CheckoutPage: React.FC = () => {
       .finally(() => {
         setLoadingAddresses(false);
       });
-  }, [user, apiFetch, setLoyalty, setEligibleForFirstOrderFreeDelivery]);
+  }, [user, apiFetch]);
 
-  const handleStartSandboxPayment = async () => {
+  const handleStartPayment = async () => {
     if (!createdOrder || createdOrder.status === 'CANCELLED') return;
     setStartingPayment(true);
     try {
@@ -215,11 +195,11 @@ export const CheckoutPage: React.FC = () => {
       });
       const checkout = new URL(result.checkoutUrl);
       if (checkout.protocol !== 'https:' || !/(^|\.)mercadopago\.com(\.br)?$/i.test(checkout.hostname)) {
-        throw new Error('O servidor não retornou um endereço seguro de checkout sandbox.');
+        throw new Error('O servidor não retornou um endereço seguro de checkout do Mercado Pago.');
       }
       window.location.assign(checkout.toString());
     } catch (err: any) {
-      toast(err.message || 'Não foi possível iniciar o pagamento sandbox.', 'error');
+      toast(err.message || 'Não foi possível iniciar o pagamento pelo Mercado Pago.', 'error');
       setStartingPayment(false);
     }
   };
@@ -254,13 +234,7 @@ export const CheckoutPage: React.FC = () => {
   }
 
   if (createdOrder) {
-    const isFreeDeliveryOrder = Boolean(
-      createdOrder.usedFreeDeliveryTicket ||
-        createdOrder.isFirstOrderFreeDelivery ||
-        createdOrder.deliveryFeeSource === 'FREE_DELIVERY_TICKET' ||
-        createdOrder.deliveryFeeSource === 'MANUAL_FREE_DELIVERY' ||
-        createdOrder.deliveryFeeSource === 'FIRST_ORDER_FREE'
-    );
+    const isFreeDeliveryOrder = createdOrder.deliveryFee !== null && Number(createdOrder.deliveryFee) === 0;
     const hasConfirmedFreight =
       isFreeDeliveryOrder ||
       (createdOrder.deliveryFee !== null &&
@@ -287,10 +261,6 @@ export const CheckoutPage: React.FC = () => {
               }
             : null
         );
-        if (res.loyalty) {
-          setLoyalty(res.loyalty);
-          setEligibleForFirstOrderFreeDelivery(Boolean(res.loyalty.isFirstOrderEligible));
-        }
         toast(
           'Pedido cancelado com sucesso! A reserva de estoque foi devolvida à vitrine.',
           'info'
@@ -334,44 +304,27 @@ export const CheckoutPage: React.FC = () => {
             <p className="text-sm text-zinc-600">
               {createdOrder.status === 'CANCELLED'
                 ? 'Este pedido foi cancelado antes do pagamento e os itens reservados foram devolvidos ao estoque da loja.'
-                : 'Seu pedido já está salvo e os itens foram reservados. Para esta fase, o checkout do Mercado Pago está em ambiente sandbox: use somente contas e meios de pagamento de teste; nenhuma credencial ou cartão real deve ser informado.'}
+                : 'Seu pedido já está salvo e os itens foram reservados. Finalize o pagamento no ambiente seguro do Mercado Pago.'}
             </p>
 
-            {createdOrder.earnedNewTicket && createdOrder.status !== 'CANCELLED' && (
-              <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-950 flex items-start gap-2.5 text-xs">
-                <Ticket className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
-                <div>
-                  <div className="font-bold">
-                    Parabéns! Você completou 3 pedidos e ganhou +1 Ticket de Entrega Grátis!
-                  </div>
-                  <div className="text-emerald-800 mt-0.5">
-                    Seu ticket é acumulativo e já está disponível para usar no seu 4º pedido (ou
-                    quando preferir). Saldo atual:{' '}
-                    <strong>{createdOrder.freeDeliveryTickets ?? freeDeliveryTickets} ticket(s)</strong>.
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
 
           {createdOrder.paymentMethod === 'MERCADOPAGO' && createdOrder.status !== 'CANCELLED' && (
             <section className="rounded-xl border border-blue-300 bg-blue-50 p-4 sm:p-5 space-y-3">
               <div>
-                <h2 className="text-sm font-bold text-blue-950">Pagamento online de teste</h2>
+                <h2 className="text-sm font-bold text-blue-950">Pagamento online</h2>
                 <p className="mt-1 text-xs leading-relaxed text-blue-900">
-                  Você será direcionado ao checkout hospedado do Mercado Pago em <strong>sandbox</strong>.
-                  Escolha no próprio Mercado Pago entre as opções de pagamento disponíveis. Use somente credenciais
-                  e meios de pagamento de teste; não use cartão ou conta real.
+                  Você será direcionado ao checkout hospedado do Mercado Pago para concluir o pagamento.
                 </p>
               </div>
               {hasConfirmedFreight ? (
                 <button
                   type="button"
-                  onClick={handleStartSandboxPayment}
+                  onClick={handleStartPayment}
                   disabled={startingPayment}
                   className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-blue-700 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-800 disabled:cursor-wait disabled:opacity-60"
                 >
-                  <span>{startingPayment ? 'Preparando checkout sandbox…' : 'Pagar no Mercado Pago (sandbox)'}</span>
+                  <span>{startingPayment ? 'Preparando checkout…' : 'Pagar com Mercado Pago'}</span>
                   {!startingPayment && <ArrowRight className="h-4 w-4" />}
                 </button>
               ) : null}
@@ -413,13 +366,11 @@ export const CheckoutPage: React.FC = () => {
                 <div className="flex justify-between items-center text-emerald-800">
                   <span>Frete</span>
                   <span className="font-semibold inline-flex items-center gap-1.5">
-                    <Ticket className="w-3.5 h-3.5" />
+                    <Truck className="w-3.5 h-3.5" />
                     <span>
-                      {createdOrder.deliveryFeeSource === 'FIRST_ORDER_FREE'
-                        ? 'Grátis (Entrega Grátis de 1º Pedido)'
-                        : createdOrder.deliveryFeeSource === 'MANUAL_FREE_DELIVERY'
-                        ? 'Grátis (Entrega Grátis Cortesia da Loja)'
-                        : 'Grátis (Ticket de Entrega Grátis aplicado)'}
+                      {(createdOrder.deliveryFeeSource === 'MANUAL_FREE_DELIVERY' || createdOrder.deliveryFeeSource === 'MANUAL_FREE_DELIVERY_PERIOD')
+                        ? 'Grátis (cortesia da loja)'
+                        : 'Frete grátis'}
                     </span>
                   </span>
                 </div>
@@ -464,6 +415,12 @@ export const CheckoutPage: React.FC = () => {
               >
                 Acompanhar em Meus Pedidos
               </Link>
+              <Link
+                to={`/minha-conta/central-ajuda?orderId=${createdOrder.id}&create=1`}
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors"
+              >
+                Falar com a loja sobre este pedido
+              </Link>
               {canCancelCreated && (
                 <button
                   type="button"
@@ -506,15 +463,11 @@ export const CheckoutPage: React.FC = () => {
   }
 
   const selectedAddress = addresses.find((a) => a.id === selectedAddressId) || null;
-  const applyingFirstOrderFree = !isAdmin && eligibleForFirstOrderFreeDelivery;
-  const applyingFreeTicket =
-    !isAdmin && !applyingFirstOrderFree && freeDeliveryTickets > 0 && useFreeDeliveryTicket;
-  const applyingAnyFreeDelivery = applyingFirstOrderFree || applyingFreeTicket;
-
+  const applyingManualFreeDelivery = !isAdmin && manualFreeDeliveryActive;
   const isConfirmedFreight =
-    applyingAnyFreeDelivery ||
+    applyingManualFreeDelivery ||
     (selectedAddress?.freight.status === 'CONFIRMED' && selectedAddress.freight.fee !== null);
-  const freightFee = applyingAnyFreeDelivery
+  const freightFee = applyingManualFreeDelivery
     ? 0
     : isConfirmedFreight && selectedAddress?.freight.fee !== null
     ? selectedAddress!.freight.fee!
@@ -615,7 +568,6 @@ export const CheckoutPage: React.FC = () => {
           deliveryMinutes: deliveryMode === 'FAST' ? deliveryMinutes : null,
           scheduledDate: deliveryMode === 'SCHEDULED' ? scheduledDate : null,
           scheduledTime: deliveryMode === 'SCHEDULED' ? scheduledTime : null,
-          useFreeDeliveryTicket: freeDeliveryTickets > 0 ? useFreeDeliveryTicket : false,
           items: cart.map((i) => ({
             productId: i.productId,
             productName: i.name,
@@ -625,23 +577,12 @@ export const CheckoutPage: React.FC = () => {
       });
       clearCart();
       setCreatedOrder(res);
-      if (res.loyalty) {
-        setLoyalty(res.loyalty);
-        setEligibleForFirstOrderFreeDelivery(Boolean(res.loyalty.isFirstOrderEligible));
-      }
-      if (res.deliveryFeeSource === 'FIRST_ORDER_FREE') {
-        toast(
-          `Pedido ${res.orderNumber} criado com Entrega Grátis de 1º Pedido! (2º e 3º pagos e no 4º ganha Entrega Grátis novamente)`,
-          'success'
-        );
-      } else if (res.earnedNewTicket) {
-        toast(
-          `Pedido ${res.orderNumber} criado! Você completou 3 pedidos e ganhou +1 Ticket de Entrega Grátis para o 4º pedido!`,
-          'success'
-        );
-      } else {
-        toast(`Pedido ${res.orderNumber} criado com sucesso!`, 'success');
-      }
+      toast(
+        res.deliveryFeeSource === 'MANUAL_FREE_DELIVERY_PERIOD'
+          ? `Pedido ${res.orderNumber} criado com frete grátis concedido pela loja.`
+          : `Pedido ${res.orderNumber} criado com sucesso!`,
+        'success'
+      );
     } catch (err: any) {
       setOrderError(err.message);
     } finally {
@@ -1076,83 +1017,18 @@ export const CheckoutPage: React.FC = () => {
               </div>
             )}
 
-            {!isAdmin && (
-              <div className="p-3.5 rounded-xl bg-emerald-50/90 border border-emerald-200 text-xs text-emerald-950 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-bold inline-flex items-center gap-1.5 text-emerald-900">
-                    <Ticket className="w-4 h-4 text-emerald-700 shrink-0" />
-                    <span>
-                      {applyingFirstOrderFree
-                        ? '🎉 Entrega Grátis de 1º Pedido'
-                        : 'Promoção e Fidelidade de Entrega'}
-                    </span>
-                  </span>
-                  {applyingFirstOrderFree ? (
-                    <span className="px-2 py-0.5 rounded-full bg-emerald-700 text-white text-[11px] font-bold">
-                      1º Pedido Grátis Ativo
-                    </span>
-                  ) : (
-                    <span className="px-2 py-0.5 rounded-full bg-emerald-700 text-white text-[11px] font-bold tabular-nums">
-                      {freeDeliveryTickets} ticket{freeDeliveryTickets === 1 ? '' : 's'} disponível{freeDeliveryTickets === 1 ? '' : 'is'}
-                    </span>
-                  )}
-                </div>
-
-                {applyingFirstOrderFree ? (
-                  <div className="space-y-1.5 pt-1 border-t border-emerald-200/80 text-[11px] text-emerald-900">
-                    <p className="leading-relaxed">
-                      <strong>Você tem direito a Entrega Grátis neste 1º pedido!</strong> O valor do frete já está zerado automaticamente.
-                    </p>
-                    <p className="text-emerald-800 leading-relaxed">
-                      Lembrando: o <strong>2º e o 3º pedidos serão pagos</strong> e, no <strong>4º pedido</strong>, você entra na promoção da Entrega Grátis novamente!
-                    </p>
-                    <div className="flex items-center justify-between font-bold text-emerald-800 pt-1">
-                      <span>Frete do 1º Pedido:</span>
-                      <span>R$ 0,00 (Grátis)</span>
-                    </div>
-                  </div>
-                ) : freeDeliveryTickets > 0 ? (
-                  <div className="space-y-2 pt-1 border-t border-emerald-200/80">
-                    <label className="flex items-start gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={useFreeDeliveryTicket}
-                        onChange={(e) => setUseFreeDeliveryTicket(e.target.checked)}
-                        className="mt-0.5 rounded border-emerald-400 text-emerald-700 focus:ring-emerald-700"
-                      />
-                      <span className="leading-snug">
-                        <strong>Usar 1 Ticket de Entrega Grátis neste pedido</strong> (Frete R$ 0,00).
-                        Seus tickets são acumulativos — desmarque se preferir guardar para usar depois.
-                      </span>
-                    </label>
-                    {applyingFreeTicket && (
-                      <div className="flex items-center justify-between font-bold text-emerald-800 pt-1">
-                        <span>Frete com Ticket aplicado:</span>
-                        <span>R$ 0,00 (Grátis)</span>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="text-[11px] text-emerald-800 space-y-1 pt-1 border-t border-emerald-200/80">
-                    <div>
-                      O <strong>1º pedido teve Entrega Grátis</strong>, o <strong>2º e 3º pedidos são pagos</strong> e no <strong>4º pedido você ganha Entrega Grátis</strong> novamente!
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span>
-                        Ciclo atual: <strong>{loyalty?.ordersInCurrentCycle || 0}/3 pedidos</strong>
-                      </span>
-                      <span>
-                        {(loyalty?.ordersRemainingForNextTicket ?? 3) === 1
-                          ? 'Com este pedido você libera Entrega Grátis no 4º pedido!'
-                          : `Faltam ${loyalty?.ordersRemainingForNextTicket ?? 3} pedidos para ganhar +1 Ticket`}
-                      </span>
-                    </div>
-                  </div>
-                )}
+            {applyingManualFreeDelivery && (
+              <div className="p-3.5 rounded-xl bg-sky-50 border border-sky-200 text-xs text-sky-950">
+                <div className="font-bold">Frete grátis liberado pela loja</div>
+                <p className="mt-1">A cortesia temporária configurada no painel administrativo já foi aplicada a este pedido.</p>
               </div>
             )}
-
-            {applyingAnyFreeDelivery ? null : selectedAddress ? (
+            {applyingManualFreeDelivery ? (
+              <div className="flex justify-between text-emerald-800">
+                <span>Frete (cortesia da loja)</span>
+                <span className="font-semibold tabular-nums">{formatCurrency(0)}</span>
+              </div>
+            ) : selectedAddress ? (
               isConfirmedFreight ? (
                 <div className="flex justify-between text-zinc-600">
                   <span>Frete ({selectedAddress.label})</span>

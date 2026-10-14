@@ -621,7 +621,7 @@ export const AdminDashboardSection: React.FC<AdminDashboardSectionProps> = ({
                   </span>
                 </div>
                 <div className="text-[11px] text-zinc-500 pt-1 border-t border-amber-200/60">
-                  Inclui pedidos da primeira compra (boas-vindas) e cupons fidelidade (3 pedidos completados = 1 frete grátis).
+                  Inclui apenas pedidos com cortesia de frete registrada pela loja.
                 </div>
               </div>
             </div>

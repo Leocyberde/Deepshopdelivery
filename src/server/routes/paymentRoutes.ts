@@ -14,19 +14,34 @@ const PROVIDER_API = 'https://api.mercadopago.com';
 const PAYMENT_ORDER_STATUSES = new Set(['NEW', 'AWAITING_PAYMENT']);
 const TERMINAL_ORDER_STATUSES = new Set(['CANCELLED', 'EXPIRED']);
 
-function providerToken(): string | null {
-  const token = String(process.env.MERCADOPAGO_TEST_ACCESS_TOKEN || '').trim();
+type ProviderMode = 'sandbox' | 'production';
+
+function providerMode(): ProviderMode | null {
   const mode = String(process.env.MERCADOPAGO_MODE || '').trim().toLowerCase();
-  return token && mode === 'sandbox' ? token : null;
+  return mode === 'sandbox' || mode === 'production' ? mode : null;
 }
 
-/**
- * Em sandbox a API de Orders só aceita compradores de teste (e-mail @testuser.com);
- * qualquer outro e-mail devolve HTTP 400 `invalid_email_for_sandbox`.
- */
-function sandboxPayerEmail(customerEmail: string): string | null {
+function providerToken(): string | null {
+  const mode = providerMode();
+  const variable = mode === 'production' ? 'MERCADOPAGO_ACCESS_TOKEN' : 'MERCADOPAGO_TEST_ACCESS_TOKEN';
+  const token = mode ? String(process.env[variable] || '').trim() : '';
+  return token || null;
+}
+
+function providerWebhookSecret(): string {
+  const mode = providerMode();
+  if (mode === 'production') return String(process.env.MERCADOPAGO_PRODUCTION_WEBHOOK_SECRET || '').trim();
+  if (mode === 'sandbox') return String(process.env.MERCADOPAGO_SANDBOX_WEBHOOK_SECRET || process.env.MERCADOPAGO_WEBHOOK_SECRET || '').trim();
+  return '';
+}
+
+function providerPayerEmail(customerEmail: string): string | null {
+  const mode = providerMode();
+  const email = String(customerEmail || '').trim();
+  if (mode === 'production') return email || null;
+  if (mode !== 'sandbox') return null;
   const isTestUser = (value: string) => /^[^\s@]+@testuser\.com$/i.test(value);
-  if (isTestUser(customerEmail)) return customerEmail;
+  if (isTestUser(email)) return email;
   const configured = String(process.env.MERCADOPAGO_SANDBOX_PAYER_EMAIL || '').trim();
   return isTestUser(configured) ? configured : null;
 }
@@ -72,7 +87,7 @@ function callbackUrls(orderId: number): { success: string; failure: string; pend
   }
 }
 
-function isSandboxCheckoutUrl(value: unknown): value is string {
+function isMercadoPagoCheckoutUrl(value: unknown): value is string {
   if (typeof value !== 'string' || value.length > 2048) return false;
   try {
     const url = new URL(value);
@@ -131,7 +146,7 @@ async function queryProviderOrder(token: string, providerOrderId: string) {
 }
 
 function webhookSignatureIsValid(req: { headers: Record<string, string | string[] | undefined> }, dataId: string): boolean {
-  const secret = String(process.env.MERCADOPAGO_WEBHOOK_SECRET || '').trim();
+  const secret = providerWebhookSecret();
   const signature = String(req.headers['x-signature'] || '');
   const requestId = String(req.headers['x-request-id'] || '').trim();
   if (!secret || !signature || !requestId || !dataId) return false;
@@ -287,9 +302,7 @@ export function registerPaymentRoutes(app: Express) {
         res.status(409).json({ error: 'O pedido não está aguardando pagamento.' });
         return;
       }
-      const paymentReleased = order.deliveryFee !== null && order.deliveryFee !== undefined ||
-        order.isFirstOrderFreeDelivery || order.usedFreeDeliveryTicket ||
-        ['FIRST_ORDER_FREE', 'FREE_DELIVERY_TICKET', 'MANUAL_FREE_DELIVERY'].includes(String(order.deliveryFeeSource || '').toUpperCase());
+      const paymentReleased = order.deliveryFee !== null && order.deliveryFee !== undefined;
       if (!paymentReleased) {
         res.status(409).json({ error: 'O valor do frete ainda não foi confirmado; o pagamento está bloqueado.' });
         return;
@@ -331,10 +344,10 @@ export function registerPaymentRoutes(app: Express) {
         return;
       }
 
-      const payerEmail = sandboxPayerEmail(customer.email);
+      const payerEmail = providerPayerEmail(customer.email);
       if (!payerEmail) {
-        logServerEvent('payment.creation.unavailable', 'warn', { status: 503, orderId: order.id, userId: req.user!.id, result: 'unavailable', reason: 'sandbox_payer_email_missing' });
-        res.status(503).json({ error: 'Sandbox: use uma conta compradora de teste (@testuser.com) ou configure MERCADOPAGO_SANDBOX_PAYER_EMAIL no servidor.' });
+        logServerEvent('payment.creation.unavailable', 'warn', { status: 503, orderId: order.id, userId: req.user!.id, result: 'unavailable', reason: 'test_payer_email_missing' });
+        res.status(503).json({ error: 'Não foi possível validar o e-mail do comprador para o modo de pagamento configurado.' });
         return;
       }
 
@@ -359,7 +372,7 @@ export function registerPaymentRoutes(app: Express) {
       const token = providerToken();
       if (!token) {
         logServerEvent('payment.creation.unavailable', 'warn', { status: 503, orderId: order.id, userId: req.user!.id, result: 'unavailable', reason: 'provider_not_configured' });
-        res.status(503).json({ error: 'Pagamento em sandbox indisponível: configure a credencial de teste no servidor.' });
+        res.status(503).json({ error: 'Pagamento do Mercado Pago indisponível: verifique o modo e a credencial configurados no servidor.' });
         return;
       }
       const returnUrls = callbackUrls(orderId);
@@ -390,20 +403,16 @@ export function registerPaymentRoutes(app: Express) {
         return;
       }
 
-      const orderItemsPayload = orderItems.map((item) => ({
-        external_code: String(item.productId),
-        title: String(item.productName).slice(0, 250),
-        quantity: Number(item.quantity),
-        unit_price: currencyValue(cents(item.unitPrice)).toFixed(2),
-      }));
-      if (shippingCents > 0) {
-        orderItemsPayload.push({
-          external_code: 'delivery',
-          title: 'Frete do pedido',
-          quantity: 1,
-          unit_price: currencyValue(shippingCents).toFixed(2),
-        });
-      }
+      // O Mercado Pago deve exibir uma única venda; o frete permanece incluído no total,
+      // mas não é enviado como um segundo produto.
+      const orderItemsPayload = [{
+        external_code: `order-${order.id}`,
+        title: orderItems.length === 1
+          ? String(orderItems[0].productName).slice(0, 250)
+          : `Pedido ${order.orderNumber}`,
+        quantity: 1,
+        unit_price: currencyValue(totalCents).toFixed(2),
+      }];
       const orderPayload = {
         type: 'online',
         processing_mode: 'manual',
@@ -454,7 +463,7 @@ export function registerPaymentRoutes(app: Express) {
         const createdOrder = await response.json() as Record<string, unknown>;
         const checkoutUrl = createdOrder.checkout_url;
         const providerOrderId = String(createdOrder.id || '').trim();
-        if (!providerOrderId || !isSandboxCheckoutUrl(checkoutUrl)) {
+        if (!providerOrderId || !isMercadoPagoCheckoutUrl(checkoutUrl)) {
           logServerEvent('payment.order.failed', 'warn', { status: 502, orderId: order.id, paymentId: inserted.id, result: 'invalid_provider_response' });
           await db.update(schema.payments).set({ status: 'CREATION_FAILED', providerStatus: 'INVALID_ORDER_RESPONSE', updatedAt: new Date() }).where(eq(schema.payments.id, inserted.id));
           res.status(502).json({ error: 'O provedor não retornou uma Order ou checkout seguro.' });
@@ -522,7 +531,7 @@ export function registerPaymentRoutes(app: Express) {
       const token = providerToken();
       if (!token) {
         logServerEvent('payment.confirmation.unavailable', 'warn', { status: 503, orderId: order.id, paymentId: payment.id, userId: req.user!.id, result: 'unavailable', reason: 'provider_not_configured' });
-        res.status(503).json({ error: 'A confirmação em sandbox está indisponível no servidor.' });
+        res.status(503).json({ error: 'A confirmação do pagamento está indisponível: verifique a configuração do Mercado Pago no servidor.' });
         return;
       }
 

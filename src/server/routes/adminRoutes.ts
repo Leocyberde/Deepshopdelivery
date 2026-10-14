@@ -47,13 +47,13 @@ import {
   getFreightRuleConfig,
   getPrimaryStoreId,
 } from '../services/storeHelpers.ts';
-import { evaluateCustomerLoyaltyTickets } from '../services/loyaltyService.ts';
 import { recordInventoryMovement } from '../services/inventoryService.ts';
-import { expireOverdueUnpaidOrders } from '../services/orderExpirationService.ts';
+import { expireOverdueUnpaidOrders, PAYMENT_TIMEOUT_REASON_PREFIX, LEGACY_PAYMENT_TIMEOUT_REASON_PREFIX } from '../services/orderExpirationService.ts';
 import { getStoreRange, DEFAULT_STORE_TIMEZONE, tzToUtc } from '../../utils/timezone.ts';
 import { getCallMeBotStatus, sendCallMeBotMessage } from '../services/callmebotService.ts';
 import { DEFAULT_STORE_HOURS, getStoreState, parseStoreHours, validateStoreHours } from '../services/storeStatusService.ts';
 
+const notPaymentExpiredOrder = () => sql`COALESCE(${schema.orders.cancellationReason}, '') NOT LIKE ${PAYMENT_TIMEOUT_REASON_PREFIX + '%'} AND COALESCE(${schema.orders.cancellationReason}, '') NOT LIKE ${LEGACY_PAYMENT_TIMEOUT_REASON_PREFIX + '%'}`;
 export function registerAdminRoutes(app: Express) {
   const allowedOrderTransitions: Record<string, string[]> = {
     NEW: ['AWAITING_PAYMENT', 'PAID', 'PREPARING', 'CANCELLED'],
@@ -214,11 +214,12 @@ export function registerAdminRoutes(app: Express) {
           db
             .select({ status: schema.orders.status, value: count() })
             .from(schema.orders)
+            .where(notPaymentExpiredOrder())
             .groupBy(schema.orders.status),
           db
             .select({ value: count() })
             .from(schema.orders)
-            .where(and(gte(schema.orders.createdAt, todayRange.start), lte(schema.orders.createdAt, todayRange.end))),
+            .where(and(notPaymentExpiredOrder(), gte(schema.orders.createdAt, todayRange.start), lte(schema.orders.createdAt, todayRange.end))),
           db
             .select({ value: count() })
             .from(schema.users)
@@ -247,11 +248,12 @@ export function registerAdminRoutes(app: Express) {
           db
             .select({ value: count() })
             .from(schema.orders)
-            .where(and(isNull(schema.orders.deliveryFee), ne(schema.orders.status, 'CANCELLED'))),
+            .where(and(notPaymentExpiredOrder(), isNull(schema.orders.deliveryFee), ne(schema.orders.status, 'CANCELLED'))),
           db
             .select({ id: schema.orders.id, orderNumber: schema.orders.orderNumber, customerName: schema.users.name })
             .from(schema.orders)
             .leftJoin(schema.users, eq(schema.orders.userId, schema.users.id))
+            .where(notPaymentExpiredOrder())
             .orderBy(desc(schema.orders.id))
             .limit(1),
           db
@@ -261,7 +263,7 @@ export function registerAdminRoutes(app: Express) {
             })
             .from(schema.orders)
             .leftJoin(schema.users, eq(schema.orders.userId, schema.users.id))
-            .where(and(ne(schema.orders.status, 'DELIVERED'), ne(schema.orders.status, 'CANCELLED')))
+            .where(and(notPaymentExpiredOrder(), ne(schema.orders.status, 'DELIVERED'), ne(schema.orders.status, 'CANCELLED')))
             .orderBy(desc(schema.orders.createdAt), desc(schema.orders.id))
             .limit(8),
         ]);
@@ -325,7 +327,7 @@ export function registerAdminRoutes(app: Express) {
       await expireOverdueUnpaidOrders();
       const allProducts = await db.select().from(schema.products);
       const allUsers = await db.select().from(schema.users);
-      const allOrders = await db.select().from(schema.orders).orderBy(desc(schema.orders.id));
+      const allOrders = await db.select().from(schema.orders).where(notPaymentExpiredOrder()).orderBy(desc(schema.orders.id));
       const allOrderItems = await db.select().from(schema.orderItems);
       const allImages = await db.select().from(schema.productImages);
       const allAddresses = await db
@@ -365,7 +367,7 @@ export function registerAdminRoutes(app: Express) {
           freightRevenue += fee;
           totalRevenue += (parseFloat(ord.total || '0') || (sub + fee));
 
-          if (fee === 0 || ord.isFirstOrderFreeDelivery || ord.usedFreeDeliveryTicket) {
+          if (fee === 0) {
             freeDeliveriesCount++;
           }
 
@@ -1739,7 +1741,6 @@ export function registerAdminRoutes(app: Express) {
               freight: resolveAddressFreight(a),
             }));
           const userOrders = allOrders.filter((o) => o.userId === u.id);
-          const loyalty = await evaluateCustomerLoyaltyTickets(u.id);
           return {
             id: u.id,
             name: u.name,
@@ -1751,8 +1752,6 @@ export function registerAdminRoutes(app: Express) {
             createdAt: u.createdAt,
             addresses: addrs,
             ordersCount: userOrders.length,
-            freeDeliveryTickets: loyalty.freeDeliveryTickets,
-            loyalty,
           };
         })
       );
@@ -1767,99 +1766,6 @@ export function registerAdminRoutes(app: Express) {
       res.status(500).json({ error: 'Erro ao carregar clientes e endereços.' });
     }
   });
-
-  const handleAdminCustomerFreeDelivery = async (req: AuthRequest, res: any) => {
-    try {
-      const customerId = Number(req.params.id);
-      const { action = 'GRANT', amount = 1, tickets } = req.body || {};
-
-      const [customer] = await db
-        .select()
-        .from(schema.users)
-        .where(eq(schema.users.id, customerId));
-
-      if (!customer || customer.role !== 'CUSTOMER') {
-        res.status(404).json({ error: 'Cliente não encontrado.' });
-        return;
-      }
-
-      const currentLoyalty = await evaluateCustomerLoyaltyTickets(customerId);
-      let nextManualTickets = currentLoyalty.manualFreeDeliveryTickets;
-      let grantedTicketsCount = 0;
-
-      if (action === 'SET') {
-        const rawTarget = tickets !== undefined && tickets !== null ? tickets : amount;
-        const targetAvailable = Math.max(0, Math.floor(Number(rawTarget) || 0));
-        const baseNet =
-          currentLoyalty.earnedAutoTickets - currentLoyalty.usedFreeDeliveryTickets;
-        nextManualTickets = targetAvailable - baseNet;
-        grantedTicketsCount = Math.max(0, targetAvailable - currentLoyalty.freeDeliveryTickets);
-      } else if (action === 'REMOVE') {
-        const toRemove = Math.max(1, Math.floor(Number(amount) || 1));
-        const targetAvailable = Math.max(0, currentLoyalty.freeDeliveryTickets - toRemove);
-        const baseNet =
-          currentLoyalty.earnedAutoTickets - currentLoyalty.usedFreeDeliveryTickets;
-        nextManualTickets = targetAvailable - baseNet;
-      } else {
-        const toAdd = Math.max(1, Math.floor(Number(amount) || 1));
-        nextManualTickets = currentLoyalty.manualFreeDeliveryTickets + toAdd;
-        grantedTicketsCount = toAdd;
-      }
-
-      await db
-        .update(schema.users)
-        .set({
-          manualFreeDeliveryTickets: nextManualTickets,
-          updatedAt: new Date(),
-        })
-        .where(eq(schema.users.id, customerId));
-
-      const updatedLoyalty = await evaluateCustomerLoyaltyTickets(customerId);
-
-      if (grantedTicketsCount > 0) {
-        await db.insert(schema.notifications).values({
-          userId: customerId,
-          orderId: null,
-          orderNumber: 'TICKET',
-          oldStatus: null,
-          newStatus: 'MANUAL_FREE_DELIVERY_GRANTED',
-          title: '🎁 Você ganhou Entrega Grátis!',
-          message: `A loja DeepShop Delivery liberou manualmente +${grantedTicketsCount} Ticket(s) de Entrega Grátis para sua conta! Seu saldo atual é de ${updatedLoyalty.freeDeliveryTickets} ticket(s) acumulativo(s) disponível(is) para uso.`,
-          isRead: false,
-          popupDismissed: false,
-        });
-      }
-
-      res.json({
-        customerId,
-        customerName: customer.name,
-        freeDeliveryTickets: updatedLoyalty.freeDeliveryTickets,
-        loyalty: updatedLoyalty,
-        message:
-          grantedTicketsCount > 0
-            ? `Entrega grátis liberada manualmente para ${customer.name}! Saldo disponível: ${updatedLoyalty.freeDeliveryTickets} ticket(s).`
-            : `Saldo de tickets de entrega grátis de ${customer.name} atualizado para ${updatedLoyalty.freeDeliveryTickets}.`,
-      });
-    } catch (error) {
-      logServerError('server_operation_failed', error);
-      res
-        .status(500)
-        .json({ error: 'Erro ao atualizar tickets de entrega grátis do cliente.' });
-    }
-  };
-
-  app.post(
-    '/api/admin/customers/:id/free-delivery',
-    requireAuth,
-    requireAdmin,
-    handleAdminCustomerFreeDelivery
-  );
-  app.put(
-    '/api/admin/customers/:id/free-delivery',
-    requireAuth,
-    requireAdmin,
-    handleAdminCustomerFreeDelivery
-  );
 
   // Sugestão aritmética simples de frete
   app.post('/api/admin/freight/suggest', requireAuth, requireAdmin, async (req, res) => {
@@ -1940,7 +1846,7 @@ export function registerAdminRoutes(app: Express) {
         // já define o frete no pedido, recalcula o total, inicia o cronômetro de 1h e notifica o cliente!
         const deadlineHours = Math.max(
           0.1,
-          parseFloat(settingsMap.payment_deadline_hours || '1') || 1
+          parseFloat(settingsMap.payment_deadline_hours || '0.5') || 0.5
         );
         const customerOrders = await db
           .select()
@@ -2015,7 +1921,7 @@ export function registerAdminRoutes(app: Express) {
       const search = String(req.query.search || '').trim();
       const from = String(req.query.from || '');
       const to = String(req.query.to || '');
-      const sort = String(req.query.sort || 'priority');
+      const sort = String(req.query.sort || 'newest');
       if (search.length > 100) {
         res.status(400).json({ error: 'A busca deve ter no máximo 100 caracteres.' });
         return;
@@ -2047,7 +1953,7 @@ export function registerAdminRoutes(app: Express) {
         return;
       }
 
-      const filters: any[] = [];
+      const filters: any[] = [notPaymentExpiredOrder()];
       if (status === 'PENDING_FREIGHT') {
         filters.push(isNull(schema.orders.deliveryFee), ne(schema.orders.status, 'CANCELLED'));
       } else if (status !== 'ALL') {
@@ -2100,16 +2006,7 @@ export function registerAdminRoutes(app: Express) {
           .offset((page - 1) * pageSize),
       ]);
 
-      const userIds = [...new Set(rows.map((row) => row.order.userId))];
-      const deliveredUserRows = userIds.length
-        ? await db
-            .select({ userId: schema.orders.userId })
-            .from(schema.orders)
-            .where(and(inArray(schema.orders.userId, userIds), eq(schema.orders.status, 'DELIVERED')))
-            .groupBy(schema.orders.userId)
-        : [];
-      const deliveredUserIds = new Set(deliveredUserRows.map((row) => row.userId));
-      const deadlineHours = Math.max(0.1, parseFloat(settingsMap.payment_deadline_hours || '1') || 1);
+      const deadlineHours = Math.max(0.1, parseFloat(settingsMap.payment_deadline_hours || '0.5') || 0.5);
       const nowMs = Date.now();
       const orders = rows.map(({ order, customerName, customerPhone, customerEmail }) => {
         const ageHours = (nowMs - new Date(order.createdAt).getTime()) / (1000 * 60 * 60);
@@ -2119,17 +2016,11 @@ export function registerAdminRoutes(app: Express) {
               ? new Date(order.paymentExpiresAt).getTime() <= nowMs
               : ageHours >= deadlineHours)
         );
-        const isFirstOrderFreeDelivery = Boolean(
-          order.usedFreeDeliveryTicket ||
-            order.deliveryFeeSource === 'FREE_DELIVERY_TICKET' ||
-            order.deliveryFeeSource === 'MANUAL_FREE_DELIVERY' ||
-            (!deliveredUserIds.has(order.userId) &&
-              (order.isFirstOrderFreeDelivery || order.deliveryFeeSource === 'FIRST_ORDER_FREE'))
-        );
+        const isFreeDelivery = order.deliveryFee !== null && Number(order.deliveryFee) === 0;
         return {
           ...order,
-          isFirstOrderFreeDelivery,
-          paymentReleased: Boolean(isFirstOrderFreeDelivery || order.deliveryFee !== null),
+          isFreeDelivery,
+          paymentReleased: Boolean(isFreeDelivery || order.deliveryFee !== null),
           customerName: customerName || 'Cliente',
           customerPhone: customerPhone || '',
           customerEmail: customerEmail || '',
@@ -2167,7 +2058,7 @@ export function registerAdminRoutes(app: Express) {
         .select({ order: schema.orders, customerName: schema.users.name, customerPhone: schema.users.phone, customerEmail: schema.users.email })
         .from(schema.orders)
         .leftJoin(schema.users, eq(schema.orders.userId, schema.users.id))
-        .where(eq(schema.orders.id, orderId));
+        .where(and(eq(schema.orders.id, orderId), notPaymentExpiredOrder()));
       if (!row) {
         res.status(404).json({ error: 'Pedido não encontrado.' });
         return;
@@ -2199,19 +2090,10 @@ export function registerAdminRoutes(app: Express) {
         changedByName: entry.changedBy ? actorNames.get(entry.changedBy) || 'Usuário' : 'Sistema',
       }));
       const settingsMap = await getSettingsMap();
-      const deadlineHours = Math.max(0.1, parseFloat(settingsMap.payment_deadline_hours || '1') || 1);
-      const delivered = await db
-        .select({ id: schema.orders.id })
-        .from(schema.orders)
-        .where(and(eq(schema.orders.userId, order.userId), eq(schema.orders.status, 'DELIVERED')))
-        .limit(1);
-      const isFirstOrderFreeDelivery = Boolean(
-        order.usedFreeDeliveryTicket || order.deliveryFeeSource === 'FREE_DELIVERY_TICKET' ||
-          order.deliveryFeeSource === 'MANUAL_FREE_DELIVERY' ||
-          (!delivered.length && (order.isFirstOrderFreeDelivery || order.deliveryFeeSource === 'FIRST_ORDER_FREE'))
-      );
+      const deadlineHours = Math.max(0.1, parseFloat(settingsMap.payment_deadline_hours || '0.5') || 0.5);
+      const isFreeDelivery = order.deliveryFee !== null && Number(order.deliveryFee) === 0;
       const ageHours = (Date.now() - new Date(order.createdAt).getTime()) / (1000 * 60 * 60);
-      const paymentReleased = Boolean(isFirstOrderFreeDelivery || order.deliveryFee !== null);
+      const paymentReleased = Boolean(isFreeDelivery || order.deliveryFee !== null);
       const whatsappMessage = buildOrderWhatsAppMessage({
         orderNumber: order.orderNumber,
         items,
@@ -2223,8 +2105,6 @@ export function registerAdminRoutes(app: Express) {
         changeFor: order.changeFor,
         addressSnapshot: order.addressSnapshot,
         notes: order.notes,
-        isFirstOrderFreeDelivery,
-        usedFreeDeliveryTicket: Boolean(order.usedFreeDeliveryTicket),
         deliveryFeeSource: order.deliveryFeeSource,
       });
       const customerPhone = row.customerPhone || '';
@@ -2249,7 +2129,7 @@ export function registerAdminRoutes(app: Express) {
         customerWhatsappUrl: customerPhone
           ? buildWhatsAppLink(customerPhone, `Olá ${customerName}! Aqui é da loja DeepShop sobre o seu pedido ${order.orderNumber}.`)
           : '',
-        isFirstOrderFreeDelivery,
+        isFreeDelivery,
         paymentReleased,
         isPaymentExpired: Boolean(
           (order.status === 'NEW' || order.status === 'AWAITING_PAYMENT') &&
@@ -2310,7 +2190,7 @@ export function registerAdminRoutes(app: Express) {
         const settingsMap = await getSettingsMap();
         const deadlineHours = Math.max(
           0.1,
-          parseFloat(settingsMap.payment_deadline_hours || '1') || 1
+          parseFloat(settingsMap.payment_deadline_hours || '0.5') || 0.5
         );
         const wasWaitingForFreight = existingOrder.deliveryFee === null;
         const isUnpaidOrder =
@@ -2328,7 +2208,6 @@ export function registerAdminRoutes(app: Express) {
                 ? parsedDist.toFixed(2)
                 : existingOrder.deliveryDistanceKm,
             deliveryFeeSource: nextSource,
-            isFirstOrderFreeDelivery: parsedFee === 0,
             total: newTotalNum.toFixed(2),
             paymentExpiresAt: nextPaymentExpiresAt,
             updatedAt: new Date(),
@@ -2402,6 +2281,8 @@ export function registerAdminRoutes(app: Express) {
         }
 
         const updated = await db.transaction(async (tx) => {
+          // Serializa a entrega com a abertura de tickets vinculados a este pedido.
+          await tx.execute(sql`SELECT id FROM orders WHERE id = ${orderId} FOR UPDATE`);
           const [order] = await tx
             .select()
             .from(schema.orders)
@@ -2444,7 +2325,7 @@ export function registerAdminRoutes(app: Express) {
           const settingsMap = await getSettingsMap(tx);
           const deadlineHours = Math.max(
             0.1,
-            parseFloat(settingsMap.payment_deadline_hours || '1') || 1
+            parseFloat(settingsMap.payment_deadline_hours || '0.5') || 0.5
           );
 
           // Se foi marcado como PAGO (ou status posterior pago) ou CANCELADO, desliga o cronômetro de expiração de 1h.
@@ -2547,13 +2428,40 @@ export function registerAdminRoutes(app: Express) {
             })
             .returning();
 
+          if (status === 'DELIVERED') {
+            const deliveryClosedTickets = await tx.update(schema.supportTickets).set({
+              status: 'CLOSED',
+              closedAt: sql`(SELECT delivered_at FROM orders WHERE id = ${order.id})`,
+              closedByUserId: null,
+              closedReason: 'ORDER_DELIVERED',
+              updatedAt: sql`CURRENT_TIMESTAMP`,
+            }).where(and(
+              eq(schema.supportTickets.orderId, order.id),
+              eq(schema.supportTickets.postDelivery, false),
+              ne(schema.supportTickets.status, 'CLOSED'),
+              sql`${schema.supportTickets.createdAt} < (SELECT delivered_at FROM orders WHERE id = ${order.id})`,
+            )).returning({ id: schema.supportTickets.id, userId: schema.supportTickets.userId });
+            for (const ticket of deliveryClosedTickets) {
+              await tx.insert(schema.notifications).values({
+                userId: ticket.userId,
+                orderId: order.id,
+                supportTicketId: ticket.id,
+                orderNumber: order.orderNumber,
+                oldStatus: null,
+                newStatus: 'SUPPORT_CLOSED',
+                title: `Atendimento #${ticket.id} encerrado após a entrega`,
+                message: 'Este atendimento foi encerrado automaticamente porque o pedido foi entregue. O histórico continua disponível na Central de Ajuda.',
+                isRead: false,
+                popupDismissed: false,
+                createdAt: sql`CURRENT_TIMESTAMP`,
+              });
+            }
+          }
           return {
             ...updatedOrder,
             notification: createdNotification,
           };
         });
-
-        await evaluateCustomerLoyaltyTickets(updated.userId);
         if (transitionFrom && transitionFrom !== updated.status) {
           logServerEvent('order.status.changed', 'info', { orderId: updated.id, adminId: req.user!.id, role: req.user!.role, fromStatus: transitionFrom, toStatus: updated.status, result: 'committed' });
           const byProduct = new Map<number, number>();
@@ -2592,7 +2500,7 @@ export function registerAdminRoutes(app: Express) {
         freight_base_fee: map.freight_base_fee || '7.50',
         freight_extra_km_fee: map.freight_extra_km_fee || '1.50',
         store_origin_address: map.store_origin_address || 'Matriz DeepShop',
-        payment_deadline_hours: map.payment_deadline_hours || '1',
+        payment_deadline_hours: map.payment_deadline_hours || '0.5',
         cpf_strict_validation_enabled: map.cpf_strict_validation_enabled || 'false',
         store_timezone: map.store_timezone || DEFAULT_STORE_TIMEZONE,
         packaging_cost_per_order: map.packaging_cost_per_order || '0.00',

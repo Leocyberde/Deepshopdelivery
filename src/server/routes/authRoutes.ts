@@ -23,7 +23,6 @@ import {
   } from '../services/storeHelpers.ts';
 import { isAdminRole } from '../governance.ts';
 import { LEGAL_VERSION } from '../../config/legal.ts';
-import { evaluateCustomerLoyaltyTickets } from '../services/loyaltyService.ts';
 
 export function registerAuthRoutes(app: Express) {
   app.get('/api/auth/register-config', async (_req, res) => {
@@ -305,7 +304,6 @@ export function registerAuthRoutes(app: Express) {
       };
       const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
 
-      const loyalty = await evaluateCustomerLoyaltyTickets(newUser.id);
       logServerEvent('auth.registration.succeeded', 'info', { userId: newUser.id, role: 'CUSTOMER', result: 'created' });
 
       res.status(201).json({
@@ -318,9 +316,6 @@ export function registerAuthRoutes(app: Express) {
           phone: newUser.phone,
           role: newUser.role,
           status: newUser.status,
-          freeDeliveryTickets: loyalty.freeDeliveryTickets,
-          loyalty,
-          eligibleForFirstOrderFreeDelivery: loyalty.isFirstOrderEligible,
         },
         address: createdAddress
           ? {
@@ -395,8 +390,6 @@ export function registerAuthRoutes(app: Express) {
       };
       const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
 
-      const isAdminUser = user.role !== 'CUSTOMER';
-      const loyalty = isAdminUser ? null : await evaluateCustomerLoyaltyTickets(user.id);
       logServerEvent('auth.login.succeeded', 'info', { userId: user.id, role: user.role, result: 'success' });
 
       res.json({
@@ -409,9 +402,6 @@ export function registerAuthRoutes(app: Express) {
           phone: user.phone,
           role: user.role,
           status: user.status,
-          freeDeliveryTickets: loyalty ? loyalty.freeDeliveryTickets : 0,
-          loyalty,
-          eligibleForFirstOrderFreeDelivery: loyalty ? loyalty.isFirstOrderEligible : false,
           mustChangePassword: user.mustChangePassword,
         },
       });
@@ -549,8 +539,6 @@ export function registerAuthRoutes(app: Express) {
         res.status(404).json({ error: 'Usuário não encontrado.' });
         return;
       }
-      const isAdminUser = user.role !== 'CUSTOMER';
-      const loyalty = isAdminUser ? null : await evaluateCustomerLoyaltyTickets(user.id);
 
       res.json({
         id: user.id,
@@ -565,9 +553,6 @@ export function registerAuthRoutes(app: Express) {
         privacyVersion: user.privacyVersion,
         termsVersion: user.termsVersion,
         deletionRequestedAt: user.deletionRequestedAt,
-        freeDeliveryTickets: loyalty ? loyalty.freeDeliveryTickets : 0,
-        loyalty,
-        eligibleForFirstOrderFreeDelivery: loyalty ? loyalty.isFirstOrderEligible : false,
       });
     } catch (error) {
       logServerError('server_operation_failed', error);

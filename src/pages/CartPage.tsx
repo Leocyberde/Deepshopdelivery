@@ -11,12 +11,9 @@ export const CartPage: React.FC = () => {
     clearCart,
     cartSubtotal,
     user,
-    eligibleForFirstOrderFreeDelivery,
-    freeDeliveryTickets,
     apiFetch,
   } = useApp();
   const navigate = useNavigate();
-  const isAdmin = isAdminRole(user?.role);
   const [storeClosed, setStoreClosed] = useState(false);
   const [storeClosedMessage, setStoreClosedMessage] = useState('A loja está fechada no momento.');
 
@@ -176,28 +173,6 @@ export const CartPage: React.FC = () => {
         <div className="lg:col-span-4 bg-white border border-stone-200 rounded-xl p-6 space-y-5">
           <h2 className="text-base font-bold text-zinc-900">Resumo do Pedido</h2>
 
-          {!isAdmin && eligibleForFirstOrderFreeDelivery && (
-            <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 space-y-1">
-              <div className="font-bold text-emerald-950">
-                🎉 Entrega Grátis para o seu 1º Pedido!
-              </div>
-              <p className="text-[11px] text-emerald-800 leading-relaxed">
-                Seu 1º pedido tem entrega grátis garantida! O 2º e 3º pedidos têm frete normal e, no 4º pedido, você ganha mais 1 Ticket de Entrega Grátis!
-              </p>
-            </div>
-          )}
-
-          {!isAdmin && !eligibleForFirstOrderFreeDelivery && freeDeliveryTickets > 0 && (
-            <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 space-y-1">
-              <div className="font-bold text-emerald-950">
-                🎟️ Você tem {freeDeliveryTickets} Ticket(s) de Entrega Grátis!
-              </div>
-              <p className="text-[11px] text-emerald-800 leading-relaxed">
-                Você pode usar seu ticket acumulativo agora mesmo na tela de checkout.
-              </p>
-            </div>
-          )}
-
           <div className="space-y-2.5 text-sm border-b border-stone-200 pb-4">
             <div className="flex items-center justify-between text-zinc-600">
               <span>Subtotal dos produtos</span>
@@ -207,17 +182,7 @@ export const CartPage: React.FC = () => {
             </div>
             <div className="flex items-center justify-between text-xs text-zinc-500">
               <span>Entrega</span>
-              {!isAdmin && eligibleForFirstOrderFreeDelivery ? (
-                <span className="font-semibold text-emerald-700">
-                  Entrega grátis para o 1º pedido
-                </span>
-              ) : !isAdmin && freeDeliveryTickets > 0 ? (
-                <span className="font-semibold text-emerald-700">
-                  Ticket de Entrega Grátis disponível ({freeDeliveryTickets})
-                </span>
-              ) : (
-                <span>Definida pelo endereço no checkout</span>
-              )}
+              <span>Definida pelo endereço no checkout</span>
             </div>
           </div>
 

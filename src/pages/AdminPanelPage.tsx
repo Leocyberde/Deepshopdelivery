@@ -131,7 +131,7 @@ export const AdminPanelPage: React.FC = () => {
     freight_base_fee: '7.50',
     freight_extra_km_fee: '1.50',
     store_origin_address: '',
-    payment_deadline_hours: '1',
+    payment_deadline_hours: '0.5',
     cpf_strict_validation_enabled: 'false',
     store_timezone: 'America/Sao_Paulo',
     packaging_cost_per_order: '0.00',
@@ -264,8 +264,6 @@ export const AdminPanelPage: React.FC = () => {
   const [customerFilter, setCustomerFilter] = useState<
     'ALL' | 'PENDING_FREIGHT' | 'WITH_FREE_DELIVERY'
   >('ALL');
-  const [customTicketInputs, setCustomTicketInputs] = useState<Record<number, string>>({});
-  const [updatingCustomerTicketId, setUpdatingCustomerTicketId] = useState<number | null>(null);
 
   // Order Detail & Order Freight Edit State
   const [selectedAdminOrder, setSelectedAdminOrder] = useState<any | null>(null);
@@ -273,7 +271,7 @@ export const AdminPanelPage: React.FC = () => {
   const [orderSearch, setOrderSearch] = useState('');
   const [orderDateFrom, setOrderDateFrom] = useState('');
   const [orderDateTo, setOrderDateTo] = useState('');
-  const [orderSort, setOrderSort] = useState<'priority' | 'oldest' | 'newest'>('priority');
+  const [orderSort, setOrderSort] = useState<'priority' | 'oldest' | 'newest'>('newest');
   const [orderPage, setOrderPage] = useState(1);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState('');
@@ -1318,41 +1316,6 @@ ${kitProd.code} - ${kitProd.name}`)) return;
     }
   };
 
-  const handleCustomerFreeDeliveryAction = async (
-    customerId: number,
-    action: 'GRANT' | 'REMOVE' | 'SET',
-    amount = 1,
-    customerName = 'Cliente'
-  ) => {
-    setUpdatingCustomerTicketId(customerId);
-    try {
-      const res = await apiFetch<{
-        message: string;
-        freeDeliveryTickets: number;
-      }>(`/api/admin/customers/${customerId}/free-delivery`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          action,
-          amount,
-          reason:
-            action === 'GRANT'
-              ? 'Ticket de Entrega Grátis colocado manualmente pelo Administrador'
-              : undefined,
-        }),
-      });
-      toast(
-        res.message ||
-          `Saldo de Entrega Grátis de ${customerName} atualizado (${res.freeDeliveryTickets} disponível)!`,
-        'success'
-      );
-      await loadAdminData();
-    } catch (err: any) {
-      toast(err.message || 'Erro ao atualizar entrega grátis do cliente.', 'error');
-    } finally {
-      setUpdatingCustomerTicketId(null);
-    }
-  };
-
   // Handler for Settings
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1845,17 +1808,13 @@ ${kitProd.code} - ${kitProd.name}`)) return;
               />
             )}
 
-            {/* 5. CLIENTES, FIDELIDADE & FRETE MANUAL */}
+            {/* 5. CLIENTES & FRETE MANUAL */}
             {section === 'CUSTOMERS' && (
               <AdminCustomersSection
                 customers={customersData.customers}
                 pendingAddrCount={pendingAddrCount}
                 customerFilter={customerFilter}
                 setCustomerFilter={setCustomerFilter}
-                customTicketInputs={customTicketInputs}
-                setCustomTicketInputs={setCustomTicketInputs}
-                updatingCustomerTicketId={updatingCustomerTicketId}
-                handleCustomerFreeDeliveryAction={handleCustomerFreeDeliveryAction}
                 openAddressFreightModal={openAddressFreightModal}
               />
             )}
