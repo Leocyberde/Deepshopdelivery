@@ -1,6 +1,6 @@
 # Relatório final — DeepShop Delivery
 
-**Data:** 15/10/2026  
+**Data:** 15/10/2026
 **Escopo:** continuação do projeto recebido, com foco em entrada de estoque pelo formulário, custo médio ponderado, padronização de lucro e ajustes da sacola.
 
 ## 1. Resumo

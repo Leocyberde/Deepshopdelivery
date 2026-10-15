@@ -1,6 +1,6 @@
 # Relatório de implementação — DeepShop Delivery
 
-**Data:** 15/10/2026  
+**Data:** 15/10/2026
 **Escopo:** custos por lote e lucro real, limite de unidades promocionais por pedido, seleção/precificação da sacola e salvaguardas de pedido.
 
 ## 1. Resumo (5 linhas)
@@ -50,7 +50,7 @@
 | V1 | Vitrine desktop: seletor, 3 unidades, limite 1 | Mostrar subtotal R$ 47,47 e excedente pelo preço normal | Modal mostrou 1 × R$ 7,49 + 2 × R$ 19,99 = R$ 47,47; item adicionado | ⚠️ Parcial | [Captura do seletor desktop](evidencias/seletor-quantidade-desktop.webp) |
 | V2 | Sacola/checkout em desktop e mobile; pedido pelo fluxo visual | Validar todas as etapas e viewports | Não concluído — execução interrompida a pedido do utilizador | ⏳ | Não há screenshot dessas etapas |
 
-**Testes unitários:** 8/8 passaram depois de corrigir o empate de arredondamento na sexta casa da média ponderada.  
+**Testes unitários:** 8/8 passaram depois de corrigir o empate de arredondamento na sexta casa da média ponderada.
 **Migration/backup:** migration executada no banco descartável; round-trip do SQL do exportador confirmou limite e custos de lote.
 
 ## 4. Lint, build e testes preexistentes

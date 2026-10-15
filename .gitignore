@@ -7,7 +7,6 @@ coverage/
 *.log
 .env*
 !.env.example
-# Dados de clientes e backups nunca vão para o repositório
 .pgdata/
 backups/
 achadinhos-backups/
