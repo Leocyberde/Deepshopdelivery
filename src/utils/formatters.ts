@@ -142,7 +142,7 @@ export function calculatePromoLinePricing(params: {
         ? parseFloat(params.promoPrice)
         : Number(params.promoPrice)
       : 0;
-  const isPromoActive = Boolean(params.hasPromo && !isNaN(rawPromo) && rawPromo > 0);
+  const isPromoActive = Boolean(params.hasPromo && !isNaN(rawPromo) && rawPromo > 0 && rawPromo < normalNum);
   const promoNum = isPromoActive ? rawPromo : normalNum;
 
   const parsedLimit =

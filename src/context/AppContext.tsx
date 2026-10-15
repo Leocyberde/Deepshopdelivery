@@ -5,6 +5,7 @@ import {
   ToastMessage,
   CustomerNotification,
 } from '../types/app.ts';
+import { calculatePromoLinePricing } from '../utils/formatters.ts';
 import {
   CustomerNotificationPopupModal,
   ToastStack,
@@ -33,6 +34,8 @@ export interface AppContextType {
   cart: CartItem[];
   addToCart: (item: Omit<CartItem, 'quantity'>, quantity?: number) => void;
   updateCartQuantity: (productId: number, quantity: number) => void;
+  toggleCartItemSelected: (productId: number, selected: boolean) => void;
+  removePurchasedCartItems: () => void;
   removeFromCart: (productId: number) => void;
   clearCart: () => void;
   syncCartWithStorefront: (silent?: boolean) => Promise<void>;
@@ -390,10 +393,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const current = prev[existingIndex];
           const nextQty = Math.min(item.stock, current.quantity + quantity);
           const updated = [...prev];
-          updated[existingIndex] = { ...current, ...item, quantity: nextQty };
+          updated[existingIndex] = { ...current, ...item, quantity: nextQty, selected: true };
           return updated;
         }
-        return [...prev, { ...item, quantity: Math.min(item.stock, quantity) }];
+        return [...prev, { ...item, quantity: Math.min(item.stock, quantity), selected: true }];
       });
 
       toast(`"${item.name}" adicionado à sacola.`, 'success');
@@ -412,6 +415,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           : i
       );
     });
+  }, []);
+
+  const toggleCartItemSelected = useCallback((productId: number, selected: boolean) => {
+    setCart((prev) => prev.map((item) => item.productId === productId ? { ...item, selected } : item));
+  }, []);
+
+  const removePurchasedCartItems = useCallback(() => {
+    setCart((prev) => prev.filter((item) => item.selected === false));
   }, []);
 
   const removeFromCart = useCallback((productId: number) => {
@@ -540,30 +551,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [syncCartWithStorefront]);
 
   const cartCount = cart.reduce((acc, item) => acc + item.quantity, 0);
-  const cartSubtotal = Number(
-    cart
-      .reduce((acc, item) => {
-        const normalNum =
-          item.originalPrice !== undefined && item.originalPrice > 0
-            ? item.originalPrice
-            : item.price;
-        const promoNum =
-          item.promoPrice !== undefined && item.promoPrice !== null && item.promoPrice > 0
-            ? item.promoPrice
-            : item.price;
-        const isPromo = Boolean(item.hasPromo && promoNum < normalNum);
-        const limitNum =
-          isPromo && item.promoMaxUnits && item.promoMaxUnits > 0 ? item.promoMaxUnits : null;
-
-        if (isPromo && limitNum !== null && item.quantity > limitNum) {
-          const promoQty = limitNum;
-          const normalQty = item.quantity - limitNum;
-          return acc + promoQty * promoNum + normalQty * normalNum;
-        }
-        return acc + (isPromo ? promoNum : item.price) * item.quantity;
-      }, 0)
-      .toFixed(2)
-  );
+  const cartSubtotal = Number((cart.reduce((acc, item) => {
+    if (item.selected === false) return acc;
+    const pricing = calculatePromoLinePricing({
+      normalPrice: item.originalPrice ?? item.price,
+      promoPrice: item.promoPrice ?? item.price,
+      hasPromo: item.hasPromo,
+      promoMaxUnits: item.promoMaxUnits,
+      quantity: item.quantity,
+    });
+    return acc + Math.round(pricing.subtotal * 100);
+  }, 0) / 100).toFixed(2));
 
   return (
     <AppContext.Provider
@@ -577,6 +575,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         cart,
         addToCart,
         updateCartQuantity,
+        toggleCartItemSelected,
+        removePurchasedCartItems,
         removeFromCart,
         clearCart,
         syncCartWithStorefront,

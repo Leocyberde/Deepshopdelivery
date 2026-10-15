@@ -1,3 +1,4 @@
+import { simulateProfit } from '../../utils/profitSimulation.ts';
 import React, { useState, useEffect } from 'react';
 import {
   TrendingUp,
@@ -26,14 +27,17 @@ interface AnalyzedProduct {
   cost: number;
   price: number;
   promoPrice: number | null;
+  promoMaxUnits?: number | null;
   hasPromo: boolean;
   effectivePrice: number;
   hasCostDefined?: boolean;
-  marginStatus?: 'NO_COST' | 'ZERO_PROFIT' | 'PROFITABLE';
+  marginStatus?: 'NO_COST' | 'ZERO_PROFIT' | 'PROFITABLE' | 'LOSS';
   markupPercent?: number;
   unitProfit: number;
   unitMarginPercent: number;
   potentialStockProfit: number;
+  normalStockProfit?: number | null;
+  promoStockProfit?: number | null;
   viewsCount: number;
   clicksCount: number;
   sharesCount: number;
@@ -53,6 +57,8 @@ interface AnalyticsData {
     totalStockCost: number;
     totalStockSaleValue: number;
     potentialInventoryProfit: number;
+    potentialInventoryPromoProfit?: number;
+    totalStockPromoSaleValue?: number;
     averageMarginPercent?: number;
     totalRealizedProfitAll: number;
     totalDeliveredUnitsAll: number;
@@ -124,7 +130,7 @@ export const AdminProfitRankingSection: React.FC = () => {
   const openQuickCostModal = (prod: AnalyzedProduct) => {
     setEditingCostProd(prod);
     setModalCost(prod.cost > 0 ? String(prod.cost) : '');
-    setModalPrice(String(prod.effectivePrice));
+    setModalPrice(String(prod.price));
   };
 
   const handleSaveCost = async (e: React.FormEvent) => {
@@ -441,10 +447,9 @@ export const AdminProfitRankingSection: React.FC = () => {
             </div>
             <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200">
               <div className="text-[11px] font-bold text-emerald-900">Lucro Projetado</div>
-              <div className="text-sm sm:text-base font-extrabold text-emerald-700 tabular-nums">
-                + {formatCurrency(summary.potentialInventoryProfit)}
-              </div>
-              <div className="text-[10px] text-emerald-800">Ganho líquido total</div>
+              <div className="text-xs sm:text-sm font-extrabold text-emerald-700 tabular-nums">Normal: {formatCurrency(summary.potentialInventoryProfit)}</div>
+              {summary.potentialInventoryPromoProfit !== undefined && <div className="text-xs sm:text-sm font-extrabold text-emerald-700 tabular-nums">Promo: {formatCurrency(summary.potentialInventoryPromoProfit)}</div>}
+              <div className="text-[10px] text-emerald-800">Cenários de venda de todo o estoque</div>
             </div>
           </div>
         </div>
@@ -715,7 +720,8 @@ export const AdminProfitRankingSection: React.FC = () => {
               ) : (
                 filteredProducts.map((p) => {
                   const hasCost = p.hasCostDefined ?? p.cost > 0;
-                  const isZeroProfit = hasCost && p.cost >= p.effectivePrice;
+                  const isZeroProfit = hasCost && p.cost === p.effectivePrice;
+                  const isLoss = hasCost && p.cost > p.effectivePrice;
                   return (
                     <tr key={p.id} className="hover:bg-stone-50/50 transition-colors">
                       {/* Produto */}
@@ -776,8 +782,8 @@ export const AdminProfitRankingSection: React.FC = () => {
                             R$ 0,00
                           </span>
                         ) : (
-                          <span className="font-bold text-emerald-700">
-                            + {formatCurrency(p.unitProfit)}
+                          <span className={`font-bold ${isLoss ? 'text-red-700' : 'text-emerald-700'}`}>
+                            {p.unitProfit < 0 ? '' : '+ '}{formatCurrency(p.unitProfit)}{isLoss ? ' · Prejuízo' : ''}
                           </span>
                         )}
                       </td>
@@ -868,10 +874,11 @@ export const AdminProfitRankingSection: React.FC = () => {
                       <td className="py-2.5 px-3 text-right font-mono font-bold text-sky-900 tabular-nums">
                         {!hasCost ? (
                           <span className="text-zinc-400 text-[11px] font-normal font-sans">Defina o custo</span>
-                        ) : isZeroProfit ? (
-                          <span className="text-red-600 font-bold text-xs">R$ 0,00</span>
                         ) : p.stock > 0 ? (
-                          `+ ${formatCurrency(p.potentialStockProfit)}`
+                          <div className="space-y-0.5">
+                            <div className={Number(p.normalStockProfit ?? p.potentialStockProfit) < 0 ? 'text-red-700' : 'text-sky-900'}>Normal: {formatCurrency(Number(p.normalStockProfit ?? p.potentialStockProfit))}</div>
+                            {p.promoStockProfit !== null && p.promoStockProfit !== undefined && <div className={p.promoStockProfit < 0 ? 'text-red-700' : 'text-sky-900'}>Promo: {formatCurrency(p.promoStockProfit)}</div>}
+                          </div>
                         ) : (
                           'R$ 0,00'
                         )}
@@ -936,7 +943,7 @@ export const AdminProfitRankingSection: React.FC = () => {
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="block text-xs font-semibold text-zinc-700">
-                    Preço de Venda (R$)
+                    Preço normal (R$)
                   </label>
                   <input
                     type="number"
@@ -970,13 +977,14 @@ export const AdminProfitRankingSection: React.FC = () => {
 
               {/* Simulador de Lucro em Tempo Real */}
               {(() => {
-                const sPrice = Math.max(0, parseFloat(String(modalPrice || '0').replace(',', '.')) || 0);
-                const cPrice = Math.max(0, parseFloat(String(modalCost || '0').replace(',', '.')) || 0);
-                const hasCost = cPrice > 0;
-                const profit = hasCost ? Math.max(0, sPrice - cPrice) : 0;
-                const margin = sPrice > 0 && hasCost ? (profit / sPrice) * 100 : 0;
-                const markup = cPrice > 0 ? (profit / cPrice) * 100 : 0;
-                const stockProfit = hasCost ? profit * editingCostProd.stock : 0;
+                const simulation = simulateProfit({ normalPrice: modalPrice, promoPrice: editingCostProd.promoPrice, hasPromo: editingCostProd.hasPromo, cost: modalCost, stock: editingCostProd.stock, promoMaxUnits: editingCostProd.promoMaxUnits });
+                const sPrice = simulation.promo?.salePrice ?? simulation.normal.salePrice;
+                const cPrice = simulation.costUnitPrecise;
+                const hasCost = simulation.hasCost;
+                const profit = simulation.promo?.unitProfit ?? simulation.normal.unitProfit;
+                const margin = simulation.promo?.marginPercent ?? simulation.normal.marginPercent;
+                const markup = simulation.promo?.markupPercent ?? simulation.normal.markupPercent;
+                const stockProfit = simulation.promo?.stockProfit ?? simulation.normal.stockProfit;
 
                 return (
                   <div className="p-3.5 rounded-xl bg-stone-50 border border-stone-200 space-y-2.5">
@@ -990,8 +998,8 @@ export const AdminProfitRankingSection: React.FC = () => {
                     <div className="grid grid-cols-3 gap-2 text-center">
                       <div className="p-2 rounded-lg bg-white border border-stone-200">
                         <div className="text-[10px] text-zinc-500 font-medium">Lucro / Unidade</div>
-                        <div className={`text-sm font-bold font-mono ${profit > 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-                          + {formatCurrency(profit)}
+                        <div className={`text-sm font-bold font-mono ${profit > 0 ? 'text-emerald-700' : profit < 0 ? 'text-red-600' : 'text-zinc-800'}`}>
+                          {formatCurrency(profit)}
                         </div>
                       </div>
 
@@ -1005,7 +1013,7 @@ export const AdminProfitRankingSection: React.FC = () => {
                       <div className="p-2 rounded-lg bg-white border border-stone-200">
                         <div className="text-[10px] text-sky-900 font-medium">Lucro no Estoque</div>
                         <div className="text-sm font-bold font-mono text-sky-900">
-                          + {formatCurrency(stockProfit)}
+                          {formatCurrency(stockProfit)}
                         </div>
                       </div>
                     </div>
@@ -1048,4 +1056,3 @@ export const AdminProfitRankingSection: React.FC = () => {
     </div>
   );
 };
-

@@ -271,7 +271,7 @@ export async function exportFullPostgresSqlDump(): Promise<string> {
 
   for (const p of data.tables.products) {
     lines.push(
-      `INSERT INTO products (id, store_id, category_id, code, name, description, price, promo_price, promo_active, promo_ends_at, promo_duration_hours, promo_max_units, is_kit, cost, stock, weight, views_count, clicks_count, shares_count, stock_minimum, status, created_at, updated_at) VALUES (${sqlVal(p.id)}, ${sqlVal(p.storeId)}, ${sqlVal(p.categoryId)}, ${sqlVal(p.code)}, ${sqlVal(p.name)}, ${sqlVal(p.description)}, ${sqlVal(p.price)}, ${sqlVal(p.promoPrice)}, ${sqlVal(p.promoActive)}, ${sqlVal(p.promoEndsAt)}, ${sqlVal(p.promoDurationHours)}, ${sqlVal(p.promoMaxUnits)}, ${sqlVal(p.isKit)}, ${sqlVal(p.cost)}, ${sqlVal(p.stock)}, ${sqlVal(p.weight)}, ${sqlVal(p.viewsCount || 0)}, ${sqlVal(p.clicksCount || 0)}, ${sqlVal(p.sharesCount || 0)}, ${sqlVal(p.stockMinimum ?? 5)}, ${sqlVal(p.status)}, ${sqlVal(p.createdAt)}, ${sqlVal(p.updatedAt)}) ON CONFLICT (id) DO UPDATE SET category_id = EXCLUDED.category_id, code = EXCLUDED.code, name = EXCLUDED.name, description = EXCLUDED.description, price = EXCLUDED.price, promo_price = EXCLUDED.promo_price, promo_active = EXCLUDED.promo_active, promo_ends_at = EXCLUDED.promo_ends_at, promo_duration_hours = EXCLUDED.promo_duration_hours, promo_max_units = EXCLUDED.promo_max_units, is_kit = EXCLUDED.is_kit, cost = EXCLUDED.cost, stock = EXCLUDED.stock, weight = EXCLUDED.weight, views_count = EXCLUDED.views_count, clicks_count = EXCLUDED.clicks_count, shares_count = EXCLUDED.shares_count, stock_minimum = EXCLUDED.stock_minimum, status = EXCLUDED.status, updated_at = EXCLUDED.updated_at;`
+      `INSERT INTO products (id, store_id, category_id, code, name, description, price, promo_price, promo_active, promo_ends_at, promo_duration_hours, promo_max_units, is_kit, cost, cost_unit_precise, cost_lot_total, cost_lot_units, stock, weight, views_count, clicks_count, shares_count, stock_minimum, status, created_at, updated_at) VALUES (${sqlVal(p.id)}, ${sqlVal(p.storeId)}, ${sqlVal(p.categoryId)}, ${sqlVal(p.code)}, ${sqlVal(p.name)}, ${sqlVal(p.description)}, ${sqlVal(p.price)}, ${sqlVal(p.promoPrice)}, ${sqlVal(p.promoActive)}, ${sqlVal(p.promoEndsAt)}, ${sqlVal(p.promoDurationHours)}, ${sqlVal(p.promoMaxUnits)}, ${sqlVal(p.isKit)}, ${sqlVal(p.cost)}, ${sqlVal(p.costUnitPrecise ?? p.cost)}, ${sqlVal(p.costLotTotal ?? null)}, ${sqlVal(p.costLotUnits ?? null)}, ${sqlVal(p.stock)}, ${sqlVal(p.weight)}, ${sqlVal(p.viewsCount || 0)}, ${sqlVal(p.clicksCount || 0)}, ${sqlVal(p.sharesCount || 0)}, ${sqlVal(p.stockMinimum ?? 5)}, ${sqlVal(p.status)}, ${sqlVal(p.createdAt)}, ${sqlVal(p.updatedAt)}) ON CONFLICT (id) DO UPDATE SET category_id = EXCLUDED.category_id, code = EXCLUDED.code, name = EXCLUDED.name, description = EXCLUDED.description, price = EXCLUDED.price, promo_price = EXCLUDED.promo_price, promo_active = EXCLUDED.promo_active, promo_ends_at = EXCLUDED.promo_ends_at, promo_duration_hours = EXCLUDED.promo_duration_hours, promo_max_units = EXCLUDED.promo_max_units, is_kit = EXCLUDED.is_kit, cost = EXCLUDED.cost, cost_unit_precise = EXCLUDED.cost_unit_precise, cost_lot_total = EXCLUDED.cost_lot_total, cost_lot_units = EXCLUDED.cost_lot_units, stock = EXCLUDED.stock, weight = EXCLUDED.weight, views_count = EXCLUDED.views_count, clicks_count = EXCLUDED.clicks_count, shares_count = EXCLUDED.shares_count, stock_minimum = EXCLUDED.stock_minimum, status = EXCLUDED.status, updated_at = EXCLUDED.updated_at;`
     );
   }
 
@@ -561,6 +561,9 @@ export async function restoreFromBackupJson(payload: DatabaseBackupPayload): Pro
           promoMaxUnits: p.promoMaxUnits ?? null,
           isKit: Boolean(p.isKit),
           cost: String(p.cost ?? '0.00'),
+          costUnitPrecise: String(p.costUnitPrecise ?? p.cost ?? '0.00'),
+          costLotTotal: p.costLotTotal === null || p.costLotTotal === undefined ? null : String(p.costLotTotal),
+          costLotUnits: p.costLotUnits === null || p.costLotUnits === undefined ? null : Number(p.costLotUnits),
           stock: Number(p.stock ?? 0),
           weight: String(p.weight ?? '0.000'),
           viewsCount: Number(p.viewsCount || 0),
@@ -586,6 +589,9 @@ export async function restoreFromBackupJson(payload: DatabaseBackupPayload): Pro
             promoMaxUnits: p.promoMaxUnits ?? null,
             isKit: Boolean(p.isKit),
             cost: String(p.cost ?? '0.00'),
+            costUnitPrecise: String(p.costUnitPrecise ?? p.cost ?? '0.00'),
+            costLotTotal: p.costLotTotal === null || p.costLotTotal === undefined ? null : String(p.costLotTotal),
+            costLotUnits: p.costLotUnits === null || p.costLotUnits === undefined ? null : Number(p.costLotUnits),
             stock: Number(p.stock ?? 0),
             weight: String(p.weight ?? '0.000'),
             viewsCount: Number(p.viewsCount || 0),

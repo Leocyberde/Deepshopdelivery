@@ -19,6 +19,7 @@ import {
 import { resolveAddressFreight } from '../../services/freightService.ts';
 import { recordInventoryMovement } from '../services/inventoryService.ts';
 import { PAYMENT_TIMEOUT_REASON_PREFIX, LEGACY_PAYMENT_TIMEOUT_REASON_PREFIX } from '../services/orderExpirationService.ts';
+import { calculateWeightedAverageUnitCost } from '../../utils/profitSimulation.ts';
 
 const notPaymentExpiredOrder = () => sql`COALESCE(${schema.orders.cancellationReason}, '') NOT LIKE ${PAYMENT_TIMEOUT_REASON_PREFIX + '%'} AND COALESCE(${schema.orders.cancellationReason}, '') NOT LIKE ${LEGACY_PAYMENT_TIMEOUT_REASON_PREFIX + '%'}`;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -51,6 +52,9 @@ function productData(body: any, existing?: any) {
   const categoryId = Number(body?.categoryId);
   const price = normMoney(body?.price);
   const cost = normMoney(body?.cost ?? existing?.cost ?? 0);
+  const preciseCost = normMoney(body?.costUnitPrecise ?? existing?.costUnitPrecise ?? cost);
+  const lotTotal = body?.costLotTotal === undefined ? (existing?.costLotTotal ?? null) : (body.costLotTotal === null || body.costLotTotal === '' ? null : normMoney(body.costLotTotal));
+  const lotUnits = body?.costLotUnits === undefined ? (existing?.costLotUnits ?? null) : (body.costLotUnits === null || body.costLotUnits === '' ? null : Number(body.costLotUnits));
   const weight = normMoney(body?.weight ?? existing?.weight ?? 0);
   const promoPrice = body?.promoPrice === undefined || body?.promoPrice === null || String(body.promoPrice).trim() === ''
     ? null
@@ -61,7 +65,8 @@ function productData(body: any, existing?: any) {
   }
   if (!Number.isSafeInteger(categoryId) || categoryId <= 0) throw new Error('Categoria inválida.');
   if (!Number.isFinite(price) || price < 0 || price > 99_999_999.99) throw new Error('Preço inválido.');
-  if (!Number.isFinite(cost) || cost < 0 || cost > 99_999_999.99) throw new Error('Custo inválido.');
+  if (!Number.isFinite(cost) || cost < 0 || cost > 99_999_999.99 || !Number.isFinite(preciseCost) || preciseCost < 0 || preciseCost > 99_999_999.999999) throw new Error('Custo inválido.');
+  if (lotTotal !== null && (!Number.isFinite(lotTotal) || lotTotal < 0 || !Number.isSafeInteger(lotUnits) || lotUnits <= 0)) throw new Error('Dados do custo por lote inválidos.');
   if (!Number.isFinite(weight) || weight < 0 || weight > 9_999_999.999) throw new Error('Peso inválido.');
   if (promoPrice !== null && (!Number.isFinite(promoPrice) || promoPrice < 0 || promoPrice > 99_999_999.99)) throw new Error('Preço promocional inválido.');
   if (!Number.isSafeInteger(stockMinimum) || stockMinimum < 0 || stockMinimum > MAX_STOCK) throw new Error('Estoque mínimo inválido.');
@@ -80,7 +85,10 @@ function productData(body: any, existing?: any) {
     promoEndsAt: promoTiming.promoEndsAt,
     promoDurationHours: promoTiming.promoDurationHours,
     promoMaxUnits: resolvePromoMaxUnits(body || {}, promoActive),
-    cost: cost.toFixed(2),
+    cost: preciseCost.toFixed(2),
+    costUnitPrecise: preciseCost.toFixed(6),
+    costLotTotal: lotTotal === null ? null : Number(lotTotal).toFixed(2),
+    costLotUnits: lotUnits,
     weight: weight.toFixed(3),
     stockMinimum,
   };
@@ -124,12 +132,12 @@ async function changeStock(
   tx: any,
   product: any,
   delta: number,
-  details: { movementType: string; reason: string; actorUserId?: number | null; orderId?: number | null; kitProductId?: number | null; idempotencyKey?: string | null; operationResult?: Record<string, unknown> | null }
+  details: { movementType: string; reason: string; actorUserId?: number | null; orderId?: number | null; kitProductId?: number | null; idempotencyKey?: string | null; operationResult?: Record<string, unknown> | null; costFields?: Record<string, unknown> }
 ) {
   const afterStock = product.stock + delta;
   if (!Number.isSafeInteger(afterStock) || afterStock < 0 || afterStock > MAX_STOCK) throw new Error('O movimento deixaria o saldo fora dos limites permitidos.');
   const nextStatus = product.status === 'ARCHIVED' ? 'ARCHIVED' : afterStock <= 0 ? 'INACTIVE' : 'ACTIVE';
-  const [updated] = await tx.update(schema.products).set({ stock: afterStock, status: nextStatus, updatedAt: new Date() })
+  const [updated] = await tx.update(schema.products).set({ stock: afterStock, status: nextStatus, updatedAt: new Date(), ...(details.costFields || {}) })
     .where(and(eq(schema.products.id, product.id), eq(schema.products.stock, product.stock))).returning();
   if (!updated) throw new Error('O saldo foi alterado por outra operação. Atualize a tela e tente novamente.');
   await recordInventoryMovement(tx, {
@@ -239,6 +247,7 @@ export function registerAdminPhase2Routes(app: Express) {
           storeId, categoryId: input.categoryId, code: input.code, name: input.name, description: input.description,
           price: input.price, promoPrice: input.promoPrice, promoActive: input.promoActive, promoEndsAt: input.promoEndsAt,
           promoDurationHours: input.promoDurationHours, promoMaxUnits: input.promoMaxUnits, isKit: false, cost: input.cost,
+          costUnitPrecise: input.costUnitPrecise, costLotTotal: input.costLotTotal, costLotUnits: input.costLotUnits,
           stock: initialStock, stockMinimum: input.stockMinimum, weight: input.weight,
           status: initialStock > 0 && req.body?.status !== 'INACTIVE' ? 'ACTIVE' : 'INACTIVE',
         }).returning();
@@ -263,23 +272,77 @@ export function registerAdminPhase2Routes(app: Express) {
       const [existing] = await db.select().from(schema.products).where(eq(schema.products.id, id)).limit(1);
       if (!existing) { res.status(404).json({ error: 'Produto não encontrado.' }); return; }
       if (existing.isKit) { res.status(409).json({ error: 'Edite kits pela operação específica de kits.' }); return; }
-      if (req.body?.stock !== undefined && Number(req.body.stock) !== existing.stock) { res.status(400).json({ error: 'O saldo deve ser alterado na área Estoque, com motivo registrado.' }); return; }
+      const requestedStock = req.body?.stock === undefined ? existing.stock : Number(req.body.stock);
+      if (!Number.isSafeInteger(requestedStock) || requestedStock < 0 || requestedStock > MAX_STOCK) {
+        res.status(400).json({ error: 'Estoque inválido.' }); return;
+      }
+      // Proteção contra formulário desatualizado: o formulário informa o saldo que carregou (expectedStock).
+      // Se o saldo real já mudou (venda, cancelamento, entrada), recusar a edição para não sobrescrever o saldo
+      // nem o custo médio com valores antigos. Clientes sem expectedStock só podem enviar o saldo atual.
+      if (req.body?.expectedStock === undefined || req.body?.expectedStock === null) {
+        if (requestedStock !== existing.stock) {
+          res.status(400).json({ error: 'Informe o saldo carregado (expectedStock) para alterar o estoque pelo formulário.' }); return;
+        }
+      } else {
+        const expectedStock = Number(req.body.expectedStock);
+        if (!Number.isSafeInteger(expectedStock) || expectedStock < 0) { res.status(400).json({ error: 'Saldo carregado inválido.' }); return; }
+        if (expectedStock !== existing.stock) {
+          res.status(409).json({ error: `O estoque deste produto mudou de ${expectedStock} para ${existing.stock} un. desde que você abriu o formulário. Feche, reabra o produto e refaça a alteração.`, currentStock: existing.stock });
+          return;
+        }
+      }
       const input = productData(req.body, existing);
       const [category] = await db.select().from(schema.categories).where(eq(schema.categories.id, input.categoryId)).limit(1);
       if (!category) { res.status(400).json({ error: 'Categoria inválida.' }); return; }
       const media = parseAndValidateMediaItems(req.body);
-      const targetStatus = ['ACTIVE', 'INACTIVE', 'ARCHIVED'].includes(req.body?.status) ? req.body.status : existing.status;
-      if (targetStatus === 'ACTIVE' && existing.stock <= 0) { res.status(400).json({ error: 'Produto sem saldo; registre uma entrada de estoque antes de ativá-lo.' }); return; }
+      const requestedStatus = ['ACTIVE', 'INACTIVE', 'ARCHIVED'].includes(req.body?.status) ? req.body.status : existing.status;
+      if (requestedStatus === 'ACTIVE' && requestedStock <= 0) { res.status(400).json({ error: 'Produto sem saldo; registre uma entrada de estoque antes de ativá-lo.' }); return; }
+      const targetStatus = requestedStock <= 0 ? 'INACTIVE' : requestedStatus;
       if (targetStatus === 'ARCHIVED') {
         const [activeKitRef] = await db.select({ id: schema.products.id }).from(schema.productKitItems)
           .innerJoin(schema.products, eq(schema.productKitItems.kitProductId, schema.products.id))
           .where(and(eq(schema.productKitItems.componentProductId, id), eq(schema.products.isKit, true), eq(schema.products.status, 'ACTIVE'))).limit(1);
         if (activeKitRef) { res.status(409).json({ error: 'Desative ou arquive os kits ativos que usam este produto antes de arquivá-lo.' }); return; }
       }
+      const purchaseCostMode = ['unit', 'lot'].includes(req.body?.purchaseCostMode) ? req.body.purchaseCostMode : 'same';
+      const purchaseCost = req.body?.purchaseCost === undefined || req.body?.purchaseCost === null || req.body?.purchaseCost === ''
+        ? null : normMoney(req.body.purchaseCost);
+      const purchaseLotUnits = req.body?.purchaseLotUnits === undefined || req.body?.purchaseLotUnits === null || req.body?.purchaseLotUnits === ''
+        ? requestedStock - existing.stock : Number(req.body.purchaseLotUnits);
+      const stockIncrease = requestedStock > existing.stock;
+      if (stockIncrease && purchaseCostMode !== 'same' &&
+          (purchaseCost === null || !Number.isFinite(purchaseCost) || purchaseCost < 0 || purchaseCost > 99_999_999.99 ||
+           (purchaseCostMode === 'lot' && (!Number.isSafeInteger(purchaseLotUnits) || purchaseLotUnits <= 0)))) {
+        res.status(400).json({ error: 'Custo da compra inválido.' }); return;
+      }
       const updated = await db.transaction(async (tx) => {
-        const [row] = await tx.update(schema.products).set({ ...input, status: targetStatus, updatedAt: new Date() })
-          .where(and(eq(schema.products.id, id), eq(schema.products.stock, existing.stock))).returning();
-        if (!row) throw new Error('O saldo foi alterado por outra operação. Atualize a tela e tente novamente.');
+        await tx.execute(sql`SELECT id FROM products WHERE id = ${id} FOR UPDATE`);
+        const [locked] = await tx.select().from(schema.products).where(eq(schema.products.id, id)).limit(1);
+        if (!locked || locked.stock !== existing.stock) throw new Error('O saldo foi alterado por outra operação. Atualize os dados e tente novamente.');
+        const delta = requestedStock - locked.stock;
+        let costFields: Record<string, unknown> = {};
+        let costReason = 'Alteração de produto pelo formulário';
+        if (delta > 0 && purchaseCostMode !== 'same' && purchaseCost !== null) {
+          const incomingUnitCost = purchaseCostMode === 'lot' ? purchaseCost / purchaseLotUnits : purchaseCost;
+          const currentUnitCost = Number(locked.costUnitPrecise ?? locked.cost ?? 0);
+          const weightedUnitCost = calculateWeightedAverageUnitCost(locked.stock, currentUnitCost, delta, incomingUnitCost);
+          const batchTotal = purchaseCostMode === 'lot' ? purchaseCost : Number((purchaseCost * delta).toFixed(2));
+          costFields = {
+            costUnitPrecise: weightedUnitCost.toFixed(6),
+            cost: weightedUnitCost.toFixed(2),
+            costLotTotal: batchTotal.toFixed(2),
+            costLotUnits: delta,
+          };
+          costReason = `Entrada pelo formulário (custo ${purchaseCostMode === 'lot' ? `total do lote R$ ${purchaseCost.toFixed(2)}` : `unitário R$ ${purchaseCost.toFixed(2)}`}; médio atualizado para ${weightedUnitCost.toFixed(6)}/un.)`;
+        }
+        const [row] = await tx.update(schema.products).set({ ...input, ...costFields, stock: requestedStock, status: targetStatus, updatedAt: new Date() })
+          .where(and(eq(schema.products.id, id), eq(schema.products.stock, locked.stock))).returning();
+        if (!row) throw new Error('O saldo foi alterado por outra operação. Atualize os dados e tente novamente.');
+        if (delta !== 0) await recordInventoryMovement(tx, {
+          productId: id, delta, beforeStock: locked.stock, afterStock: requestedStock,
+          movementType: delta > 0 ? 'MANUAL_ENTRY' : 'MANUAL_CORRECTION', reason: costReason,
+          actorUserId: req.user!.id, idempotencyKey: typeof req.body?.idempotencyKey === 'string' ? req.body.idempotencyKey : null,
+        });
         if (media !== null) {
           await tx.delete(schema.productImages).where(eq(schema.productImages.productId, id));
           for (const item of media) await tx.insert(schema.productImages).values({ productId: id, ...item });
@@ -289,7 +352,8 @@ export function registerAdminPhase2Routes(app: Express) {
       res.json(updated);
     } catch (error: any) {
       logServerError('admin_product_update_failed', error);
-      res.status(error?.message ? 400 : 500).json({ error: error?.message || 'Não foi possível atualizar o produto.' });
+      const status = error?.message?.includes('outra operação') ? 409 : error?.message ? 400 : 500;
+      res.status(status).json({ error: error?.message || 'Não foi possível atualizar o produto.' });
     }
   });
 
@@ -434,10 +498,14 @@ export function registerAdminPhase2Routes(app: Express) {
     const direction = req.body?.direction;
     const quantity = Number(req.body?.quantity);
     const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
-    if (!key || !Number.isSafeInteger(productId) || productId <= 0 || !['IN', 'OUT', 'SET'].includes(direction) || !Number.isSafeInteger(quantity) || quantity < 0 || quantity > MAX_STOCK || !reason || reason.length > 500) {
-      res.status(400).json({ error: 'Informe produto, operação, quantidade, motivo (até 500 caracteres) e chave de envio válida.' }); return;
+    const purchaseCostMode = ['unit', 'lot'].includes(req.body?.purchaseCostMode) ? req.body.purchaseCostMode : 'same';
+    const purchaseCost = req.body?.purchaseCost === undefined || req.body?.purchaseCost === null || req.body?.purchaseCost === '' ? null : normMoney(req.body.purchaseCost);
+    const purchaseLotUnits = req.body?.purchaseLotUnits === undefined || req.body?.purchaseLotUnits === null || req.body?.purchaseLotUnits === '' ? quantity : Number(req.body.purchaseLotUnits);
+    if (!key || !Number.isSafeInteger(productId) || productId <= 0 || !['IN', 'OUT', 'SET'].includes(direction) || !Number.isSafeInteger(quantity) || quantity < 0 || quantity > MAX_STOCK || !reason || reason.length > 500 ||
+        (purchaseCostMode !== 'same' && (direction !== 'IN' || purchaseCost === null || !Number.isFinite(purchaseCost) || purchaseCost < 0 || purchaseCost > 99_999_999.99 || (purchaseCostMode === 'lot' && (!Number.isSafeInteger(purchaseLotUnits) || purchaseLotUnits <= 0))))) {
+      res.status(400).json({ error: 'Informe dados válidos para a movimentação; o custo de compra adicional só pode ser usado em entradas.' }); return;
     }
-    const fingerprint = summarizeFingerprint([productId, direction, quantity, reason]);
+    const fingerprint = summarizeFingerprint([productId, direction, quantity, reason, purchaseCostMode, purchaseCost, purchaseLotUnits]);
     try {
       const result = await db.transaction(async (tx) => {
         const prior = await getPriorOperation(tx, key, fingerprint);
@@ -449,12 +517,25 @@ export function registerAdminPhase2Routes(app: Express) {
         const delta = direction === 'IN' ? quantity : direction === 'OUT' ? -quantity : quantity - product.stock;
         const afterStock = product.stock + delta;
         if (afterStock < 0 || afterStock > MAX_STOCK) return { insufficient: true as const };
+        let costFields: Record<string, unknown> = {};
+        let costResult: Record<string, unknown> | null = null;
+        if (direction === 'IN' && delta > 0 && purchaseCostMode !== 'same' && purchaseCost !== null) {
+          const incomingUnits = delta;
+          const incomingUnitCost = purchaseCostMode === 'lot' ? purchaseCost / purchaseLotUnits : purchaseCost;
+          const currentUnitCost = Number(product.costUnitPrecise ?? product.cost ?? 0);
+          const precise = calculateWeightedAverageUnitCost(product.stock, currentUnitCost, incomingUnits, incomingUnitCost);
+          const batchTotal = purchaseCostMode === 'lot' ? purchaseCost : Number((purchaseCost * incomingUnits).toFixed(2));
+          costFields = { costUnitPrecise: precise.toFixed(6), cost: precise.toFixed(2), costLotTotal: batchTotal.toFixed(2), costLotUnits: incomingUnits };
+          costResult = { previousUnitCost: currentUnitCost, incomingUnitCost: Number(incomingUnitCost.toFixed(6)), incomingUnits, incomingTotal: batchTotal, weightedUnitCost: precise };
+        }
+        const operationResult = { fingerprint, result: { productId, delta, beforeStock: product.stock, afterStock, cost: costResult } };
         const movement = await changeStock(tx, product, delta, {
           movementType: direction === 'IN' ? 'MANUAL_ENTRY' : direction === 'OUT' ? 'MANUAL_EXIT' : 'MANUAL_CORRECTION',
-          reason, actorUserId: req.user!.id, idempotencyKey: key,
-          operationResult: { fingerprint, result: { productId, delta, beforeStock: product.stock, afterStock } },
+          reason: costResult ? `${reason} (custo informado: ${purchaseCostMode === 'lot' ? 'lote ' + purchaseCost : 'unidade ' + purchaseCost}; médio atualizado para ${costResult.weightedUnitCost}/un.)` : reason,
+          actorUserId: req.user!.id, idempotencyKey: key, costFields,
+          operationResult,
         });
-        return { movement, stockDelta: delta, product: { id: movement.id, stock: movement.stock, status: movement.status, code: movement.code, name: movement.name } };
+        return { movement, stockDelta: delta, cost: costResult, product: { id: movement.id, stock: movement.stock, status: movement.status, code: movement.code, name: movement.name } };
       });
       if ('notFound' in result) { res.status(404).json({ error: 'Produto não encontrado.' }); return; }
       if ('kit' in result) { res.status(409).json({ error: 'Ajustes manuais de kits são bloqueados; use montagem ou desmonte.' }); return; }
@@ -462,7 +543,7 @@ export function registerAdminPhase2Routes(app: Express) {
       if ('conflict' in result) { logServerEvent('inventory.manual_movement.conflict', 'warn', { status: 409, productId, adminId: req.user!.id, action: direction, result: 'conflict', reason: 'idempotency_key_reused' }); res.status(409).json({ error: 'Esta chave idempotente já foi usada com dados diferentes.' }); return; }
       if ('duplicate' in result) { res.json({ ...result.result, duplicate: true }); return; }
       logServerEvent('inventory.manual_movement.created', 'info', { productId: result.product.id, adminId: req.user!.id, role: req.user!.role, action: direction, stockDelta: result.stockDelta, result: 'committed' });
-      res.status(201).json({ ...result.product, duplicate: false });
+      res.status(201).json({ ...result.product, cost: result.cost, duplicate: false });
     } catch (error: any) {
       logServerError('inventory.manual_movement.failed', error, { productId, adminId: req.user!.id, action: direction, result: 'transaction_rolled_back' });
       const [prior] = key ? await db.select().from(schema.inventoryMovements).where(eq(schema.inventoryMovements.idempotencyKey, key)).limit(1).catch(() => []) : [];

@@ -1,19 +1,23 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Trash2, Minus, Plus, ArrowRight, ShoppingBag, ArrowLeft, Store } from 'lucide-react';
-import { useApp, isAdminRole, formatCurrency, ProductImage } from '../context/AppContext.tsx';
+import { useApp, formatCurrency, calculatePromoLinePricing, ProductImage } from '../context/AppContext.tsx';
 
 export const CartPage: React.FC = () => {
   const {
     cart,
     updateCartQuantity,
+    toggleCartItemSelected,
     removeFromCart,
     clearCart,
     cartSubtotal,
     user,
     apiFetch,
+    toast,
   } = useApp();
   const navigate = useNavigate();
+  const selectedCount = cart.filter((item) => item.selected !== false).length;
+  const selectedQuantity = cart.reduce((sum, item) => sum + (item.selected !== false ? item.quantity : 0), 0);
   const [storeClosed, setStoreClosed] = useState(false);
   const [storeClosedMessage, setStoreClosedMessage] = useState('A loja está fechada no momento.');
 
@@ -58,7 +62,7 @@ export const CartPage: React.FC = () => {
   }
 
   return (
-    <main className="max-w-[1100px] mx-auto px-4 sm:px-6 py-8 space-y-6">
+    <main className="max-w-[1100px] mx-auto px-4 sm:px-6 py-8 pb-28 lg:pb-8 space-y-6">
       {storeClosed && (
         <div className="p-4 rounded-xl bg-amber-50 border border-amber-300 text-amber-950">
           <div className="font-bold text-sm">Loja fechada no momento</div>
@@ -104,11 +108,21 @@ export const CartPage: React.FC = () => {
         {/* Itemized List */}
         <div className="lg:col-span-8 bg-white border border-stone-200 rounded-xl divide-y divide-stone-200">
           {cart.map((item) => (
+            (() => {
+              const pricing = calculatePromoLinePricing({
+                normalPrice: item.originalPrice ?? item.price,
+                promoPrice: item.promoPrice ?? item.price,
+                hasPromo: item.hasPromo,
+                promoMaxUnits: item.promoMaxUnits,
+                quantity: item.quantity,
+              });
+              return (
             <div
               key={item.productId}
               className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
             >
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3">
+                <input type="checkbox" aria-label={`Selecionar ${item.name}`} checked={item.selected !== false} onChange={(e) => toggleCartItemSelected(item.productId, e.target.checked)} className="h-4 w-4 accent-zinc-900" />
                 <Link
                   to={`/produto/${item.productId}`}
                   className="w-20 h-16 rounded-lg overflow-hidden bg-[#F9F9F8] border border-stone-200 shrink-0"
@@ -123,7 +137,7 @@ export const CartPage: React.FC = () => {
                     {item.name}
                   </Link>
                   <div className="text-xs text-zinc-500 tabular-nums">
-                    Unitário: {formatCurrency(item.price)} • Máx: {item.stock} un.
+                  Unitário: {formatCurrency(pricing.hasPromo ? pricing.promoUnitPrice : pricing.normalUnitPrice)} • Máx: {item.stock} un.
                   </div>
                 </div>
               </div>
@@ -143,7 +157,12 @@ export const CartPage: React.FC = () => {
                   </span>
                   <button
                     type="button"
-                    onClick={() => updateCartQuantity(item.productId, item.quantity + 1)}
+                    onClick={() => {
+                      if (pricing.hasLimit && item.promoMaxUnits && item.quantity === item.promoMaxUnits) {
+                        toast(`Atenção: a oferta vale só para ${item.promoMaxUnits} un. A partir da unidade ${item.promoMaxUnits + 1}, o valor é normal (${formatCurrency(pricing.normalUnitPrice)}).`, 'info');
+                      }
+                      updateCartQuantity(item.productId, item.quantity + 1);
+                    }}
                     disabled={item.quantity >= item.stock}
                     className="p-1.5 text-zinc-700 hover:text-zinc-900 disabled:opacity-40"
                     aria-label="Aumentar"
@@ -152,8 +171,15 @@ export const CartPage: React.FC = () => {
                   </button>
                 </div>
 
-                <div className="w-24 text-right text-sm font-semibold text-zinc-900 tabular-nums">
-                  {formatCurrency(item.price * item.quantity)}
+                <div className="w-40 text-right text-sm font-semibold text-zinc-900 tabular-nums">
+                  {pricing.hasLimit && pricing.normalQty > 0 ? (
+                    <div className="space-y-1 text-xs">
+                      <div>{pricing.promoQty} un. em oferta × {formatCurrency(pricing.promoUnitPrice)} = {formatCurrency(pricing.promoSubtotal)}</div>
+                      <div>{pricing.normalQty} un. preço normal × {formatCurrency(pricing.normalUnitPrice)} = {formatCurrency(pricing.normalSubtotal)}</div>
+                      <div className="font-bold">Total {formatCurrency(pricing.subtotal)}</div>
+                      <div className="text-[10px] font-medium text-amber-800">Oferta limitada a {pricing.promoMaxUnits} un. por pedido — as demais saem pelo preço normal.</div>
+                    </div>
+                  ) : formatCurrency(pricing.subtotal)}
                 </div>
 
                 <button
@@ -166,11 +192,13 @@ export const CartPage: React.FC = () => {
                 </button>
               </div>
             </div>
+              );
+            })()
           ))}
         </div>
 
         {/* Summary Box */}
-        <div className="lg:col-span-4 bg-white border border-stone-200 rounded-xl p-6 space-y-5">
+        <div className="hidden lg:block lg:col-span-4 bg-white border border-stone-200 rounded-xl p-6 space-y-5">
           <h2 className="text-base font-bold text-zinc-900">Resumo do Pedido</h2>
 
           <div className="space-y-2.5 text-sm border-b border-stone-200 pb-4">
@@ -193,11 +221,11 @@ export const CartPage: React.FC = () => {
 
           <button
             type="button"
-            disabled={storeClosed}
+            disabled={storeClosed || selectedCount === 0}
             onClick={() => navigate(user ? '/checkout' : '/login?redirect=/checkout')}
             className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 rounded-lg transition-colors whitespace-nowrap disabled:opacity-50"
           >
-            <span>{storeClosed ? 'Checkout indisponível — loja fechada' : user ? 'Avançar para o Checkout' : 'Entrar para Finalizar Pedido'}</span>
+            <span>{storeClosed ? 'Checkout indisponível — loja fechada' : selectedCount === 0 ? 'Selecione ao menos um item' : user ? 'Fazer pedido' : 'Entrar para Finalizar Pedido'}</span>
             <ArrowRight className="w-4 h-4" />
           </button>
 
@@ -209,6 +237,7 @@ export const CartPage: React.FC = () => {
           </Link>
         </div>
       </div>
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-stone-200 bg-white/95 p-3 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] backdrop-blur lg:hidden"><div className="mx-auto flex max-w-[1100px] items-center justify-between gap-3"><div><div className="text-xs text-zinc-500">{selectedQuantity} unidade(s) selecionada(s)</div><div className="font-bold tabular-nums">{formatCurrency(cartSubtotal)}</div></div><button type="button" disabled={storeClosed || selectedCount === 0} onClick={() => navigate(user ? '/checkout' : '/login?redirect=/checkout')} className="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50">{selectedCount === 0 ? 'Selecione itens' : 'Fazer pedido'}<ArrowRight className="h-4 w-4" /></button></div></div>
     </main>
   );
 };

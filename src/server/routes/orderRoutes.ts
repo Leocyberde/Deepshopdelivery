@@ -304,7 +304,8 @@ export function registerOrderRoutes(app: Express) {
             ? `${prod.code} - ${prod.name}`
             : prod.name;
 
-          const currentUnitCost = prod.cost !== null && prod.cost !== undefined ? String(prod.cost) : null;
+          const preciseCost = prod.costUnitPrecise !== null && prod.costUnitPrecise !== undefined ? prod.costUnitPrecise : prod.cost;
+          const currentUnitCost = preciseCost !== null && preciseCost !== undefined ? String(preciseCost) : null;
 
           if (pricing.hasLimitExceeded) {
             preparedItems.push({

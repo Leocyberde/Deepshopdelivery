@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
   Search,
   ShoppingBag,
+  Minus,
+  Plus,
   ArrowRight,
   X,
   Truck,
@@ -18,6 +20,7 @@ import {
   isAdminRole,
   formatCurrency,
   calculateDiscountPercent,
+  calculatePromoLinePricing,
   buildProductShareWhatsAppUrl,
   ProductImage,
   ProductMediaCarousel,
@@ -70,6 +73,7 @@ export const StorefrontPage: React.FC = () => {
     apiFetch,
     addToCart,
     cart,
+    toast,
     removeFromCart,
     user,
     searchQuery,
@@ -87,6 +91,8 @@ export const StorefrontPage: React.FC = () => {
   );
   const [autocompleteOpen, setAutocompleteOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState<number>(-1);
+  const [addingProduct, setAddingProduct] = useState<Product | null>(null);
+  const [addingQuantity, setAddingQuantity] = useState(1);
   const searchContainerRef = useRef<HTMLDivElement | null>(null);
 
   const recordInteraction = useCallback(
@@ -98,6 +104,18 @@ export const StorefrontPage: React.FC = () => {
     },
     [apiFetch]
   );
+
+  const openQuantityPicker = (product: Product) => {
+    setAddingProduct(product);
+    setAddingQuantity(1);
+  };
+
+  useEffect(() => {
+    if (!addingProduct) return;
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') setAddingProduct(null); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [addingProduct]);
 
   useEffect(() => {
     let mounted = true;
@@ -394,18 +412,7 @@ export const StorefrontPage: React.FC = () => {
                               onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
-                                addToCart({
-                                  productId: item.id,
-                                  name: fullTitle,
-                                  price: parseFloat(item.effectivePrice || item.price),
-                                  originalPrice: parseFloat(item.price),
-                                  promoPrice: item.promoPrice ? parseFloat(item.promoPrice) : null,
-                                  hasPromo: Boolean(item.hasPromo),
-                                  promoMaxUnits: item.promoMaxUnits ?? null,
-                                  imageUrl: item.imageUrl,
-                                  categoryName: item.categoryName,
-                                  stock: item.stock,
-                                });
+                                openQuantityPicker(item);
                                 setAutocompleteOpen(false);
                               }}
                               className="px-2.5 py-1.5 text-[11px] font-semibold text-white bg-zinc-900 hover:bg-zinc-800 rounded-lg transition-colors shrink-0 cursor-pointer"
@@ -687,20 +694,7 @@ export const StorefrontPage: React.FC = () => {
                               e.preventDefault();
                               e.stopPropagation();
                               recordInteraction(product.id, 'CLICK');
-                              addToCart({
-                                productId: product.id,
-                                name: fullTitle,
-                                price: parseFloat(product.effectivePrice || product.price),
-                                originalPrice: parseFloat(product.price),
-                                promoPrice: product.promoPrice
-                                  ? parseFloat(product.promoPrice)
-                                  : null,
-                                hasPromo: Boolean(product.hasPromo),
-                                promoMaxUnits: product.promoMaxUnits ?? null,
-                                imageUrl: product.imageUrl,
-                                categoryName: product.categoryName,
-                                stock: product.stock,
-                              });
+                              openQuantityPicker(product);
                             }}
                             className="flex-1 py-1.5 px-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-white text-[11px] sm:text-xs font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer"
                           >
@@ -819,6 +813,32 @@ export const StorefrontPage: React.FC = () => {
           </div>
         </div>
       </footer>
+
+      {addingProduct && (() => {
+        const currentQuantity = cart.find((item) => item.productId === addingProduct.id)?.quantity || 0;
+        const availableToAdd = Math.max(0, addingProduct.stock - currentQuantity);
+        const quantity = Math.min(Math.max(1, addingQuantity), Math.max(1, availableToAdd));
+        const pricing = calculatePromoLinePricing({ normalPrice: addingProduct.price, promoPrice: addingProduct.promoPrice, hasPromo: addingProduct.hasPromo, promoMaxUnits: addingProduct.promoMaxUnits, quantity });
+        const fullTitle = addingProduct.code ? `${addingProduct.code} - ${addingProduct.name}` : addingProduct.name;
+        return <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setAddingProduct(null); }}>
+          <section role="dialog" aria-modal="true" aria-labelledby="quantity-picker-title" className="w-full max-w-md rounded-t-2xl bg-white p-5 shadow-2xl sm:rounded-2xl">
+            <div className="flex items-start gap-3">
+              <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg border bg-stone-50"><ProductImage src={addingProduct.imageUrl} alt={fullTitle} /></div>
+              <div className="min-w-0 flex-1"><h2 id="quantity-picker-title" className="font-bold text-zinc-900">{fullTitle}</h2><p className="text-xs text-zinc-500">Estoque: {addingProduct.stock} un. · Já na sacola: {currentQuantity} un.</p></div>
+              <button type="button" autoFocus onClick={() => setAddingProduct(null)} aria-label="Fechar seletor" className="rounded-lg px-2 py-1 text-zinc-500 hover:bg-stone-100">×</button>
+            </div>
+            <div className="mt-5 flex items-center justify-center gap-4">
+              <button type="button" aria-label="Diminuir quantidade" disabled={addingQuantity <= 1} onClick={() => setAddingQuantity((value) => Math.max(1, value - 1))} className="rounded-full border p-3 disabled:opacity-40"><Minus className="h-4 w-4" /></button>
+              <input aria-label="Quantidade" type="number" min="1" max={availableToAdd} value={addingQuantity} disabled={availableToAdd <= 0} onChange={(event) => { const raw = Number(event.target.value); if (!Number.isFinite(raw)) return; if (raw > availableToAdd) { setAddingQuantity(Math.max(1, availableToAdd)); toast(`A quantidade foi ajustada ao estoque disponível: ${availableToAdd} un. já podem ser adicionadas.`, 'info'); return; } setAddingQuantity(Math.max(1, Math.floor(raw))); }} className="w-20 rounded-lg border px-3 py-2 text-center text-lg font-bold" />
+              <button type="button" aria-label="Aumentar quantidade" disabled={addingQuantity >= availableToAdd} onClick={() => setAddingQuantity((value) => Math.min(availableToAdd, value + 1))} className="rounded-full border p-3 disabled:opacity-40"><Plus className="h-4 w-4" /></button>
+            </div>
+            {availableToAdd <= 0 ? <p role="status" className="mt-4 text-center text-sm font-semibold text-amber-800">Você já atingiu o estoque disponível deste produto na sacola.</p> : <div className="mt-4 rounded-xl bg-stone-50 p-3 text-sm">
+              {pricing.hasLimitExceeded ? <><div>{pricing.promoQty} un. em oferta × {formatCurrency(pricing.promoUnitPrice)} + {pricing.normalQty} un. × {formatCurrency(pricing.normalUnitPrice)} (preço normal) = <strong>{formatCurrency(pricing.subtotal)}</strong></div><p className="mt-2 rounded-lg bg-amber-100 p-2 text-xs font-semibold text-amber-950">A oferta vale para apenas {pricing.promoMaxUnits} unidade(s) por pedido. As demais {pricing.normalQty} unidades serão cobradas pelo preço normal.</p></> : <div>{quantity} un. × {formatCurrency(pricing.hasPromo ? pricing.promoUnitPrice : pricing.normalUnitPrice)} = <strong>{formatCurrency(pricing.subtotal)}</strong></div>}
+            </div>}
+            <button type="button" disabled={addingProduct.stock <= 0 || availableToAdd <= 0} onClick={() => { addToCart({ productId: addingProduct.id, name: fullTitle, price: parseFloat(addingProduct.effectivePrice || addingProduct.price), originalPrice: parseFloat(addingProduct.price), promoPrice: addingProduct.promoPrice ? parseFloat(addingProduct.promoPrice) : null, hasPromo: Boolean(addingProduct.hasPromo), promoMaxUnits: addingProduct.promoMaxUnits ?? null, imageUrl: addingProduct.imageUrl, categoryName: addingProduct.categoryName, stock: addingProduct.stock }, quantity); setAddingProduct(null); }} className="mt-4 w-full rounded-xl bg-zinc-900 px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-45">{addingProduct.stock <= 0 ? 'Sem estoque' : availableToAdd <= 0 ? 'Estoque já na sacola' : 'Adicionar à sacola'}</button>
+          </section>
+        </div>;
+      })()}
     </div>
   );
 };

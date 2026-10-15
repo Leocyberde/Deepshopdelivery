@@ -43,6 +43,7 @@ import {
   isPromoCurrentlyActive,
   resolvePromoTiming,
   resolvePromoMaxUnits,
+  calculatePromoLinePricing,
   getSettingsMap,
   getFreightRuleConfig,
   getPrimaryStoreId,
@@ -52,7 +53,7 @@ import { expireOverdueUnpaidOrders, PAYMENT_TIMEOUT_REASON_PREFIX, LEGACY_PAYMEN
 import { getStoreRange, DEFAULT_STORE_TIMEZONE, tzToUtc } from '../../utils/timezone.ts';
 import { getCallMeBotStatus, sendCallMeBotMessage } from '../services/callmebotService.ts';
 import { DEFAULT_STORE_HOURS, getStoreState, parseStoreHours, validateStoreHours } from '../services/storeStatusService.ts';
-
+import { calculateStockProfitScenarios } from '../services/profitService.ts';
 const notPaymentExpiredOrder = () => sql`COALESCE(${schema.orders.cancellationReason}, '') NOT LIKE ${PAYMENT_TIMEOUT_REASON_PREFIX + '%'} AND COALESCE(${schema.orders.cancellationReason}, '') NOT LIKE ${LEGACY_PAYMENT_TIMEOUT_REASON_PREFIX + '%'}`;
 export function registerAdminRoutes(app: Express) {
   const allowedOrderTransitions: Record<string, string[]> = {
@@ -546,7 +547,7 @@ export function registerAdminRoutes(app: Express) {
       for (const p of allProducts) {
         if (p.stock > 0) {
           totalStockUnits += p.stock;
-          const costNum = parseFloat(String(p.cost || '0').replace(',', '.')) || 0;
+          const costNum = parseFloat(String(p.costUnitPrecise ?? p.cost ?? '0').replace(',', '.')) || 0;
           const priceNum = parseFloat(String(p.price || '0').replace(',', '.')) || 0;
           const promoActive = isPromoCurrentlyActive(p);
           const promoPriceNum =
@@ -581,7 +582,7 @@ export function registerAdminRoutes(app: Express) {
             projectedSaleVal = p.stock * priceNum;
           }
 
-          totalInventoryCost += costNum * p.stock;
+          totalInventoryCost += Number(p.costUnitPrecise ?? costNum) * p.stock;
           totalInventorySaleValue += projectedSaleVal;
         }
       }
@@ -784,12 +785,13 @@ export function registerAdminRoutes(app: Express) {
       let totalStockUnits = 0;
       let totalStockCost = 0;
       let totalStockSaleValue = 0;
+      let totalStockPromoSaleValue = 0;
       let totalRealizedProfitAll = 0;
       let hasUnknownRealizedProfit = false;
       let totalDeliveredUnitsAll = 0;
 
       const analyzedProducts = allProducts.map((p) => {
-        const costNum = parseFloat(String(p.cost || '0').replace(',', '.')) || 0;
+        const costNum = parseFloat(String(p.costUnitPrecise ?? p.cost ?? '0').replace(',', '.')) || 0;
         const priceNum = parseFloat(String(p.price || '0').replace(',', '.')) || 0;
         const promoActive = isPromoCurrentlyActive(p);
         const promoNum =
@@ -797,36 +799,28 @@ export function registerAdminRoutes(app: Express) {
             ? parseFloat(String(p.promoPrice).replace(',', '.'))
             : null;
         const effectivePrice = promoNum !== null ? promoNum : priceNum;
+        const stockProfitScenarios = calculateStockProfitScenarios({ ...p, price: priceNum, promoPrice: promoNum, promoActive, cost: costNum });
 
         const hasCostDefined = costNum > 0;
         let unitProfit = 0;
         let unitMarginPercent = 0;
         let markupPercent = 0;
-        let marginStatus: 'NO_COST' | 'ZERO_PROFIT' | 'PROFITABLE' = 'NO_COST';
+        let marginStatus: 'NO_COST' | 'ZERO_PROFIT' | 'PROFITABLE' | 'LOSS' = 'NO_COST';
 
         if (hasCostDefined) {
-          if (costNum >= effectivePrice) {
-            unitProfit = 0;
-            unitMarginPercent = 0;
-            markupPercent = 0;
-            marginStatus = 'ZERO_PROFIT';
-          } else {
-            unitProfit = Number((effectivePrice - costNum).toFixed(2));
-            unitMarginPercent =
-              effectivePrice > 0
-                ? Number(((unitProfit / effectivePrice) * 100).toFixed(1))
-                : 0;
-            markupPercent = Number(((unitProfit / costNum) * 100).toFixed(1));
-            marginStatus = 'PROFITABLE';
-          }
+          unitProfit = Number((effectivePrice - costNum).toFixed(2));
+          unitMarginPercent = effectivePrice > 0 ? Number(((unitProfit / effectivePrice) * 100).toFixed(1)) : 0;
+          markupPercent = costNum > 0 ? Number(((unitProfit / costNum) * 100).toFixed(1)) : 0;
+          marginStatus = unitProfit < 0 ? 'LOSS' : unitProfit === 0 ? 'ZERO_PROFIT' : 'PROFITABLE';
         }
 
-        const potentialStockProfit = Number((unitProfit * p.stock).toFixed(2));
+        const potentialStockProfit = hasCostDefined ? (stockProfitScenarios.promoStockProfit ?? stockProfitScenarios.normalStockProfit ?? 0) : 0;
 
         if (p.stock > 0) {
           totalStockUnits += p.stock;
           totalStockCost += costNum * p.stock;
-          totalStockSaleValue += effectivePrice * p.stock;
+          totalStockSaleValue += stockProfitScenarios.normalStockRevenue;
+          totalStockPromoSaleValue += stockProfitScenarios.promoStockRevenue ?? stockProfitScenarios.normalStockRevenue;
         }
 
         const stats = salesByProduct.get(p.id) || {
@@ -899,6 +893,8 @@ export function registerAdminRoutes(app: Express) {
           unitProfit,
           unitMarginPercent,
           potentialStockProfit,
+          normalStockProfit: stockProfitScenarios.normalStockProfit,
+          promoStockProfit: stockProfitScenarios.promoStockProfit,
           viewsCount: uniqueVisitors,
           clicksCount,
           sharesCount,
@@ -947,6 +943,8 @@ export function registerAdminRoutes(app: Express) {
           totalStockCost: Number(totalStockCost.toFixed(2)),
           totalStockSaleValue: Number(totalStockSaleValue.toFixed(2)),
           potentialInventoryProfit: Number((totalStockSaleValue - totalStockCost).toFixed(2)),
+          totalStockPromoSaleValue: Number(totalStockPromoSaleValue.toFixed(2)),
+          potentialInventoryPromoProfit: Number((totalStockPromoSaleValue - totalStockCost).toFixed(2)),
           averageMarginPercent:
             totalStockSaleValue > 0
               ? Number(
@@ -1138,6 +1136,9 @@ export function registerAdminRoutes(app: Express) {
       const priceInput = Number(String(price).replace(',', '.'));
       const stockInput = Number(stock ?? 0);
       const costInput = Number(String(cost ?? '0').replace(',', '.'));
+      const preciseCostInput = req.body.costUnitPrecise === undefined ? costInput : Number(String(req.body.costUnitPrecise).replace(',', '.'));
+      const lotTotalInput = req.body.costLotTotal === undefined || req.body.costLotTotal === null || req.body.costLotTotal === '' ? null : Number(String(req.body.costLotTotal).replace(',', '.'));
+      const lotUnitsInput = req.body.costLotUnits === undefined || req.body.costLotUnits === null || req.body.costLotUnits === '' ? null : Number(req.body.costLotUnits);
       const weightInput = Number(String(weight ?? '0').replace(',', '.'));
       const promoInput = promoPrice === undefined || promoPrice === null || String(promoPrice).trim() === ''
         ? null
@@ -1148,6 +1149,8 @@ export function registerAdminRoutes(app: Express) {
           !Number.isFinite(priceInput) || priceInput < 0 || priceInput > 99999999.99 ||
           !Number.isInteger(stockInput) || stockInput < 0 || stockInput > 1000000 ||
           !Number.isFinite(costInput) || costInput < 0 || costInput > 99999999.99 ||
+          !Number.isFinite(preciseCostInput) || preciseCostInput < 0 || preciseCostInput > 99999999.999999 ||
+          (lotTotalInput !== null && (!Number.isFinite(lotTotalInput) || lotTotalInput < 0 || lotUnitsInput === null || !Number.isSafeInteger(lotUnitsInput) || lotUnitsInput <= 0)) ||
           !Number.isFinite(weightInput) || weightInput < 0 || weightInput > 9999999.999 ||
           (promoInput !== null && (!Number.isFinite(promoInput) || promoInput < 0 || promoInput > 99999999.99))) {
         res.status(400).json({ error: 'Campos do produto inválidos ou acima dos limites permitidos.' });
@@ -1203,7 +1206,10 @@ export function registerAdminRoutes(app: Express) {
           promoDurationHours,
           promoMaxUnits,
           isKit: false,
-          cost: costNum.toFixed(2),
+          cost: preciseCostInput.toFixed(2),
+          costUnitPrecise: preciseCostInput.toFixed(6),
+          costLotTotal: lotTotalInput === null ? null : lotTotalInput.toFixed(2),
+          costLotUnits: lotUnitsInput,
           stock: stockNum,
           weight: weightNum.toFixed(3),
           status: stockNum <= 0 || status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
@@ -1255,6 +1261,9 @@ export function registerAdminRoutes(app: Express) {
       const priceInput = Number(String(price).replace(',', '.'));
       const stockInput = Number(stock ?? 0);
       const costInput = Number(String(cost ?? '0').replace(',', '.'));
+      const preciseCostInput = req.body.costUnitPrecise === undefined ? costInput : Number(String(req.body.costUnitPrecise).replace(',', '.'));
+      const lotTotalInput = req.body.costLotTotal === undefined || req.body.costLotTotal === null || req.body.costLotTotal === '' ? null : Number(String(req.body.costLotTotal).replace(',', '.'));
+      const lotUnitsInput = req.body.costLotUnits === undefined || req.body.costLotUnits === null || req.body.costLotUnits === '' ? null : Number(req.body.costLotUnits);
       const weightInput = Number(String(weight ?? '0').replace(',', '.'));
       const promoInput = promoPrice === undefined || promoPrice === null || String(promoPrice).trim() === ''
         ? null
@@ -1265,6 +1274,8 @@ export function registerAdminRoutes(app: Express) {
           !Number.isFinite(priceInput) || priceInput < 0 || priceInput > 99999999.99 ||
           !Number.isInteger(stockInput) || stockInput < 0 || stockInput > 1000000 ||
           !Number.isFinite(costInput) || costInput < 0 || costInput > 99999999.99 ||
+          !Number.isFinite(preciseCostInput) || preciseCostInput < 0 || preciseCostInput > 99999999.999999 ||
+          (lotTotalInput !== null && (!Number.isFinite(lotTotalInput) || lotTotalInput < 0 || lotUnitsInput === null || !Number.isSafeInteger(lotUnitsInput) || lotUnitsInput <= 0)) ||
           !Number.isFinite(weightInput) || weightInput < 0 || weightInput > 9999999.999 ||
           (promoInput !== null && (!Number.isFinite(promoInput) || promoInput < 0 || promoInput > 99999999.99))) {
         res.status(400).json({ error: 'Campos do produto inválidos ou acima dos limites permitidos.' });
@@ -1327,7 +1338,10 @@ export function registerAdminRoutes(app: Express) {
           promoEndsAt,
           promoDurationHours,
           promoMaxUnits,
-          cost: costNum.toFixed(2),
+          cost: preciseCostInput.toFixed(2),
+          costUnitPrecise: preciseCostInput.toFixed(6),
+          costLotTotal: lotTotalInput === null ? null : lotTotalInput.toFixed(2),
+          costLotUnits: lotUnitsInput,
           stock: stockNum,
           weight: weightNum.toFixed(3),
           status: stockNum <= 0 || status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
@@ -2909,6 +2923,9 @@ export function registerAdminRoutes(app: Express) {
       if (cost !== undefined && cost !== null) {
         const costNum = Math.max(0, parseFloat(String(cost).replace(',', '.')) || 0);
         updates.cost = costNum.toFixed(2);
+        updates.costUnitPrecise = costNum.toFixed(6);
+        updates.costLotTotal = null;
+        updates.costLotUnits = null;
       }
 
       if (price !== undefined && price !== null && String(price).trim() !== '') {
@@ -2927,13 +2944,14 @@ export function registerAdminRoutes(app: Express) {
       const { triggerAutoSnapshot } = await import('../../db/backup.ts');
       triggerAutoSnapshot();
 
-      const costNum = parseFloat(String(updated.cost || '0')) || 0;
+      const costNum = parseFloat(String(updated.costUnitPrecise ?? updated.cost ?? '0')) || 0;
       const priceNum = parseFloat(String(updated.price || '0')) || 0;
       const promoActive = isPromoCurrentlyActive(updated);
       const effectivePrice = promoActive && updated.promoPrice ? parseFloat(String(updated.promoPrice)) : priceNum;
-      const unitProfit = Number(Math.max(0, effectivePrice - costNum).toFixed(2));
+      const unitProfit = Number((effectivePrice - costNum).toFixed(2));
       const unitMarginPercent = effectivePrice > 0 ? Number(((unitProfit / effectivePrice) * 100).toFixed(1)) : 0;
-      const potentialStockProfit = Number((unitProfit * updated.stock).toFixed(2));
+      const stockProfitScenarios = calculateStockProfitScenarios({ ...updated, cost: costNum, promoActive });
+      const potentialStockProfit = stockProfitScenarios.promoStockProfit ?? stockProfitScenarios.normalStockProfit ?? 0;
 
       res.json({
         success: true,
@@ -2942,6 +2960,8 @@ export function registerAdminRoutes(app: Express) {
           unitProfit,
           unitMarginPercent,
           potentialStockProfit,
+          normalStockProfit: stockProfitScenarios.normalStockProfit,
+          promoStockProfit: stockProfitScenarios.promoStockProfit,
         },
         message: 'Custo e margem do produto atualizados com sucesso!',
       });

@@ -31,6 +31,7 @@ export interface CartItem {
   categoryName?: string;
   stock: number;
   quantity: number;
+  selected?: boolean;
 }
 
 export interface ToastMessage {

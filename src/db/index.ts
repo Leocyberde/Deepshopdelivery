@@ -129,6 +129,9 @@ export async function initializeDatabase() {
       promo_max_units INTEGER,
       is_kit BOOLEAN NOT NULL DEFAULT FALSE,
       cost NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
+      cost_unit_precise NUMERIC(14, 6),
+      cost_lot_total NUMERIC(12, 2),
+      cost_lot_units INTEGER,
       stock INTEGER NOT NULL DEFAULT 0,
       stock_minimum INTEGER NOT NULL DEFAULT 5,
       weight NUMERIC(10, 3) DEFAULT 0.000,
@@ -147,6 +150,9 @@ export async function initializeDatabase() {
     ALTER TABLE products ADD COLUMN IF NOT EXISTS promo_duration_hours INTEGER;
     ALTER TABLE products ADD COLUMN IF NOT EXISTS promo_max_units INTEGER;
     ALTER TABLE products ADD COLUMN IF NOT EXISTS is_kit BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_unit_precise NUMERIC(14, 6);
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_lot_total NUMERIC(12, 2);
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_lot_units INTEGER;
     ALTER TABLE products ADD COLUMN IF NOT EXISTS views_count INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE products ADD COLUMN IF NOT EXISTS clicks_count INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE products ADD COLUMN IF NOT EXISTS shares_count INTEGER NOT NULL DEFAULT 0;
@@ -344,11 +350,12 @@ export async function initializeDatabase() {
       quantity INTEGER NOT NULL,
       unit_price NUMERIC(10, 2) NOT NULL,
       subtotal NUMERIC(10, 2) NOT NULL,
-      unit_cost NUMERIC(10, 2),
+      unit_cost NUMERIC(14, 6),
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
 
-    ALTER TABLE order_items ADD COLUMN IF NOT EXISTS unit_cost NUMERIC(10, 2);
+    ALTER TABLE order_items ADD COLUMN IF NOT EXISTS unit_cost NUMERIC(14, 6);
+    ALTER TABLE order_items ALTER COLUMN unit_cost TYPE NUMERIC(14, 6);
 
     CREATE TABLE IF NOT EXISTS inventory_movements (
       id SERIAL PRIMARY KEY,

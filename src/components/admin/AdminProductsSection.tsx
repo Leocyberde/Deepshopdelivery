@@ -19,7 +19,9 @@ import {
   ProductMediaItem,
   ExpandableDescription,
   PromoCountdown,
+  calculatePromoLinePricing,
 } from '../../context/AppContext.tsx';
+import { simulateProfit } from '../../utils/profitSimulation.ts';
 import { AdminSection } from './AdminSidebar.tsx';
 
 interface AdminProductsSectionProps {
@@ -75,8 +77,16 @@ interface AdminProductsSectionProps {
   setProdPromoMaxUnits: (val: string) => void;
   prodCost: string;
   setProdCost: (val: string) => void;
+  prodCostMode: 'unit' | 'lot';
+  setProdCostMode: (val: 'unit' | 'lot') => void;
+  prodCostLotUnits: string;
+  setProdCostLotUnits: (val: string) => void;
   prodStock: string;
   setProdStock: (val: string) => void;
+  purchaseCostMode: 'same' | 'unit' | 'lot';
+  setPurchaseCostMode: (val: 'same' | 'unit' | 'lot') => void;
+  purchaseCost: string;
+  setPurchaseCost: (val: string) => void;
   prodWeight: string;
   setProdWeight: (val: string) => void;
   prodStatus: 'ACTIVE' | 'INACTIVE';
@@ -152,8 +162,16 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
   setProdPromoMaxUnits,
   prodCost,
   setProdCost,
+  prodCostMode,
+  setProdCostMode,
+  prodCostLotUnits,
+  setProdCostLotUnits,
   prodStock,
   setProdStock,
+  purchaseCostMode,
+  setPurchaseCostMode,
+  purchaseCost,
+  setPurchaseCost,
   prodWeight,
   setProdWeight,
   prodStatus,
@@ -720,7 +738,7 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div>
                       <h4 className="text-xs font-bold text-zinc-900">
-                        Limite de itens por compra na promoção (opcional)
+                        Máximo de unidades em oferta por cliente em cada pedido (vazio/desligado = sem limite)
                       </h4>
                       <p className="text-[11px] text-zinc-500">
                         Se ativado, o cliente só pode comprar até a quantidade limite pelo valor promocional; as unidades excedentes são cobradas pelo valor normal do produto.
@@ -733,7 +751,7 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
                         checked={prodPromoLimitEnabled}
                         onChange={(e) => {
                           setProdPromoLimitEnabled(e.target.checked);
-                          if (e.target.checked && (!prodPromoMaxUnits || Number(prodPromoMaxUnits) <= 0)) {
+                          if (e.target.checked && !prodPromoMaxUnits) {
                             setProdPromoMaxUnits('5');
                           }
                         }}
@@ -751,7 +769,7 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center p-3 rounded-lg bg-emerald-50/70 border border-emerald-200">
                       <div className="sm:col-span-3 space-y-1">
                         <label className="block text-[11px] font-semibold text-emerald-950">
-                          Máx. de itens na promoção
+                          Máximo de unidades em oferta por pedido
                         </label>
                         <input
                           type="number"
@@ -792,13 +810,10 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
                           Aviso exibido ao cliente:
                         </div>
                         <div className="font-medium leading-snug">
-                          &ldquo;Só é permitido comprar{' '}
-                          <strong>{Math.max(1, Math.floor(Number(prodPromoMaxUnits) || 5))}</strong>{' '}
-                          {Math.max(1, Math.floor(Number(prodPromoMaxUnits) || 5)) === 1
-                            ? 'item'
-                            : 'itens'}{' '}
-                          na promoção ({formatCurrency(prodPromoPrice || 0)}), acima segue o valor
-                          normal do produto ({formatCurrency(prodPrice || 0)}).&rdquo;
+                          {Number.isSafeInteger(Number(prodPromoMaxUnits)) && Number(prodPromoMaxUnits) > 0 ? <>&ldquo;Só é permitido comprar{' '}
+                            <strong>{Number(prodPromoMaxUnits)}</strong>{' '}
+                            {Number(prodPromoMaxUnits) === 1 ? 'unidade' : 'unidades'}{' '}
+                            em oferta por pedido ({formatCurrency(prodPromoPrice || 0)}), acima segue o valor normal ({formatCurrency(prodPrice || 0)}).&rdquo;</> : <span className="text-red-700">Informe um número inteiro maior que zero para o limite.</span>}
                         </div>
                       </div>
                     </div>
@@ -810,134 +825,83 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
 
           {/* Linha 3: Custo, Estoque, Peso e Status */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div className="space-y-1">
+            <div className="col-span-2 space-y-2">
+              {formMode === 'PRODUCT' && <fieldset className="space-y-1">
+                <legend className="block text-xs font-semibold text-zinc-700">Informar custo:</legend>
+                <div className="flex flex-wrap gap-3 text-xs">
+                  <label className="inline-flex items-center gap-1.5"><input type="radio" name="cost-mode" checked={prodCostMode === 'unit'} onChange={() => setProdCostMode('unit')} />Por unidade</label>
+                  <label className="inline-flex items-center gap-1.5"><input type="radio" name="cost-mode" checked={prodCostMode === 'lot'} onChange={() => setProdCostMode('lot')} />Total do lote</label>
+                </div>
+              </fieldset>}
               <label className="block text-xs font-semibold text-zinc-700">
-                Custo de Compra (R$)
+                {formMode === 'KIT' || prodCostMode === 'unit' ? 'Custo de Compra por unidade (R$)' : 'Custo total do lote (R$)'}
+                <input type="number" step="0.01" min="0" value={prodCost} onChange={(e) => setProdCost(e.target.value)} placeholder={prodCostMode === 'lot' ? 'Ex: 19.99' : 'Ex: 6.50'} className="mt-1 w-full px-3 py-2 text-sm bg-sky-50/50 border border-sky-300 rounded-lg font-mono font-bold text-sky-950 focus:ring-2 focus:ring-[#087BFF]" />
               </label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={prodCost}
-                onChange={(e) => setProdCost(e.target.value)}
-                placeholder="Ex: 6.50"
-                className="w-full px-3 py-2 text-sm bg-sky-50/50 border border-sky-300 rounded-lg font-mono font-bold text-sky-950 focus:ring-2 focus:ring-[#087BFF]"
-              />
-              <span className="text-[10px] text-zinc-500">Valor pago por 1 unidade</span>
+              {formMode === 'PRODUCT' && prodCostMode === 'lot' && <label className="block text-xs font-semibold text-zinc-700">
+                Quantidade de unidades do lote
+                <input type="number" min="1" step="1" value={prodCostLotUnits} onChange={(e) => setProdCostLotUnits(e.target.value)} className="mt-1 w-full px-3 py-2 text-sm bg-white border border-stone-300 rounded-lg font-mono" />
+                <span className="mt-1 block text-[10px] text-zinc-500">Custo por unidade: {formatCurrency((Number(String(prodCost || 0).replace(',', '.')) || 0) / Math.max(1, Number(prodCostLotUnits) || Number(prodStock) || 1))} (total ÷ unidades).</span>
+              </label>}
+              {prodCostMode === 'unit' && <span className="text-[10px] text-zinc-500">Quanto pagou por uma unidade.</span>}
             </div>
 
-            {!(!editingProd && formMode === 'KIT') && (
-              <>
-                <div className="space-y-1">
-                  <label className="block text-xs font-semibold text-zinc-700">Estoque atual (un.)</label>
-                  <input type="number" step="1" min="0" required value={prodStock} disabled={Boolean(editingProd)} onChange={(e) => setProdStock(e.target.value)} className="w-full px-3 py-2 text-sm bg-white border border-stone-300 rounded-lg font-mono disabled:bg-stone-100 disabled:text-zinc-500" />
-                  {editingProd && <span className="text-[10px] text-zinc-500">Saldo protegido: ajustes são feitos em Estoque & Movimentações.</span>}
+            {!(!editingProd && formMode === 'KIT') && <>
+              <div className="space-y-1">
+                <label className="block text-xs font-semibold text-zinc-700">Estoque atual (un.)</label>
+                <input type="number" step="1" min="0" required value={prodStock} onChange={(e) => setProdStock(e.target.value)} className="w-full px-3 py-2 text-sm bg-white border border-stone-300 rounded-lg font-mono" />
+                {editingProd && <span className="text-[10px] text-zinc-500">Aumentos de saldo podem registrar o custo da nova compra; reduções mantêm o custo médio.</span>}
+              </div>
+              {editingProd && formMode === 'PRODUCT' && Number(prodStock) > Number(editingProd.stock) && <div className="col-span-2 sm:col-span-4 rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-950">
+                <p className="font-bold">Essas {Number(prodStock) - Number(editingProd.stock)} unidades novas foram compradas por quanto?</p>
+                <div className="mt-2 flex flex-wrap gap-3">
+                  <label className="inline-flex items-center gap-1.5"><input type="radio" checked={purchaseCostMode === 'same'} onChange={() => setPurchaseCostMode('same')} />Mesmo custo atual (padrão)</label>
+                  <label className="inline-flex items-center gap-1.5"><input type="radio" checked={purchaseCostMode === 'unit'} onChange={() => setPurchaseCostMode('unit')} />Outro custo por unidade</label>
+                  <label className="inline-flex items-center gap-1.5"><input type="radio" checked={purchaseCostMode === 'lot'} onChange={() => setPurchaseCostMode('lot')} />Total desta compra</label>
                 </div>
-                <div className="space-y-1">
-                  <label className="block text-xs font-semibold text-zinc-700">Alerta de estoque mínimo</label>
-                  <input type="number" step="1" min="0" max="1000000" required value={stockMinimum} onChange={(e) => setStockMinimum(e.target.value)} className="w-full px-3 py-2 text-sm bg-white border border-stone-300 rounded-lg font-mono" />
-                  <span className="text-[10px] text-zinc-500">Alerta quando o saldo for igual ou inferior.</span>
-                </div>
-              </>
-            )}
-
+                {purchaseCostMode !== 'same' && <label className="mt-3 block max-w-xs font-semibold">{purchaseCostMode === 'lot' ? 'Total pago nesta compra (R$)' : 'Custo por unidade (R$)'}<input type="number" min="0" step="0.01" required value={purchaseCost} onChange={(e) => setPurchaseCost(e.target.value)} className="mt-1 w-full rounded-lg border border-sky-300 bg-white px-3 py-2 font-mono" /></label>}
+              </div>}
+              <div className="space-y-1">
+                <label className="block text-xs font-semibold text-zinc-700">Alerta de estoque mínimo</label>
+                <input type="number" step="1" min="0" max="1000000" required value={stockMinimum} onChange={(e) => setStockMinimum(e.target.value)} className="w-full px-3 py-2 text-sm bg-white border border-stone-300 rounded-lg font-mono" />
+                <span className="text-[10px] text-zinc-500">Alerta quando o saldo for igual ou inferior.</span>
+              </div>
+            </>}
             <div className="space-y-1">
               <label className="block text-xs font-semibold text-zinc-700">Peso (kg)</label>
-              <input
-                type="number"
-                step="0.001"
-                min="0"
-                value={prodWeight}
-                onChange={(e) => setProdWeight(e.target.value)}
-                className="w-full px-3 py-2 text-sm bg-white border border-stone-300 rounded-lg font-mono"
-              />
+              <input type="number" step="0.001" min="0" value={prodWeight} onChange={(e) => setProdWeight(e.target.value)} className="w-full px-3 py-2 text-sm bg-white border border-stone-300 rounded-lg font-mono" />
             </div>
-
             <div className="space-y-1">
               <label className="block text-xs font-semibold text-zinc-700">Status</label>
-              <select
-                value={prodStatus}
-                onChange={(e) => setProdStatus(e.target.value as 'ACTIVE' | 'INACTIVE')}
-                className="w-full px-3 py-2 text-sm bg-white border border-stone-300 rounded-lg"
-              >
-                <option value="ACTIVE">Ativo</option>
-                <option value="INACTIVE">Inativo</option>
-              </select>
+              <select value={prodStatus} onChange={(e) => setProdStatus(e.target.value as 'ACTIVE' | 'INACTIVE')} className="w-full px-3 py-2 text-sm bg-white border border-stone-300 rounded-lg"><option value="ACTIVE">Ativo</option><option value="INACTIVE">Inativo</option></select>
             </div>
           </div>
 
-          {/* SIMULADOR DE LUCRO & MARGEM EM TEMPO REAL */}
+          {/* Simulador puro: recalcula ambos os cenários com custo unitário preciso. */}
           {(() => {
-            const rawSale = prodPromoActive && prodPromoPrice && String(prodPromoPrice).trim() !== ''
-              ? String(prodPromoPrice)
-              : String(prodPrice || '0');
-            const salePrice = Math.max(0, parseFloat(rawSale.replace(',', '.')) || 0);
-            const costPrice = Math.max(0, parseFloat(String(prodCost || '0').replace(',', '.')) || 0);
-            const stockUnits = Math.max(0, parseInt(String(prodStock || '0'), 10) || 0);
-            const hasCost = costPrice > 0;
-            const profit = hasCost ? Math.max(0, salePrice - costPrice) : 0;
-            const margin = salePrice > 0 && hasCost ? Number(((profit / salePrice) * 100).toFixed(1)) : 0;
-            const markup = costPrice > 0 ? Number(((profit / costPrice) * 100).toFixed(1)) : 0;
-            const projectedStockProfit = Number((profit * stockUnits).toFixed(2));
-            const isZeroMargin = hasCost && costPrice >= salePrice && salePrice > 0;
-            const noCost = !hasCost;
-
-            return (
-              <div className="p-3.5 rounded-xl bg-gradient-to-r from-sky-50/70 via-stone-50 to-emerald-50/70 border border-sky-200/80 space-y-2.5">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs">
-                  <div className="font-extrabold text-sky-950 flex items-center gap-1.5">
-                    <span>📊</span>
-                    <span>Simulador de Lucro & Margem (Calculado Automaticamente)</span>
-                  </div>
-                  <div className="text-[11px] text-zinc-500 font-mono">
-                    Preço de Venda: <strong>{formatCurrency(salePrice)}</strong> · Custo: <strong>{costPrice > 0 ? formatCurrency(costPrice) : 'Não informado'}</strong>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
-                  <div className="p-2 rounded-lg bg-white border border-stone-200 shadow-2xs">
-                    <div className="text-[10px] text-zinc-500 font-medium">Lucro Líquido / Un.</div>
-                    <div className={`text-sm font-bold font-mono ${noCost ? 'text-zinc-400' : profit > 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-                      {noCost ? 'Informe o custo' : `+ ${formatCurrency(profit)}`}
-                    </div>
-                  </div>
-
-                  <div className="p-2 rounded-lg bg-white border border-stone-200 shadow-2xs">
-                    <div className="text-[10px] text-zinc-500 font-medium">Margem de Lucro</div>
-                    <div className={`text-sm font-bold font-mono ${noCost ? 'text-zinc-400' : margin >= 30 ? 'text-emerald-700' : margin > 0 ? 'text-amber-700' : 'text-red-600'}`}>
-                      {noCost ? '-%' : `${margin.toFixed(1)}%`}
-                    </div>
-                  </div>
-
-                  <div className="p-2 rounded-lg bg-white border border-stone-200 shadow-2xs">
-                    <div className="text-[10px] text-zinc-500 font-medium">Markup s/ Custo</div>
-                    <div className={`text-sm font-bold font-mono ${noCost ? 'text-zinc-400' : markup > 0 ? 'text-blue-700' : 'text-zinc-500'}`}>
-                      {noCost ? '-%' : `+${markup.toFixed(1)}%`}
-                    </div>
-                  </div>
-
-                  <div className="p-2 rounded-lg bg-white border border-stone-200 shadow-2xs">
-                    <div className="text-[10px] text-sky-900 font-medium">Lucro no Estoque</div>
-                    <div className={`text-sm font-bold font-mono ${noCost ? 'text-zinc-400' : 'text-sky-900'}`}>
-                      {noCost ? 'Aguardando custo' : `+ ${formatCurrency(projectedStockProfit)}`}
-                    </div>
-                    <div className="text-[9px] text-zinc-400">({stockUnits} un.)</div>
-                  </div>
-                </div>
-
-                {noCost && (
-                  <div className="text-[11px] text-amber-900 bg-amber-50 border border-amber-200 rounded-lg p-2 font-medium">
-                    💡 <strong>Como funciona:</strong> Digite no campo "Custo de Compra" o valor que você pagou por cada unidade ao fornecedor. Assim, o sistema acompanha seus lucros e seu desenvolvimento financeiro sem falhar.
-                  </div>
-                )}
-
-                {isZeroMargin && (
-                  <div className="text-[11px] text-red-900 bg-red-50 border border-red-200 rounded-lg p-2 font-bold">
-                    ⚠️ Atenção: O custo de compra ({formatCurrency(costPrice)}) é maior ou igual ao preço de venda ({formatCurrency(salePrice)}). A margem de lucro será 0%!
-                  </div>
-                )}
-              </div>
-            );
+            const enteredCost = Number(String(prodCost || '0').replace(',', '.')) || 0;
+            const lotUnits = Math.max(1, Number(prodCostLotUnits) || Number(prodStock) || 1);
+            const result = simulateProfit({
+              normalPrice: prodPrice,
+              promoPrice: prodPromoPrice,
+              hasPromo: prodPromoActive,
+              cost: enteredCost,
+              costMode: formMode === 'PRODUCT' ? prodCostMode : 'unit',
+              lotUnits,
+              stock: prodStock,
+              promoMaxUnits: prodPromoLimitEnabled ? prodPromoMaxUnits : null,
+            });
+            const valueClass = (value: number) => value < 0 ? 'text-red-700' : value > 0 ? 'text-emerald-700' : 'text-zinc-800';
+            const card = (label: string, item: typeof result.normal) => <div className="rounded-xl border border-stone-200 bg-white p-3 space-y-2">
+              <h4 className="text-sm font-bold text-zinc-900">{label}</h4>
+              <div className="grid grid-cols-2 gap-y-1 text-xs"><span>Preço de venda</span><strong className="text-right">{formatCurrency(item.salePrice)}</strong><span>Custo por unidade</span><strong className="text-right">{result.hasCost ? formatCurrency(result.costUnitDisplay) : 'Não informado'}</strong><span>Lucro por unidade</span><strong className={`text-right ${valueClass(item.unitProfit)}`}>{formatCurrency(item.unitProfit)}</strong><span>Margem</span><strong className={`text-right ${valueClass(item.unitProfit)}`}>{result.hasCost ? `${item.marginPercent.toFixed(1)}%` : '—'}</strong><span>Receita se vender todo o estoque ({item.stockUnits} un.)</span><strong className="text-right">{formatCurrency(item.stockRevenue)}</strong><span className="font-bold">Lucro no estoque</span><strong className={`text-right font-bold ${valueClass(item.stockProfit)}`}>{formatCurrency(item.stockProfit)} ({item.stockUnits} un.)</strong></div>
+              {result.hasCost && item.salePrice < item.unitCost && item.stockUnits > 0 && <p className="rounded-lg border border-red-200 bg-red-50 p-2 text-xs font-semibold text-red-800">Atenção: o custo por unidade ({formatCurrency(result.costUnitDisplay)}) é maior que {label === 'Preço promocional' ? 'o preço promocional' : 'o preço normal'} ({formatCurrency(item.salePrice)}). Cada unidade vendida dá prejuízo de {formatCurrency(item.unitProfit)}; vendendo as {item.stockUnits} un. o prejuízo total será {formatCurrency(item.stockProfit)}.</p>}
+              {result.hasCost && item.salePrice === item.unitCost && <p className="rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs font-semibold text-amber-900">Custo igual ao preço: lucro zero.</p>}
+              {label === 'Preço promocional' && result.promoMaxUnits && <p className="rounded-lg bg-amber-50 p-2 text-[11px] text-amber-900">Oferta limitada a {result.promoMaxUnits} un. por pedido; as demais unidades de cada pedido saem pelo preço normal.</p>}
+            </div>;
+            return <section className="rounded-xl border border-sky-200 bg-sky-50/60 p-3.5 space-y-3" aria-label="Simulador de lucro e margem">
+              <div><h3 className="text-sm font-extrabold text-sky-950">Simulador de Lucro & Margem</h3><p className="text-[11px] text-zinc-600">Cenário de venda de todo o estoque a um único preço, sem estimar divisão de vendas. {result.hasCost && prodCostMode === 'lot' && `Custo por unidade: ${formatCurrency(result.costUnitDisplay)} (${formatCurrency(enteredCost)} ÷ ${lotUnits}).`}</p></div>
+              {!result.hasCost ? <p className="rounded-lg bg-amber-50 p-2 text-xs text-amber-900">Informe o custo de compra para calcular lucros, margens e prejuízos.</p> : <div className={`grid gap-3 ${result.promo ? 'md:grid-cols-2' : 'grid-cols-1'}`}>{card('Preço normal', result.normal)}{result.promo && card('Preço promocional', result.promo)}</div>}
+            </section>;
           })()}
 
           <div className="space-y-1">
@@ -1213,14 +1177,16 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
                 </tr>
               ) : (
                 activeProductsList.map((p) => {
-                  const saleStr = p.hasPromo && p.promoPrice ? String(p.promoPrice) : String(p.price || '0');
-                  const salePrice = Math.max(0, parseFloat(saleStr.replace(',', '.')) || 0);
-                  const costPrice = Math.max(0, parseFloat(String(p.cost || '0').replace(',', '.')) || 0);
-                  const hasCost = costPrice > 0;
-                  const isZeroProfit = hasCost && costPrice >= salePrice;
-                  const profit = hasCost ? Math.max(0, salePrice - costPrice) : 0;
-                  const margin = salePrice > 0 && hasCost ? (profit / salePrice) * 100 : 0;
-                  const stockProfit = hasCost ? profit * p.stock : 0;
+                  const simulation = simulateProfit({ normalPrice: p.price, promoPrice: p.promoPrice, hasPromo: p.hasPromo, cost: p.costUnitPrecise ?? p.cost, stock: p.stock, promoMaxUnits: p.promoMaxUnits });
+                  const costPrice = simulation.costUnitDisplay;
+                  const hasCost = simulation.hasCost;
+                  const salePrice = simulation.promo?.salePrice ?? simulation.normal.salePrice;
+                  const profit = simulation.promo?.unitProfit ?? simulation.normal.unitProfit;
+                  const margin = simulation.promo?.marginPercent ?? simulation.normal.marginPercent;
+                  const stockProfit = simulation.normal.stockProfit;
+                  const promoStockProfit = simulation.promo?.stockProfit ?? null;
+                  const isZeroProfit = hasCost && profit === 0;
+                  const isLoss = hasCost && profit < 0;
 
                   return (
                     <tr key={p.id} className="hover:bg-stone-50/70">
@@ -1343,36 +1309,12 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
 
                       {/* Margem (%) */}
                       <td className="py-3 px-4 text-right tabular-nums font-mono">
-                        {!hasCost ? (
-                          <span className="text-zinc-400 text-[11px]">-</span>
-                        ) : isZeroProfit ? (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-800">
-                            0% margem
-                          </span>
-                        ) : (
-                          <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
-                            margin >= 50
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : margin >= 30
-                              ? 'bg-amber-100 text-amber-900'
-                              : 'bg-stone-100 text-zinc-700'
-                          }`}>
-                            {margin.toFixed(1)}%
-                          </span>
-                        )}
+                        {!hasCost ? <span className="text-zinc-400 text-[11px]">-</span> : <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${isLoss ? 'bg-red-100 text-red-800' : margin >= 50 ? 'bg-emerald-100 text-emerald-800' : margin >= 30 ? 'bg-amber-100 text-amber-900' : 'bg-stone-100 text-zinc-700'}`}>{margin.toFixed(1)}%</span>}
                       </td>
 
                       {/* Lucro Estoque */}
                       <td className="py-3 px-4 text-right font-mono font-bold text-sky-900 tabular-nums">
-                        {!hasCost ? (
-                          <span className="text-zinc-400 font-normal font-sans text-[11px]">Defina o custo</span>
-                        ) : isZeroProfit ? (
-                          <span className="text-red-600 text-xs">R$ 0,00</span>
-                        ) : p.stock > 0 ? (
-                          `+ ${formatCurrency(stockProfit)}`
-                        ) : (
-                          'R$ 0,00'
-                        )}
+                        {!hasCost ? <span className="text-zinc-400 font-normal font-sans text-[11px]">Defina o custo</span> : <div className="space-y-0.5"><div className={stockProfit < 0 ? 'text-red-700' : 'text-sky-900'}>Normal: {formatCurrency(stockProfit)}</div>{promoStockProfit !== null && <div className={promoStockProfit < 0 ? 'text-red-700' : 'text-sky-900'}>Promo: {formatCurrency(promoStockProfit)}</div>}{p.stock === 0 && <div className="text-[10px] text-zinc-500">(0 un.)</div>}</div>}
                       </td>
 
                       {/* Estoque */}

@@ -237,7 +237,11 @@ export const AdminPanelPage: React.FC = () => {
   const [prodPromoLimitEnabled, setProdPromoLimitEnabled] = useState(false);
   const [prodPromoMaxUnits, setProdPromoMaxUnits] = useState('5');
   const [prodCost, setProdCost] = useState('');
+  const [prodCostMode, setProdCostMode] = useState<'unit' | 'lot'>('unit');
+  const [prodCostLotUnits, setProdCostLotUnits] = useState('1');
   const [prodStock, setProdStock] = useState('10');
+  const [purchaseCostMode, setPurchaseCostMode] = useState<'same' | 'unit' | 'lot'>('same');
+  const [purchaseCost, setPurchaseCost] = useState('');
   const [prodWeight, setProdWeight] = useState('0.200');
   const [prodStatus, setProdStatus] = useState<'ACTIVE' | 'INACTIVE'>('ACTIVE');
   const [prodImageUrl, setProdImageUrl] = useState('');
@@ -655,7 +659,11 @@ export const AdminPanelPage: React.FC = () => {
     setProdPromoLimitEnabled(false);
     setProdPromoMaxUnits('5');
     setProdCost('');
+    setProdCostMode('unit');
+    setProdCostLotUnits('10');
     setProdStock('10');
+    setPurchaseCostMode('same');
+    setPurchaseCost('');
     setProdStockMinimum('5');
     setProdWeight('0.200');
     setProdStatus('ACTIVE');
@@ -684,7 +692,11 @@ export const AdminPanelPage: React.FC = () => {
     setProdPromoLimitEnabled(false);
     setProdPromoMaxUnits('5');
     setProdCost('');
+    setProdCostMode('unit');
+    setProdCostLotUnits('1');
     setProdStock('1');
+    setPurchaseCostMode('same');
+    setPurchaseCost('');
     setProdStockMinimum('5');
     setProdWeight('0.200');
     setProdStatus('ACTIVE');
@@ -731,8 +743,12 @@ export const AdminPanelPage: React.FC = () => {
       setProdPromoHours('0');
       setProdPromoMinutes('0');
     }
-    setProdCost(prod.cost !== undefined && prod.cost !== null ? String(prod.cost) : '');
+    setProdCostMode('unit');
+    setProdCost(String(prod.costUnitPrecise ?? prod.cost ?? ''));
+    setProdCostLotUnits(String(prod.costLotUnits ?? prod.stock ?? 1));
     setProdStock(String(prod.stock ?? 0));
+    setPurchaseCostMode('same');
+    setPurchaseCost('');
     setProdStockMinimum(String(prod.stockMinimum ?? 5));
     setProdWeight(prod.weight || '0.000');
     setProdStatus(prod.status === 'ARCHIVED' ? 'INACTIVE' : prod.status);
@@ -1036,10 +1052,15 @@ export const AdminPanelPage: React.FC = () => {
       Math.max(0, Math.floor(Number(prodPromoMinutes) || 0));
     const effectivePromoMinutes = totalPromoMinutes > 0 ? totalPromoMinutes : 1440;
     const isPromoEnabled = prodPromoActive && prodPromoPrice.trim() !== '';
-    const parsedPromoMaxUnits =
-      isPromoEnabled && prodPromoLimitEnabled
-        ? Math.max(1, Math.floor(Number(prodPromoMaxUnits) || 5))
-        : null;
+    const lotUnitsValue = Math.max(1, Math.floor(Number(prodCostLotUnits) || Number(prodStock) || 1));
+    const enteredCostValue = Math.max(0, Number(String(prodCost || '0').replace(',', '.')) || 0);
+    const preciseUnitCost = prodCostMode === 'lot' ? enteredCostValue / lotUnitsValue : enteredCostValue;
+    const roundedUnitCost = Math.round(preciseUnitCost * 100) / 100;
+    const parsedPromoMaxUnits = isPromoEnabled && prodPromoLimitEnabled ? Number(prodPromoMaxUnits) : null;
+    if (parsedPromoMaxUnits !== null && (!Number.isSafeInteger(parsedPromoMaxUnits) || parsedPromoMaxUnits <= 0)) {
+      toast('O limite de unidades em oferta deve ser um número inteiro maior que zero.', 'error');
+      return;
+    }
 
     try {
       if (!editingProd && formMode === 'KIT') {
@@ -1094,8 +1115,16 @@ export const AdminPanelPage: React.FC = () => {
           promoDurationMinutes: effectivePromoMinutes,
           promoLimitEnabled: prodPromoLimitEnabled,
           promoMaxUnits: parsedPromoMaxUnits,
-          cost: prodCost || '0.00',
+          cost: roundedUnitCost.toFixed(2),
+          costUnitPrecise: preciseUnitCost.toFixed(6),
+          costLotTotal: prodCostMode === 'lot' ? enteredCostValue.toFixed(2) : (editingProd?.costLotTotal ?? null),
+          costLotUnits: prodCostMode === 'lot' ? lotUnitsValue : (editingProd?.costLotUnits ?? null),
           stock: Number(prodStock),
+          expectedStock: editingProd ? Number(editingProd.stock) : undefined,
+          purchaseCostMode: editingProd && Number(prodStock) > Number(editingProd.stock) ? purchaseCostMode : 'same',
+          purchaseCost: editingProd && Number(prodStock) > Number(editingProd.stock) && purchaseCostMode !== 'same' ? purchaseCost : null,
+          purchaseLotUnits: editingProd && Number(prodStock) > Number(editingProd.stock) && purchaseCostMode === 'lot' ? Number(prodStock) - Number(editingProd.stock) : null,
+          idempotencyKey: editingProd && Number(prodStock) !== Number(editingProd.stock) ? crypto.randomUUID() : undefined,
           stockMinimum: Number(prodStockMinimum),
           weight: prodWeight,
           status: prodStatus,
@@ -1694,8 +1723,16 @@ ${kitProd.code} - ${kitProd.name}`)) return;
                 setProdPromoMaxUnits={setProdPromoMaxUnits}
                 prodCost={prodCost}
                 setProdCost={setProdCost}
+                prodCostMode={prodCostMode}
+                setProdCostMode={setProdCostMode}
+                prodCostLotUnits={prodCostLotUnits}
+                setProdCostLotUnits={setProdCostLotUnits}
                 prodStock={prodStock}
                 setProdStock={setProdStock}
+                purchaseCostMode={purchaseCostMode}
+                setPurchaseCostMode={setPurchaseCostMode}
+                purchaseCost={purchaseCost}
+                setPurchaseCost={setPurchaseCost}
                 prodWeight={prodWeight}
                 setProdWeight={setProdWeight}
                 prodStatus={prodStatus}

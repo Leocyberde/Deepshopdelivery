@@ -17,6 +17,7 @@ import {
   isItatibaCity,
   ORDER_STATUS_LABELS,
   ProductImage,
+  calculatePromoLinePricing,
   formatCepMask,
   lookupCepAddress,
 } from '../context/AppContext.tsx';
@@ -79,12 +80,13 @@ export const CheckoutPage: React.FC = () => {
     user,
     cart,
     cartSubtotal,
-    clearCart,
+    removePurchasedCartItems,
     apiFetch,
     toast,
   } = useApp();
   const navigate = useNavigate();
   const isAdmin = isAdminRole(user?.role);
+  const selectedCartItems = cart.filter((item) => item.selected !== false);
 
   const [addresses, setAddresses] = useState<CustomerAddress[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState<number | null>(null);
@@ -537,6 +539,11 @@ export const CheckoutPage: React.FC = () => {
   };
 
   const handlePlaceOrder = async () => {
+    if (selectedCartItems.length === 0) {
+      toast('Selecione ao menos um item na sacola antes de fazer o pedido.', 'error');
+      navigate('/carrinho');
+      return;
+    }
     if (storeClosed) {
       toast(storeClosedMessage, 'error');
       return;
@@ -568,14 +575,14 @@ export const CheckoutPage: React.FC = () => {
           deliveryMinutes: deliveryMode === 'FAST' ? deliveryMinutes : null,
           scheduledDate: deliveryMode === 'SCHEDULED' ? scheduledDate : null,
           scheduledTime: deliveryMode === 'SCHEDULED' ? scheduledTime : null,
-          items: cart.map((i) => ({
+          items: selectedCartItems.map((i) => ({
             productId: i.productId,
             productName: i.name,
             quantity: i.quantity,
           })),
         }),
       });
-      clearCart();
+      removePurchasedCartItems();
       setCreatedOrder(res);
       toast(
         res.deliveryFeeSource === 'MANUAL_FREE_DELIVERY_PERIOD'
@@ -972,8 +979,9 @@ export const CheckoutPage: React.FC = () => {
         <div className="lg:col-span-5 bg-white border border-stone-200 rounded-xl p-6 space-y-5">
           <h2 className="text-base font-bold text-zinc-900">Resumo da Compra</h2>
           <div className="divide-y divide-stone-100 text-xs max-h-64 overflow-y-auto pr-1">
-            {cart.map((item) => (
-              <div key={item.productId} className="py-2.5 flex items-center justify-between gap-3">
+            {selectedCartItems.map((item) => {
+              const pricing = calculatePromoLinePricing({ normalPrice: item.originalPrice ?? item.price, promoPrice: item.promoPrice ?? item.price, hasPromo: item.hasPromo, promoMaxUnits: item.promoMaxUnits, quantity: item.quantity });
+              return <div key={item.productId} className="py-2.5 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5">
                   <div className="w-10 h-10 rounded-md overflow-hidden bg-[#F9F9F8] border border-stone-200 shrink-0">
                     <ProductImage src={item.imageUrl} alt={item.name} />
@@ -986,10 +994,10 @@ export const CheckoutPage: React.FC = () => {
                   </span>
                 </div>
                 <span className="font-semibold text-zinc-900 tabular-nums shrink-0">
-                  {formatCurrency(item.price * item.quantity)}
+                  {formatCurrency(pricing.subtotal)}
                 </span>
-              </div>
-            ))}
+              </div>;
+            })}
           </div>
 
           <div className="border-t border-stone-200 pt-4 space-y-2 text-sm">

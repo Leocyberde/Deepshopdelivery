@@ -70,6 +70,9 @@ CREATE TABLE IF NOT EXISTS products (
   promo_max_units INTEGER,
   is_kit BOOLEAN NOT NULL DEFAULT FALSE,
   cost NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
+  cost_unit_precise NUMERIC(14, 6),
+  cost_lot_total NUMERIC(12, 2),
+  cost_lot_units INTEGER,
   stock INTEGER NOT NULL DEFAULT 0,
   stock_minimum INTEGER NOT NULL DEFAULT 5,
   weight NUMERIC(10, 3) DEFAULT 0.000,
@@ -200,7 +203,7 @@ CREATE TABLE IF NOT EXISTS order_items (
   quantity INTEGER NOT NULL,
   unit_price NUMERIC(10, 2) NOT NULL,
   subtotal NUMERIC(10, 2) NOT NULL,
-  unit_cost NUMERIC(10, 2),
+  unit_cost NUMERIC(14, 6),
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
@@ -309,7 +312,11 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_mode TEXT;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_minutes INTEGER;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS estimated_delivery_at TIMESTAMP;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS scheduled_delivery_at TIMESTAMP;
-ALTER TABLE order_items ADD COLUMN IF NOT EXISTS unit_cost NUMERIC(10, 2);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_unit_precise NUMERIC(14, 6);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_lot_total NUMERIC(12, 2);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_lot_units INTEGER;
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS unit_cost NUMERIC(14, 6);
+ALTER TABLE order_items ALTER COLUMN unit_cost TYPE NUMERIC(14, 6);
 
 
 -- Configurações padrão necessárias para loja aberta/fechada, LGPD e CallMeBot

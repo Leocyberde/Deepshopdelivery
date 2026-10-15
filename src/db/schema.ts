@@ -78,6 +78,9 @@ export const products = pgTable('products', {
   promoMaxUnits: integer('promo_max_units'),
   isKit: boolean('is_kit').notNull().default(false),
   cost: numeric('cost', { precision: 10, scale: 2 }).notNull().default('0.00'),
+  costUnitPrecise: numeric('cost_unit_precise', { precision: 14, scale: 6 }),
+  costLotTotal: numeric('cost_lot_total', { precision: 12, scale: 2 }),
+  costLotUnits: integer('cost_lot_units'),
   stock: integer('stock').notNull().default(0),
   stockMinimum: integer('stock_minimum').notNull().default(5),
   weight: numeric('weight', { precision: 10, scale: 3 }).default('0.000'), // kg
@@ -303,7 +306,7 @@ export const orderItems = pgTable('order_items', {
   quantity: integer('quantity').notNull(),
   unitPrice: numeric('unit_price', { precision: 10, scale: 2 }).notNull(),
   subtotal: numeric('subtotal', { precision: 10, scale: 2 }).notNull(),
-  unitCost: numeric('unit_cost', { precision: 10, scale: 2 }),
+  unitCost: numeric('unit_cost', { precision: 14, scale: 6 }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 

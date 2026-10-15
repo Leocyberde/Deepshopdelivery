@@ -316,8 +316,10 @@ export function resolvePromoMaxUnits(body: any, finalPromoActive: boolean): numb
   ) {
     return null;
   }
-  const parsed = Math.floor(Number(body.promoMaxUnits));
-  if (isNaN(parsed) || parsed <= 0) return null;
+  const parsed = Number(body.promoMaxUnits);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new Error('O limite da promoção deve ser um número inteiro maior que zero.');
+  }
   return parsed;
 }
 
@@ -339,7 +341,7 @@ export function calculatePromoLinePricing(params: {
         ? parseFloat(params.promoPrice)
         : Number(params.promoPrice)
       : 0;
-  const isPromoActive = Boolean(params.hasPromo && !isNaN(rawPromo) && rawPromo > 0);
+  const isPromoActive = Boolean(params.hasPromo && !isNaN(rawPromo) && rawPromo > 0 && rawPromo < normalNum);
   const promoNum = isPromoActive ? rawPromo : normalNum;
 
   const parsedLimit =
