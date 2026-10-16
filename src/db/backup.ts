@@ -64,6 +64,12 @@ export interface DatabaseBackupPayload {
     storedObjects: any[];
     adminAuditLogs: any[];
     adminEventKeys: any[];
+    suppliers: any[];
+    supplierPurchases: any[];
+    orderFulfillments: any[];
+    refunds: any[];
+    refundItems: any[];
+    delayNotices: any[];
   };
 }
 
@@ -90,6 +96,12 @@ export async function exportFullBackupJson(): Promise<DatabaseBackupPayload> {
     storedObjects,
     adminAuditLogs,
     adminEventKeys,
+    suppliers,
+    supplierPurchases,
+    orderFulfillments,
+    refunds,
+    refundItems,
+    delayNotices,
   ] = await Promise.all([
     db.select().from(schema.stores),
     db.select().from(schema.users),
@@ -112,6 +124,12 @@ export async function exportFullBackupJson(): Promise<DatabaseBackupPayload> {
     db.select().from(schema.storedObjects),
     db.select().from(schema.adminAuditLogs),
     db.select().from(schema.adminEventKeys),
+    db.select().from(schema.suppliers),
+    db.select().from(schema.supplierPurchases),
+    db.select().from(schema.orderFulfillments),
+    db.select().from(schema.refunds),
+    db.select().from(schema.refundItems),
+    db.select().from(schema.delayNotices),
   ]);
   const safeUsers = users.map(({ resetCodeHash, resetCodeExpiresAt, resetCodeAttempts, ...user }) => user);
 
@@ -141,6 +159,12 @@ export async function exportFullBackupJson(): Promise<DatabaseBackupPayload> {
       storedObjects,
       adminAuditLogs,
       adminEventKeys,
+      suppliers,
+      supplierPurchases,
+      orderFulfillments,
+      refunds,
+      refundItems,
+      delayNotices,
     },
   };
 }
@@ -434,7 +458,7 @@ export async function restoreFromBackupJson(payload: DatabaseBackupPayload): Pro
   const tableNames = [
     'stores', 'users', 'categories', 'products', 'productKitItems', 'productImages', 'addresses', 'orders',
     'payments', 'supportTickets', 'supportMessages', 'orderItems', 'orderStatusHistory', 'productInteractions',
-    'notifications', 'adminNotifications', 'inventoryMovements', 'settings', 'storedObjects', 'adminAuditLogs', 'adminEventKeys',
+    'notifications', 'adminNotifications', 'inventoryMovements', 'settings', 'storedObjects', 'adminAuditLogs', 'adminEventKeys', 'suppliers', 'supplierPurchases', 'orderFulfillments', 'refunds', 'refundItems', 'delayNotices',
   ] as const;
   for (const tableName of tableNames) {
     const rows = (t as any)[tableName];
@@ -917,6 +941,24 @@ export async function restoreFromBackupJson(payload: DatabaseBackupPayload): Pro
         .onConflictDoNothing();
     }
 
+    for (const supplier of t.suppliers || []) {
+      await tx.insert(schema.suppliers).values({ id: supplier.id, name: supplier.name, contact: supplier.contact ?? null, website: supplier.website ?? null, notes: supplier.notes ?? null, status: supplier.status || 'ACTIVE', createdAt: toDate(supplier.createdAt), updatedAt: toDate(supplier.updatedAt) }).onConflictDoUpdate({ target: schema.suppliers.id, set: { name: supplier.name, contact: supplier.contact ?? null, website: supplier.website ?? null, notes: supplier.notes ?? null, status: supplier.status || 'ACTIVE', updatedAt: toDate(supplier.updatedAt) } });
+    }
+    for (const purchase of t.supplierPurchases || []) {
+      await tx.insert(schema.supplierPurchases).values({ id: purchase.id, supplierId: purchase.supplierId, productId: purchase.productId ?? null, itemName: purchase.itemName, unitCost: String(purchase.unitCost), quantity: Number(purchase.quantity), totalCost: String(purchase.totalCost), purchasedAt: toDate(purchase.purchasedAt), createdAt: toDate(purchase.createdAt), productUrl: purchase.productUrl ?? null, notes: purchase.notes ?? null, createdBy: purchase.createdBy ?? null }).onConflictDoNothing();
+    }
+    for (const fulfillment of t.orderFulfillments || []) {
+      await tx.insert(schema.orderFulfillments).values({ id: fulfillment.id, orderId: fulfillment.orderId, type: fulfillment.type, status: fulfillment.status || 'PENDING', etaAt: toNullableDate(fulfillment.etaAt), etaStart: toNullableDate(fulfillment.etaStart), etaEnd: toNullableDate(fulfillment.etaEnd), deliveredAt: toNullableDate(fulfillment.deliveredAt), deliveredBy: fulfillment.deliveredBy ?? null, createdAt: toDate(fulfillment.createdAt) }).onConflictDoNothing();
+    }
+    for (const refund of t.refunds || []) {
+      await tx.insert(schema.refunds).values({ id: refund.id, orderId: refund.orderId, fulfillmentId: refund.fulfillmentId ?? null, amount: String(refund.amount), scope: refund.scope, reason: refund.reason, status: refund.status || 'REQUESTED', requestedBy: refund.requestedBy, processedBy: refund.processedBy ?? null, createdAt: toDate(refund.createdAt), processedAt: toNullableDate(refund.processedAt), notes: refund.notes ?? null }).onConflictDoNothing();
+    }
+    for (const item of t.refundItems || []) {
+      await tx.insert(schema.refundItems).values({ id: item.id, refundId: item.refundId, orderItemId: item.orderItemId, quantity: Number(item.quantity), amount: String(item.amount), destination: item.destination ?? null }).onConflictDoNothing();
+    }
+    for (const notice of t.delayNotices || []) {
+      await tx.insert(schema.delayNotices).values({ id: notice.id, orderId: notice.orderId, fulfillmentId: notice.fulfillmentId, message: notice.message, options: notice.options || {}, waitDays: Number(notice.waitDays || 2), status: notice.status || 'PENDING', choice: notice.choice ?? null, answeredAt: toNullableDate(notice.answeredAt), createdBy: notice.createdBy ?? null, createdAt: toDate(notice.createdAt) }).onConflictDoNothing();
+    }
     for (const st of t.settings || []) {
       await tx
         .insert(schema.settings)
@@ -978,6 +1020,12 @@ export async function restoreFromBackupJson(payload: DatabaseBackupPayload): Pro
       'notifications',
       'admin_notifications',
       'inventory_movements',
+      'suppliers',
+      'supplier_purchases',
+      'order_fulfillments',
+      'refunds',
+      'refund_items',
+      'delay_notices',
     ];
     for (const tbl of serialTables) {
       await tx.execute(sql.raw(`SELECT setval(pg_get_serial_sequence('${tbl}', 'id'), COALESCE((SELECT MAX(id) FROM ${tbl}), 1), (SELECT COUNT(*) > 0 FROM ${tbl}));`));

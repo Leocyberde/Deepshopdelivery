@@ -59,6 +59,36 @@ interface AddressItem {
   };
 }
 
+interface OrderFulfillmentPart {
+  id: number;
+  type: 'DELIVERY' | 'PREORDER' | string;
+  status: string;
+  etaAt?: string | null;
+  etaStart?: string | null;
+  etaEnd?: string | null;
+  deliveredAt?: string | null;
+}
+
+const FULFILLMENT_STATUS_LABELS: Record<string, string> = {
+  PENDING: 'Aguardando',
+  PREPARING: 'Em preparo',
+  OUT_FOR_DELIVERY: 'Saiu para entrega',
+  DELIVERED: 'Entregue',
+  CANCELLED: 'Cancelado',
+  REFUNDED: 'Reembolsado',
+};
+
+function describeFulfillmentDeadline(part: OrderFulfillmentPart): string | null {
+  const tz = 'America/Sao_Paulo';
+  const day = (value: string) => new Intl.DateTimeFormat('pt-BR', { timeZone: tz, day: '2-digit', month: '2-digit' }).format(new Date(value));
+  const time = (value: string) => new Intl.DateTimeFormat('pt-BR', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(value));
+  if (part.status === 'DELIVERED' && part.deliveredAt) return `Entregue em ${day(part.deliveredAt)} às ${time(part.deliveredAt)}`;
+  if (part.status === 'CANCELLED' || part.status === 'REFUNDED') return null;
+  if (part.type === 'PREORDER' && part.etaStart && part.etaEnd) return `Chega entre ${day(part.etaStart)} e ${day(part.etaEnd)}`;
+  if (part.type !== 'PREORDER' && part.etaAt) return `Previsão: até ${day(part.etaAt)} ${time(part.etaAt)}`;
+  return null;
+}
+
 interface OrderItem {
   id: number;
   productId: number;
@@ -121,6 +151,7 @@ interface CustomerOrder {
     reference?: string | null;
   };
   items: OrderItem[];
+  fulfillments?: OrderFulfillmentPart[];
   history: OrderHistoryItem[];
   whatsappMessage: string;
   whatsappUrl: string;
@@ -175,8 +206,23 @@ export const CustomerAccountPage: React.FC = () => {
   const paymentKeysRef = useRef<Map<number, string>>(new Map());
   const [addresses, setAddresses] = useState<AddressItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [delayNotices, setDelayNotices] = useState<any[]>([]);
   const [acceptingLegal, setAcceptingLegal] = useState(false);
   const [requestingDeletion, setRequestingDeletion] = useState(false);
+
+  useEffect(() => {
+    if (activeTab !== 'NOTIFICATIONS') return;
+    void apiFetch('/api/delay-notices').then((data: any) => setDelayNotices(Array.isArray(data?.notices) ? data.notices : [])).catch(() => setDelayNotices([]));
+  }, [activeTab, apiFetch]);
+
+  const answerDelayNotice = async (noticeId: number, choice: 'WAIT' | 'EXCHANGE' | 'REFUND') => {
+    try {
+      await apiFetch(`/api/delay-notices/${noticeId}/respond`, { method: 'POST', body: JSON.stringify({ choice }) });
+      setDelayNotices((current) => current.filter((notice) => notice.id !== noticeId));
+      await refreshNotifications();
+      toast(choice === 'WAIT' ? 'Novo prazo registrado.' : choice === 'EXCHANGE' ? 'Abrimos um atendimento para a troca.' : 'Reembolso solicitado.', 'success');
+    } catch (error: any) { toast(error.message || 'Não foi possível registrar sua escolha.', 'error'); }
+  };
 
   // Cancel Order & Refund Request Modal State
   const [cancellingOrderTarget, setCancellingOrderTarget] = useState<CustomerOrder | null>(null);
@@ -914,6 +960,20 @@ export const CustomerAccountPage: React.FC = () => {
                             <span>{order.status === 'DELIVERED' ? 'Precisa de ajuda com este pedido?' : 'Falar com a loja sobre este pedido'}</span>
                           </Link>
                         </div>
+                        {Array.isArray(order.fulfillments) && order.fulfillments.length > 0 && (
+                          <div className="space-y-2">
+                            <h3 className="text-xs font-bold text-zinc-900">Entrega do pedido</h3>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                              {order.fulfillments.map((part) => (
+                                <div key={part.id} className="bg-white border border-stone-200 rounded-lg p-3">
+                                  <div className="font-semibold text-zinc-900">{part.type === 'PREORDER' ? 'Encomenda' : 'Delivery'}</div>
+                                  <div className="text-zinc-600">{FULFILLMENT_STATUS_LABELS[part.status] || part.status}</div>
+                                  {describeFulfillmentDeadline(part) && <div className="text-zinc-500">{describeFulfillmentDeadline(part)}</div>}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                           <div className="space-y-3">
                             <h3 className="text-xs font-bold text-zinc-900">Itens Comprados</h3>
@@ -1356,7 +1416,8 @@ export const CustomerAccountPage: React.FC = () => {
             <div><h2 className="text-base font-bold text-zinc-900">Notificações</h2><p className="mt-1 text-xs text-zinc-600">Avisos de pedidos e novas mensagens da loja.</p></div>
             {unreadNotificationsCount > 0 && <button type="button" onClick={() => void markAllNotificationsRead()} className="text-xs font-semibold text-emerald-800 underline">Marcar todas como lidas</button>}
           </div>
-          {notifications.length === 0 ? <div className="rounded-xl border border-stone-200 bg-white p-8 text-center text-sm text-zinc-500">Você não tem notificações.</div> : notifications.map((notification) => (
+          {delayNotices.map((notice) => <article key={notice.id} className="rounded-xl border border-amber-300 bg-amber-50 p-4"><h3 className="text-sm font-bold text-amber-950">Aviso de atraso</h3><p className="mt-1 text-xs leading-relaxed text-amber-900">{notice.message}</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => void answerDelayNotice(notice.id, 'WAIT')} className="rounded-lg bg-zinc-900 px-3 py-2 text-xs font-semibold text-white">Aguardar novo prazo</button><button type="button" onClick={() => void answerDelayNotice(notice.id, 'EXCHANGE')} className="rounded-lg border border-amber-500 bg-white px-3 py-2 text-xs font-semibold text-amber-950">Trocar produto</button><button type="button" onClick={() => void answerDelayNotice(notice.id, 'REFUND')} className="rounded-lg border border-red-300 bg-white px-3 py-2 text-xs font-semibold text-red-800">Solicitar reembolso</button></div></article>)}
+          {notifications.length === 0 && delayNotices.length === 0 ? <div className="rounded-xl border border-stone-200 bg-white p-8 text-center text-sm text-zinc-500">Você não tem notificações.</div> : notifications.map((notification) => (
             <article key={notification.id} className={`rounded-xl border p-4 ${notification.isRead ? 'border-stone-200 bg-white' : 'border-emerald-200 bg-emerald-50/50'}`}>
               <div className="flex flex-wrap items-start justify-between gap-2"><h3 className="text-sm font-bold text-zinc-900">{notification.title}</h3><time className="text-[11px] text-zinc-500">{formatDateTime(notification.createdAt)}</time></div>
               <p className="mt-1 text-xs leading-relaxed text-zinc-700">{notification.message}</p>

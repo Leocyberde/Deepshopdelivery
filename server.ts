@@ -17,6 +17,9 @@ import { registerSupportRoutes } from './src/server/routes/supportRoutes.ts';
 import { registerAdminRoutes } from './src/server/routes/adminRoutes.ts';
 import { registerAdminPhase2Routes } from './src/server/routes/adminPhase2Routes.ts';
 import { registerAdminPhase3Routes } from './src/server/routes/adminPhase3Routes.ts';
+import { registerFulfillmentRoutes } from './src/server/routes/fulfillmentRoutes.ts';
+import { registerDeliveryOrdersRoutes } from './src/server/routes/deliveryOrdersRoutes.ts';
+import { registerAdminRefundRoutes } from './src/server/routes/adminRefundRoutes.ts';
 import { startOrderExpirationWatcher } from './src/server/services/orderExpirationService.ts';
 import { startOrderNotificationWatcher } from './src/server/services/orderNotificationService.ts';
 import { startSupportLifecycleWatcher } from './src/server/services/supportLifecycleService.ts';
@@ -192,6 +195,9 @@ async function startServer() {
   registerStorageRoutes(app);
   registerAdminPhase2Routes(app);
   registerAdminPhase3Routes(app);
+  registerDeliveryOrdersRoutes(app);
+  registerAdminRefundRoutes(app);
+  registerFulfillmentRoutes(app);
   registerAuthRoutes(app);
   registerStorefrontRoutes(app);
   registerAddressRoutes(app);
@@ -271,7 +277,7 @@ async function startServer() {
     }
   });
 
-  server.listen(PORT, '127.0.0.1', () => {
+  server.listen(PORT, process.env.HOST || '127.0.0.1', () => {
     logServerEvent('http.server.listening', 'info', { port: PORT });
     logServerEvent('application.ready', 'info', { port: PORT });
   });

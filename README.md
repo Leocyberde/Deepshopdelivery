@@ -48,3 +48,11 @@ Scripts/evidências de fases anteriores que mencionam PGlite são históricas e 
 
 ## HTTPS
 Coloque Nginx ou Caddy na frente (HTTPS e redirecionamento) e defina `TRUST_PROXY=1`.
+
+## Evolução Delivery + Encomenda
+
+A migration `drizzle/0001_encomendas_fulfillments.sql` adiciona fornecedores, compras, `order_fulfillments`, reembolsos, avisos de atraso e os campos de split do pedido. Ela é idempotente e deve ser aplicada depois da migration 0000.
+
+O backend expõe `POST /api/cart/quote` para recalcular o split no servidor e rotas administrativas autenticadas em `/api/admin/suppliers`, `/api/admin/suppliers/:id/purchases`, `/api/admin/fulfillments` e `/api/admin/fulfillments/:id/status`. Os cálculos de janela de encomenda e totais estão em `src/utils/fulfillmentDates.ts`.
+
+Para validar localmente: `npm run lint`, `npm run build` e `npm test`. O banco de testes deve usar nome contendo `test`; não configure Mercado Pago ou CallMeBot reais durante os testes.

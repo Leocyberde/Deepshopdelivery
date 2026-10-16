@@ -25,7 +25,7 @@ import { simulateProfit } from '../../utils/profitSimulation.ts';
 import { AdminSection } from './AdminSidebar.tsx';
 
 interface AdminProductsSectionProps {
-  section: 'PRODUCTS' | 'INACTIVE_PRODUCTS';
+  section: 'PRODUCTS' | 'INACTIVE_PRODUCTS' | 'PREORDER_STOCKOUT';
   goToSection: (target: AdminSection) => void;
   products: any[];
   productSearch: string;
@@ -46,6 +46,7 @@ interface AdminProductsSectionProps {
   activeProductsList: any[];
   inactiveProductsList: any[];
   categories: any[];
+  supplierOptions: any[];
   showProdForm: boolean;
   setShowProdForm: (val: boolean) => void;
   formMode: 'PRODUCT' | 'KIT';
@@ -91,6 +92,14 @@ interface AdminProductsSectionProps {
   setProdWeight: (val: string) => void;
   prodStatus: 'ACTIVE' | 'INACTIVE';
   setProdStatus: (val: 'ACTIVE' | 'INACTIVE') => void;
+  prodSupplierId: number | '';
+  setProdSupplierId: (val: number | '') => void;
+  prodSupplierUrl: string;
+  setProdSupplierUrl: (val: string) => void;
+  prodFulfillmentType: 'DELIVERY' | 'PREORDER';
+  setProdFulfillmentType: (val: 'DELIVERY' | 'PREORDER') => void;
+  prodAllowPreorder: boolean;
+  setProdAllowPreorder: (val: boolean) => void;
   prodImageUrl: string;
   setProdImageUrl: (val: string) => void;
   prodMediaItems: ProductMediaItem[];
@@ -131,6 +140,7 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
   activeProductsList,
   inactiveProductsList,
   categories,
+  supplierOptions,
   showProdForm,
   setShowProdForm,
   formMode,
@@ -176,6 +186,8 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
   setProdWeight,
   prodStatus,
   setProdStatus,
+  prodSupplierId, setProdSupplierId, prodSupplierUrl, setProdSupplierUrl,
+  prodFulfillmentType, setProdFulfillmentType, prodAllowPreorder, setProdAllowPreorder,
   prodImageUrl,
   setProdImageUrl,
   prodMediaItems,
@@ -421,6 +433,16 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
               </select>
             </div>
           </div>
+
+          {formMode === 'PRODUCT' && (
+            <div className="grid grid-cols-1 gap-4 rounded-xl border border-stone-200 bg-stone-50 p-4 sm:grid-cols-12">
+              <div className="space-y-1 sm:col-span-4"><label className="block text-xs font-semibold text-zinc-700">Fornecedor</label><select value={prodSupplierId} onChange={(e) => setProdSupplierId(e.target.value ? Number(e.target.value) : '')} className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm"><option value="">Sem fornecedor</option>{supplierOptions.filter((supplier) => supplier.status !== 'INACTIVE').map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></div>
+              <div className="space-y-1 sm:col-span-4"><label className="block text-xs font-semibold text-zinc-700">Link no fornecedor</label><input type="url" placeholder="https://..." value={prodSupplierUrl} onChange={(e) => setProdSupplierUrl(e.target.value)} className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm" /></div>
+              <div className="space-y-1 sm:col-span-4"><label className="block text-xs font-semibold text-zinc-700">Tipo inicial</label><select value={prodFulfillmentType} onChange={(e) => setProdFulfillmentType(e.target.value as 'DELIVERY' | 'PREORDER')} className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm"><option value="DELIVERY">Delivery</option><option value="PREORDER">Encomenda</option></select></div>
+              <label className="inline-flex items-center gap-2 text-xs font-semibold text-zinc-700 sm:col-span-12"><input type="checkbox" checked={prodAllowPreorder} onChange={(e) => setProdAllowPreorder(e.target.checked)} className="h-4 w-4 accent-zinc-900" />Permitir encomenda quando acabar</label>
+              <p className="text-[11px] text-zinc-500 sm:col-span-12">O saldo decide a modalidade na vitrine. A opção controla apenas se o produto pode continuar ativo quando o saldo chegar a zero.</p>
+            </div>
+          )}
 
           {/* Seção de Seleção de Produtos para Montar Kit (Requisito 3) */}
           {formMode === 'KIT' && (
@@ -1388,13 +1410,14 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
             <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
             <div className="space-y-1">
               <div className="font-bold">
-                Produtos ocultos da vitrine por estoque zerado ou inativação
+                {section === 'PREORDER_STOCKOUT' ? 'Produtos sem estoque disponíveis para encomenda' : 'Produtos ocultos da vitrine por estoque zerado ou inativação'}
               </div>
               <p className="text-amber-900">
-                Quando um produto zera o estoque, ele some automaticamente da vitrine e aparece
-                nesta aba. Informe a nova quantidade de estoque abaixo e clique em{' '}
+                {section === 'PREORDER_STOCKOUT'
+                  ? 'Estes produtos continuam visíveis na vitrine como encomenda. O saldo pode ser reposto pela área de estoque.'
+                  : 'Quando um produto zera o estoque, ele some automaticamente da vitrine e aparece nesta aba. Informe a nova quantidade de estoque abaixo e clique em '}{section !== 'PREORDER_STOCKOUT' && <>
                 <strong>Ativar com Novo Estoque</strong> para deixá-lo ativo na vitrine
-                imediatamente.
+                imediatamente.</>}
               </p>
             </div>
           </div>

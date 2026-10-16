@@ -21,6 +21,7 @@ export interface UserProfile {
 
 export interface CartItem {
   productId: number;
+  receiveAllAsPreorder?: boolean;
   name: string;
   price: number;
   originalPrice?: number;
@@ -29,7 +30,6 @@ export interface CartItem {
   promoMaxUnits?: number | null;
   imageUrl: string | null;
   categoryName?: string;
-  stock: number;
   quantity: number;
   selected?: boolean;
 }

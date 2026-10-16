@@ -40,7 +40,6 @@ interface ProductDetail {
   discountPercent?: number;
   isKit: boolean;
   kitComponents?: KitComponentInfo[];
-  stock: number;
   weight: string;
   status: string;
   imageUrl: string | null;
@@ -136,8 +135,8 @@ export const ProductDetailPage: React.FC = () => {
     );
   }
 
-  const outOfStock = product.stock <= 0;
-  const lowStock = product.stock > 0 && product.stock <= 5;
+  const outOfStock = false;
+  const lowStock = false;
   const fullTitle = product.code ? `${product.code} - ${product.name}` : product.name;
   const discountPct =
     product.discountPercent ??
@@ -177,7 +176,6 @@ export const ProductDetailPage: React.FC = () => {
   };
 
   const handleAdd = (goToCheckout = false) => {
-    if (outOfStock) return;
     apiFetch(`/api/products/${product.id}/interaction`, {
       method: 'POST',
       body: JSON.stringify({ action: 'CLICK' }),
@@ -193,7 +191,6 @@ export const ProductDetailPage: React.FC = () => {
         promoMaxUnits: product.promoMaxUnits ?? null,
         imageUrl: product.imageUrl,
         categoryName: product.categoryName,
-        stock: product.stock,
       },
       quantity
     );
@@ -243,7 +240,7 @@ export const ProductDetailPage: React.FC = () => {
               <span>{product.categoryName}</span>
               <span aria-hidden="true">·</span>
               <span className="tabular-nums">
-                {outOfStock ? 'Sem estoque' : `${product.stock} unidades disponíveis`}
+                Entrega Delivery ou Encomenda
               </span>
               {parseFloat(product.weight || '0') > 0 && (
                 <>
@@ -325,7 +322,6 @@ export const ProductDetailPage: React.FC = () => {
               </div>
             ) : (
               <>
-                {lowStock && <div className="mb-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs font-semibold text-amber-900">Últimas unidades disponíveis: apenas {product.stock} em estoque.</div>}
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-zinc-700">Quantidade</span>
                   <div className="inline-flex items-center border border-stone-300 rounded-lg bg-stone-50">
@@ -343,9 +339,9 @@ export const ProductDetailPage: React.FC = () => {
                     </span>
                     <button
                       type="button"
-                      onClick={() => setQuantity((q) => Math.min(product.stock, q + 1))}
+                      onClick={() => setQuantity((q) => Math.min(20, q + 1))}
                       className="p-2 text-zinc-700 hover:text-zinc-900 disabled:opacity-40"
-                      disabled={quantity >= product.stock}
+                      disabled={quantity >= 20}
                       aria-label="Aumentar quantidade"
                     >
                       <Plus className="w-3.5 h-3.5" />

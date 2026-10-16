@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Trash2, Minus, Plus, ArrowRight, ShoppingBag, ArrowLeft, Store } from 'lucide-react';
 import { useApp, formatCurrency, calculatePromoLinePricing, ProductImage } from '../context/AppContext.tsx';
+import { FulfillmentSummary } from '../components/FulfillmentSummary.tsx';
 
 export const CartPage: React.FC = () => {
   const {
@@ -137,7 +138,7 @@ export const CartPage: React.FC = () => {
                     {item.name}
                   </Link>
                   <div className="text-xs text-zinc-500 tabular-nums">
-                  Unitário: {formatCurrency(pricing.hasPromo ? pricing.promoUnitPrice : pricing.normalUnitPrice)} • Máx: {item.stock} un.
+                  Unitário: {formatCurrency(pricing.hasPromo ? pricing.promoUnitPrice : pricing.normalUnitPrice)} • Limite por item: 20 unidades
                   </div>
                 </div>
               </div>
@@ -163,7 +164,7 @@ export const CartPage: React.FC = () => {
                       }
                       updateCartQuantity(item.productId, item.quantity + 1);
                     }}
-                    disabled={item.quantity >= item.stock}
+                    disabled={item.quantity >= 20}
                     className="p-1.5 text-zinc-700 hover:text-zinc-900 disabled:opacity-40"
                     aria-label="Aumentar"
                   >
@@ -195,6 +196,9 @@ export const CartPage: React.FC = () => {
               );
             })()
           ))}
+          <div className="p-4 sm:p-5">
+            <FulfillmentSummary items={cart.filter((i) => i.selected !== false)} />
+          </div>
         </div>
 
         {/* Summary Box */}

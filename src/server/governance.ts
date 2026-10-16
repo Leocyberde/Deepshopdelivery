@@ -30,7 +30,7 @@ export function permissionForRequest(req: Request): AdminPermission | null {
   if (/\/finance|\/analytics/.test(p)) return 'finance';
   if (/\/notifications|broadcast/.test(p)) return 'notifications';
   if (/\/support/.test(p)) return 'orders';
-  if (/\/orders/.test(p)) return 'orders';
+  if (/\/orders|\/fulfillments|\/suppliers|\/refunds/.test(p)) return 'orders';
   if (/\/customers|\/addresses|\/freight/.test(p)) return 'customers';
   if (/\/inventory/.test(p)) return 'inventory';
   if (/\/kits/.test(p)) return 'kits';

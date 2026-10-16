@@ -61,8 +61,8 @@ interface Product {
   effectivePrice: string;
   discountPercent?: number;
   isKit: boolean;
+  availabilityMode?: 'DELIVERY' | 'PREORDER';
   kitComponents?: KitComponentInfo[];
-  stock: number;
   weight: string;
   imageUrl: string | null;
   images?: ProductMediaItem[];
@@ -82,6 +82,7 @@ export const StorefrontPage: React.FC = () => {
   const navigate = useNavigate();
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [promises, setPromises] = useState<{ deliveryPromise: string | null; preorderWindow: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [storeState, setStoreState] = useState<any>(null);
   const [selectedCategory, setSelectedCategory] = useState<number | 'ALL'>('ALL');
@@ -126,6 +127,7 @@ export const StorefrontPage: React.FC = () => {
         const loadedProducts: Product[] = Array.isArray(data?.products) ? data.products : [];
         setCategories(Array.isArray(data?.categories) ? data.categories : []);
         setProducts(loadedProducts);
+        setPromises(data?.fulfillment || null);
         setStoreState(data?.settings?.store || null);
         const validIds = new Set(loadedProducts.map((p) => p.id));
         cart.forEach((item) => {
@@ -401,8 +403,6 @@ export const StorefrontPage: React.FC = () => {
                                   <span className="font-semibold text-zinc-900 tabular-nums">
                                     {formatCurrency(item.effectivePrice || item.price)}
                                   </span>
-                                  <span aria-hidden="true">·</span>
-                                  <span>{item.stock} un.</span>
                                 </div>
                               </div>
                             </Link>
@@ -678,11 +678,13 @@ export const StorefrontPage: React.FC = () => {
                         <div className="mt-1 flex items-center justify-between gap-1 text-[10px] sm:text-[11px] text-zinc-500">
                           <span className="inline-flex items-center gap-0.5 text-emerald-700 font-medium truncate">
                             <Truck className="w-3 h-3 shrink-0" />
-                            <span className="truncate">Entrega Rápida</span>
+                            <span className="truncate">
+                              {product.availabilityMode === 'PREORDER'
+                                ? (promises?.preorderWindow ? `Encomenda: ${promises.preorderWindow}` : 'Encomenda')
+                                : (promises?.deliveryPromise || 'Entrega Rápida')}
+                            </span>
                           </span>
                           <span className="text-zinc-400 shrink-0 font-mono">
-                            {product.stock} un.
-                            {product.stock > 0 && product.stock <= 5 && <span className="ml-2 text-amber-700 font-semibold">Últimas unidades</span>}
                           </span>
                         </div>
 
@@ -816,7 +818,7 @@ export const StorefrontPage: React.FC = () => {
 
       {addingProduct && (() => {
         const currentQuantity = cart.find((item) => item.productId === addingProduct.id)?.quantity || 0;
-        const availableToAdd = Math.max(0, addingProduct.stock - currentQuantity);
+        const availableToAdd = Math.max(0, 20 - currentQuantity);
         const quantity = Math.min(Math.max(1, addingQuantity), Math.max(1, availableToAdd));
         const pricing = calculatePromoLinePricing({ normalPrice: addingProduct.price, promoPrice: addingProduct.promoPrice, hasPromo: addingProduct.hasPromo, promoMaxUnits: addingProduct.promoMaxUnits, quantity });
         const fullTitle = addingProduct.code ? `${addingProduct.code} - ${addingProduct.name}` : addingProduct.name;
@@ -824,7 +826,7 @@ export const StorefrontPage: React.FC = () => {
           <section role="dialog" aria-modal="true" aria-labelledby="quantity-picker-title" className="w-full max-w-md rounded-t-2xl bg-white p-5 shadow-2xl sm:rounded-2xl">
             <div className="flex items-start gap-3">
               <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg border bg-stone-50"><ProductImage src={addingProduct.imageUrl} alt={fullTitle} /></div>
-              <div className="min-w-0 flex-1"><h2 id="quantity-picker-title" className="font-bold text-zinc-900">{fullTitle}</h2><p className="text-xs text-zinc-500">Estoque: {addingProduct.stock} un. · Já na sacola: {currentQuantity} un.</p></div>
+              <div className="min-w-0 flex-1"><h2 id="quantity-picker-title" className="font-bold text-zinc-900">{fullTitle}</h2><p className="text-xs text-zinc-500">Máximo de 20 unidades por item · Já na sacola: {currentQuantity} un.</p></div>
               <button type="button" autoFocus onClick={() => setAddingProduct(null)} aria-label="Fechar seletor" className="rounded-lg px-2 py-1 text-zinc-500 hover:bg-stone-100">×</button>
             </div>
             <div className="mt-5 flex items-center justify-center gap-4">
@@ -835,7 +837,7 @@ export const StorefrontPage: React.FC = () => {
             {availableToAdd <= 0 ? <p role="status" className="mt-4 text-center text-sm font-semibold text-amber-800">Você já atingiu o estoque disponível deste produto na sacola.</p> : <div className="mt-4 rounded-xl bg-stone-50 p-3 text-sm">
               {pricing.hasLimitExceeded ? <><div>{pricing.promoQty} un. em oferta × {formatCurrency(pricing.promoUnitPrice)} + {pricing.normalQty} un. × {formatCurrency(pricing.normalUnitPrice)} (preço normal) = <strong>{formatCurrency(pricing.subtotal)}</strong></div><p className="mt-2 rounded-lg bg-amber-100 p-2 text-xs font-semibold text-amber-950">A oferta vale para apenas {pricing.promoMaxUnits} unidade(s) por pedido. As demais {pricing.normalQty} unidades serão cobradas pelo preço normal.</p></> : <div>{quantity} un. × {formatCurrency(pricing.hasPromo ? pricing.promoUnitPrice : pricing.normalUnitPrice)} = <strong>{formatCurrency(pricing.subtotal)}</strong></div>}
             </div>}
-            <button type="button" disabled={addingProduct.stock <= 0 || availableToAdd <= 0} onClick={() => { addToCart({ productId: addingProduct.id, name: fullTitle, price: parseFloat(addingProduct.effectivePrice || addingProduct.price), originalPrice: parseFloat(addingProduct.price), promoPrice: addingProduct.promoPrice ? parseFloat(addingProduct.promoPrice) : null, hasPromo: Boolean(addingProduct.hasPromo), promoMaxUnits: addingProduct.promoMaxUnits ?? null, imageUrl: addingProduct.imageUrl, categoryName: addingProduct.categoryName, stock: addingProduct.stock }, quantity); setAddingProduct(null); }} className="mt-4 w-full rounded-xl bg-zinc-900 px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-45">{addingProduct.stock <= 0 ? 'Sem estoque' : availableToAdd <= 0 ? 'Estoque já na sacola' : 'Adicionar à sacola'}</button>
+            <button type="button" disabled={availableToAdd <= 0} onClick={() => { addToCart({ productId: addingProduct.id, name: fullTitle, price: parseFloat(addingProduct.effectivePrice || addingProduct.price), originalPrice: parseFloat(addingProduct.price), promoPrice: addingProduct.promoPrice ? parseFloat(addingProduct.promoPrice) : null, hasPromo: Boolean(addingProduct.hasPromo), promoMaxUnits: addingProduct.promoMaxUnits ?? null, imageUrl: addingProduct.imageUrl, categoryName: addingProduct.categoryName }, quantity); setAddingProduct(null); }} className="mt-4 w-full rounded-xl bg-zinc-900 px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-45">{availableToAdd <= 0 ? 'Limite da sacola atingido' : 'Adicionar à sacola'}</button>
           </section>
         </div>;
       })()}

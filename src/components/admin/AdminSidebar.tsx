@@ -11,8 +11,11 @@ import {
   TrendingUp,
   LogOut,
   Boxes,
+  Truck,
   ShieldCheck,
   LifeBuoy,
+  Clock3,
+  Undo2,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext.tsx';
 
@@ -20,9 +23,14 @@ export type AdminSection =
   | 'DASHBOARD'
   | 'PRODUCTS'
   | 'INACTIVE_PRODUCTS'
+  | 'PREORDER_STOCKOUT'
   | 'STOCK'
+  | 'SUPPLIERS'
   | 'CATEGORIES'
   | 'ORDERS'
+  | 'DELIVERY_ORDERS'
+  | 'PREORDER_ORDERS'
+  | 'REFUNDS'
   | 'SUPPORT'
   | 'CUSTOMERS'
   | 'PROFIT_RANKING'
@@ -50,7 +58,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
   categoriesCount,
   ordersCount,
 }) => {
-  const { logout } = useApp();
+  const { logout, user } = useApp();
   const navigate = useNavigate();
 
   const navItems: Array<{
@@ -75,7 +83,9 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
       badge: inactiveProductsCount,
       badgeTone: inactiveProductsCount > 0 ? 'amber' : 'neutral',
     },
+    { id: 'PREORDER_STOCKOUT', label: 'Sem estoque (em encomenda)', icon: AlertTriangle },
     { id: 'STOCK', label: 'Estoque & Movimentações', icon: Boxes },
+    { id: 'SUPPLIERS', label: 'Fornecedores', icon: Truck },
     {
       id: 'CATEGORIES',
       label: 'Categorias',
@@ -90,6 +100,9 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
       badge: pendingOrdCount > 0 ? pendingOrdCount : ordersCount,
       badgeTone: pendingOrdCount > 0 ? 'amber' : 'neutral',
     },
+    { id: 'DELIVERY_ORDERS', label: 'Pedidos Delivery', icon: Truck },
+    { id: 'PREORDER_ORDERS', label: 'Encomendas', icon: Clock3 },
+    ...(user?.role === 'SUPER_ADMIN' ? [{ id: 'REFUNDS' as AdminSection, label: 'Reembolsos', icon: Undo2 }] : []),
     { id: 'SUPPORT', label: 'Central de Ajuda', icon: LifeBuoy },
     {
       id: 'CUSTOMERS',

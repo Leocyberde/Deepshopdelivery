@@ -35,6 +35,7 @@ export interface AppContextType {
   addToCart: (item: Omit<CartItem, 'quantity'>, quantity?: number) => void;
   updateCartQuantity: (productId: number, quantity: number) => void;
   toggleCartItemSelected: (productId: number, selected: boolean) => void;
+  setCartItemPreorder: (productId: number, receiveAllAsPreorder: boolean) => void;
   removePurchasedCartItems: () => void;
   removeFromCart: (productId: number) => void;
   clearCart: () => void;
@@ -108,7 +109,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [cart, setCart] = useState<CartItem[]>(() => {
     try {
       const saved = localStorage.getItem(CART_STORAGE_KEY);
-      return saved ? JSON.parse(saved) : [];
+      const parsed = saved ? JSON.parse(saved) : [];
+      return Array.isArray(parsed) ? parsed.map(({ stock: _legacyStock, ...item }: any) => item) : [];
     } catch {
       return [];
     }
@@ -382,21 +384,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const addToCart = useCallback(
     (item: Omit<CartItem, 'quantity'>, quantity = 1) => {
-      if (item.stock <= 0) {
-        toast('Este produto está sem estoque no momento.', 'error');
-        return;
-      }
-
       setCart((prev) => {
         const existingIndex = prev.findIndex((i) => i.productId === item.productId);
         if (existingIndex > -1) {
           const current = prev[existingIndex];
-          const nextQty = Math.min(item.stock, current.quantity + quantity);
+          const nextQty = Math.min(20, current.quantity + quantity);
           const updated = [...prev];
           updated[existingIndex] = { ...current, ...item, quantity: nextQty, selected: true };
           return updated;
         }
-        return [...prev, { ...item, quantity: Math.min(item.stock, quantity), selected: true }];
+        return [...prev, { ...item, quantity: Math.min(20, quantity), selected: true }];
       });
 
       toast(`"${item.name}" adicionado à sacola.`, 'success');
@@ -411,7 +408,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       return prev.map((i) =>
         i.productId === productId
-          ? { ...i, quantity: Math.min(Math.max(1, quantity), i.stock) }
+          ? { ...i, quantity: Math.min(Math.max(1, quantity), 20) }
           : i
       );
     });
@@ -419,6 +416,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const toggleCartItemSelected = useCallback((productId: number, selected: boolean) => {
     setCart((prev) => prev.map((item) => item.productId === productId ? { ...item, selected } : item));
+  }, []);
+
+  const setCartItemPreorder = useCallback((productId: number, receiveAllAsPreorder: boolean) => {
+    setCart((prev) => prev.map((item) => item.productId === productId ? { ...item, receiveAllAsPreorder } : item));
   }, []);
 
   const removePurchasedCartItems = useCallback(() => {
@@ -449,7 +450,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             hasPromo: boolean;
             promoMaxUnits?: number | null;
             effectivePrice: string;
-            stock: number;
             imageUrl: string | null;
             categoryName: string;
           }>;
@@ -467,11 +467,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
           for (const item of prev) {
             const live = liveMap.get(item.productId);
-            if (!live || live.stock <= 0) {
-              changed = true;
-              notices.push(`"${item.name}" esgotou e foi removido da sacola.`);
-              continue;
-            }
+            if (!live) { changed = true; notices.push(`"${item.name}" não está mais disponível.`); continue; }
 
             const fullTitle = live.code ? `${live.code} - ${live.name}` : live.name;
             const liveEffectivePrice = parseFloat(live.effectivePrice || live.price);
@@ -479,7 +475,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const livePromoPrice = live.promoPrice ? parseFloat(live.promoPrice) : null;
             const liveHasPromo = Boolean(live.hasPromo);
             const livePromoMaxUnits = live.promoMaxUnits ?? null;
-            const nextQty = Math.min(item.quantity, live.stock);
+            const nextQty = Math.min(item.quantity, 20);
 
             if (nextQty < item.quantity) {
               changed = true;
@@ -501,7 +497,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
             if (
               changed ||
-              item.stock !== live.stock ||
               item.name !== fullTitle ||
               item.imageUrl !== live.imageUrl
             ) {
@@ -516,7 +511,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 promoMaxUnits: livePromoMaxUnits,
                 imageUrl: live.imageUrl,
                 categoryName: live.categoryName,
-                stock: live.stock,
                 quantity: nextQty,
               });
             } else {
@@ -576,6 +570,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addToCart,
         updateCartQuantity,
         toggleCartItemSelected,
+        setCartItemPreorder,
         removePurchasedCartItems,
         removeFromCart,
         clearCart,

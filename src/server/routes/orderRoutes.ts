@@ -30,6 +30,8 @@ import {
   parseScheduledDelivery,
   type DeliveryMinutes,
 } from '../../utils/deliverySchedule.ts';
+import { calculateFulfillmentSplit, calculatePreorderWindow, calculateOrderPartTotals } from '../../utils/fulfillmentDates.ts';
+import { buildFulfillmentPromises } from '../services/fulfillmentPromises.ts';
 
 function getSafeOrderBusinessError(error: unknown): string | null {
   const message = error instanceof Error ? error.message : '';
@@ -69,11 +71,70 @@ function toPaymentSummary(payment: InferSelectModel<typeof schema.payments> | un
     updatedAt: payment.updatedAt,
   };
 }
+function toCustomerOrderItem(item: InferSelectModel<typeof schema.orderItems>, imageUrl: string | null) {
+  return {
+    id: item.id,
+    productId: item.productId,
+    productName: item.productName,
+    quantity: item.quantity,
+    unitPrice: item.unitPrice,
+    subtotal: item.subtotal,
+    fulfillmentType: item.fulfillmentType,
+    imageUrl,
+  };
+}
 import { getCurrentStoreState } from '../services/storeStatusService.ts';
 import { notifyNewOrder } from '../services/orderNotificationService.ts';
 
 const notPaymentExpiredOrder = () => sql`COALESCE(${schema.orders.cancellationReason}, '') NOT LIKE ${PAYMENT_TIMEOUT_REASON_PREFIX + '%'} AND COALESCE(${schema.orders.cancellationReason}, '') NOT LIKE ${LEGACY_PAYMENT_TIMEOUT_REASON_PREFIX + '%'}`;
 export function registerOrderRoutes(app: Express) {
+  app.post('/api/cart/quote', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!Array.isArray(req.body?.items) || req.body.items.length === 0) {
+        res.status(400).json({ error: 'Informe os itens para cotação.' });
+        return;
+      }
+      const settings = await getSettingsMap();
+      const maxQty = Math.max(1, Number(settings.max_qty_per_item || 20));
+      const products = await db.select().from(schema.products).where(sql`${schema.products.id} = ANY(${req.body.items.map((i: any) => Number(i.productId)).filter((id: number) => Number.isSafeInteger(id))})`);
+      const byId = new Map(products.map((p) => [p.id, p]));
+      const lines: Array<Record<string, unknown>> = [];
+      let deliverySubtotal = 0;
+      let preorderSubtotal = 0;
+      for (const raw of req.body.items) {
+        const productId = Number(raw?.productId);
+        const quantity = Number(raw?.quantity);
+        if (!Number.isSafeInteger(productId) || !Number.isSafeInteger(quantity) || quantity < 1 || quantity > maxQty) {
+          res.status(400).json({ error: `A quantidade máxima por item é ${maxQty}.` });
+          return;
+        }
+        const product = byId.get(productId);
+        if (!product || product.status !== 'ACTIVE' || (product.stock <= 0 && !product.allowPreorder)) {
+          res.status(409).json({ error: 'Um produto da cotação não está mais disponível.' });
+          return;
+        }
+        const split = calculateFulfillmentSplit(quantity, product.stock, Boolean(raw.receiveAllAsPreorder));
+        const pricing = calculatePromoLinePricing({ normalPrice: product.price, promoPrice: product.promoPrice, hasPromo: isPromoCurrentlyActive(product), promoMaxUnits: product.promoMaxUnits, quantity });
+        const deliveryPromoQty = Math.min(split.deliveryQty, pricing.promoQty);
+        const preorderPromoQty = Math.min(split.preorderQty, Math.max(0, pricing.promoQty - deliveryPromoQty));
+        const deliveryLine = Number((deliveryPromoQty * pricing.promoUnitPrice + (split.deliveryQty - deliveryPromoQty) * pricing.normalUnitPrice).toFixed(2));
+        const preorderLine = Number((preorderPromoQty * pricing.promoUnitPrice + (split.preorderQty - preorderPromoQty) * pricing.normalUnitPrice).toFixed(2));
+        const totalLineQty = split.deliveryQty + split.preorderQty;
+        const blendedUnitPrice = totalLineQty ? Number(((deliveryLine + preorderLine) / totalLineQty).toFixed(2)) : pricing.normalUnitPrice;
+        deliverySubtotal += deliveryLine; preorderSubtotal += preorderLine;
+        lines.push({ productId, quantity, deliveryQty: split.deliveryQty, preorderQty: split.preorderQty, deliveryPromoQty, preorderPromoQty, deliverySubtotal: deliveryLine.toFixed(2), preorderSubtotal: preorderLine.toFixed(2), unitPrice: blendedUnitPrice.toFixed(2), receiveAllAsPreorder: Boolean(raw.receiveAllAsPreorder) });
+      }
+      // O cliente nunca define o frete. Nesta etapa a cotação sem endereço é apenas dos produtos;
+      // o frete definitivo é recalculado no servidor durante a criação do pedido.
+      const totals = calculateOrderPartTotals(deliverySubtotal, preorderSubtotal, 0);
+      res.json({ lines, totals, promises: buildFulfillmentPromises(settings), quotedAt: new Date().toISOString(), maxQtyPerItem: maxQty });
+    } catch (error) {
+      logServerError('cart.quote.failed', error);
+      const message = error instanceof Error ? error.message : '';
+      res.status(message ? 400 : 500).json({ error: message || 'Erro ao cotar a sacola.' });
+    }
+  });
+
   app.post('/api/orders', requireAuth, async (req: AuthRequest, res) => {
     let orderTransactionCommitted = false;
     try {
@@ -207,11 +268,15 @@ export function registerOrderRoutes(app: Express) {
           unitPrice: string;
           subtotal: string;
           unitCost: string | null;
+          fulfillmentType: 'DELIVERY' | 'PREORDER';
         }> = [];
         const reservations: Array<{ productId: number; quantity: number; beforeStock: number; afterStock: number }> = [];
+        let hasPreorderPart = false;
+        let hasDeliveryPart = false;
+        const preorderWindow = calculatePreorderWindow(new Date(), Number(settingsMap.preorder_start_offset_days || 1), Number(settingsMap.preorder_window_days || 7));
 
         // Agrupa itens com o mesmo productId para garantir que o limite da promoção seja respeitado por produto
-        const mergedItemsMap = new Map<number, { productId: number; quantity: number; productName?: string }>();
+        const mergedItemsMap = new Map<number, { productId: number; quantity: number; productName?: string; receiveAllAsPreorder?: boolean }>();
         for (const rawItem of items) {
           if (!rawItem || typeof rawItem !== 'object' || Array.isArray(rawItem)) {
             throw new Error('Produto inválido na sacola.');
@@ -230,6 +295,7 @@ export function registerOrderRoutes(app: Express) {
               productId: prodId,
               quantity: qty,
               productName: rawItem.productName,
+              receiveAllAsPreorder: Boolean(rawItem.receiveAllAsPreorder),
             });
           }
         }
@@ -249,96 +315,43 @@ export function registerOrderRoutes(app: Express) {
             );
           }
 
-          if (prod.stock < qty) {
-            if (prod.stock <= 0) {
-              throw new Error(
-                `O produto "${prod.code} - ${prod.name}" está sem estoque no momento.`
-              );
+          const receiveAllAsPreorder = Boolean(rawItem.receiveAllAsPreorder);
+          const split = calculateFulfillmentSplit(qty, prod.stock, receiveAllAsPreorder);
+          if (split.preorderQty > 0 && !prod.allowPreorder) {
+            throw new Error(`O produto "${prod.code} - ${prod.name}" não aceita encomenda.`);
+          }
+          const deliveryQty = split.deliveryQty;
+          if (deliveryQty > 0) {
+            const nextProdStock = prod.stock - deliveryQty;
+            const reservedRows = await tx
+              .update(schema.products)
+              .set({ stock: sql`${schema.products.stock} - ${deliveryQty}`, updatedAt: new Date() })
+              .where(and(eq(schema.products.id, prod.id), sql`${schema.products.stock} >= ${deliveryQty}`))
+              .returning();
+            if (reservedRows.length === 0) {
+              throw new Error(`Estoque alterado para "${prod.code} - ${prod.name}". Refaça a cotação antes de confirmar.`);
             }
-            throw new Error(
-              `Estoque insuficiente para "${prod.code} - ${prod.name}". Disponível: ${prod.stock} un.`
-            );
+            reservations.push({ productId: prod.id, quantity: deliveryQty, beforeStock: prod.stock, afterStock: nextProdStock });
+            hasDeliveryPart = true;
           }
-
-          // Opção 2: Reserva/desconta imediatamente do estoque no ato do pedido (por ordem exata de chegada).
-          // Se o saldo chegar a 0, marca como INACTIVE para sair da vitrine imediatamente.
-          // Se o cliente não pagar em 1 hora, o verificador automático cancela o pedido e devolve o saldo para a vitrine.
-          const nextProdStock = prod.stock - qty;
-          const reservedRows = await tx
-            .update(schema.products)
-            .set({
-              stock: sql`${schema.products.stock} - ${qty}`,
-              status: nextProdStock <= 0 ? 'INACTIVE' : prod.status,
-              updatedAt: new Date(),
-            })
-            .where(
-              and(
-                eq(schema.products.id, prod.id),
-                sql`${schema.products.stock} >= ${qty}`
-              )
-            )
-            .returning();
-
-          if (reservedRows.length === 0) {
-            throw new Error(
-              `Estoque insuficiente para reservar "${prod.code} - ${prod.name}". Outro pedido acabou de reservar as últimas unidades.`
-            );
-          }
-          reservations.push({ productId: prod.id, quantity: qty, beforeStock: prod.stock, afterStock: nextProdStock });
-
-          // Calcula preço respeitando eventual limite de unidades na promoção (promoMaxUnits):
-          // Até o limite sai pelo valor promocional; o excedente segue o valor normal do produto.
+          if (split.preorderQty > 0) hasPreorderPart = true;
           const hasPromo = isPromoCurrentlyActive(prod);
-          const pricing = calculatePromoLinePricing({
-            normalPrice: prod.price,
-            promoPrice: prod.promoPrice,
-            hasPromo,
-            promoMaxUnits: prod.promoMaxUnits,
-            quantity: qty,
-          });
-
+          const pricing = calculatePromoLinePricing({ normalPrice: prod.price, promoPrice: prod.promoPrice, hasPromo, promoMaxUnits: prod.promoMaxUnits, quantity: qty });
           subtotalNum = Number((subtotalNum + pricing.subtotal).toFixed(2));
-
-          // Código do produto na frente do nome nos pedidos e no WhatsApp
-          const displayProductName = prod.code
-            ? `${prod.code} - ${prod.name}`
-            : prod.name;
-
+          const displayProductName = prod.code ? `${prod.code} - ${prod.name}` : prod.name;
           const preciseCost = prod.costUnitPrecise !== null && prod.costUnitPrecise !== undefined ? prod.costUnitPrecise : prod.cost;
           const currentUnitCost = preciseCost !== null && preciseCost !== undefined ? String(preciseCost) : null;
-
-          if (pricing.hasLimitExceeded) {
-            preparedItems.push({
-              productId: prod.id,
-              productName: `${displayProductName} (Na promoção — máx. ${pricing.promoMaxUnits} un.)`,
-              quantity: pricing.promoQty,
-              unitPrice: pricing.promoUnitPrice.toFixed(2),
-              subtotal: pricing.promoSubtotal.toFixed(2),
-              unitCost: currentUnitCost,
-            });
-            preparedItems.push({
-              productId: prod.id,
-              productName: `${displayProductName} (Valor normal acima do limite)`,
-              quantity: pricing.normalQty,
-              unitPrice: pricing.normalUnitPrice.toFixed(2),
-              subtotal: pricing.normalSubtotal.toFixed(2),
-              unitCost: currentUnitCost,
-            });
-          } else {
-            const appliedUnitPrice = pricing.hasPromo
-              ? pricing.promoUnitPrice
-              : pricing.normalUnitPrice;
-            preparedItems.push({
-              productId: prod.id,
-              productName: displayProductName,
-              quantity: qty,
-              unitPrice: appliedUnitPrice.toFixed(2),
-              subtotal: pricing.subtotal.toFixed(2),
-              unitCost: currentUnitCost,
-            });
-          }
+          const pushPart = (partQty: number, type: 'DELIVERY' | 'PREORDER', promoQty: number) => {
+            if (partQty <= 0) return;
+            const partSubtotal = Number((promoQty * pricing.promoUnitPrice + (partQty - promoQty) * pricing.normalUnitPrice).toFixed(2));
+            const partUnitPrice = partQty ? Number((partSubtotal / partQty).toFixed(2)) : pricing.normalUnitPrice;
+            preparedItems.push({ productId: prod.id, productName: displayProductName, quantity: partQty, unitPrice: partUnitPrice.toFixed(2), subtotal: partSubtotal.toFixed(2), unitCost: currentUnitCost, fulfillmentType: type });
+          };
+          const deliveryPromoQty = Math.min(deliveryQty, pricing.promoQty);
+          const preorderPromoQty = Math.min(split.preorderQty, Math.max(0, pricing.promoQty - deliveryPromoQty));
+          pushPart(deliveryQty, 'DELIVERY', deliveryPromoQty);
+          pushPart(split.preorderQty, 'PREORDER', preorderPromoQty);
         }
-
         const evaluatedFreight = resolveAddressFreight(address);
         const freightRule = await getFreightRuleConfig();
         const automaticFreight = evaluatedFreight.isItatiba && evaluatedFreight.status !== 'CONFIRMED'
@@ -427,7 +440,7 @@ export function registerOrderRoutes(app: Express) {
             paymentMethod: normalizedPaymentMethod,
             changeFor: changeForStr,
             status: 'NEW',
-            stockDeducted: true,
+            stockDeducted: reservations.length > 0,
             paymentExpiresAt,
             deliveryMode: normalizedDeliveryMode,
             deliveryMinutes: normalizedDeliveryMinutes,
@@ -438,6 +451,9 @@ export function registerOrderRoutes(app: Express) {
             refundRequested: false,
             notes: notes ? String(notes).trim() : null,
             addressSnapshot,
+            deliveryEtaAt: estimatedDeliveryAt,
+            preorderEtaStart: hasPreorderPart ? preorderWindow.start : null,
+            preorderEtaEnd: hasPreorderPart ? preorderWindow.end : null,
           })
           .returning();
 
@@ -464,9 +480,12 @@ export function registerOrderRoutes(app: Express) {
             unitPrice: item.unitPrice,
             subtotal: item.subtotal,
             unitCost: item.unitCost,
+            fulfillmentType: item.fulfillmentType,
           });
         }
 
+        if (hasDeliveryPart) await tx.insert(schema.orderFulfillments).values({ orderId: newOrder.id, type: 'DELIVERY', status: 'PENDING', etaAt: estimatedDeliveryAt });
+        if (hasPreorderPart) await tx.insert(schema.orderFulfillments).values({ orderId: newOrder.id, type: 'PREORDER', status: 'PENDING', etaStart: preorderWindow.start, etaEnd: preorderWindow.end });
         await tx.insert(schema.orderStatusHistory).values({
           orderId: newOrder.id,
           oldStatus: null,
@@ -616,6 +635,9 @@ export function registerOrderRoutes(app: Express) {
       const paymentRows = userOrders.length
         ? await db.select().from(schema.payments).where(inArray(schema.payments.orderId, userOrders.map((order) => order.id)))
         : [];
+      const fulfillmentRows = userOrders.length
+        ? await db.select().from(schema.orderFulfillments).where(inArray(schema.orderFulfillments.orderId, userOrders.map((order) => order.id)))
+        : [];
       const paymentsByOrder = new Map(paymentRows.map((payment) => [payment.orderId, payment]));
       const settingsMap = await getSettingsMap();
       const whatsappNumber = settingsMap.whatsapp_number || '';
@@ -630,10 +652,7 @@ export function registerOrderRoutes(app: Express) {
               prodImgs.find((im) => im.isPrimary && im.mediaType !== 'VIDEO') ||
               prodImgs.find((im) => im.mediaType !== 'VIDEO') ||
               prodImgs[0];
-            return {
-              ...i,
-              imageUrl: primary ? primary.imageUrl : null,
-            };
+            return toCustomerOrderItem(i, primary ? primary.imageUrl : null);
           });
         const history = allHistory.filter((h) => h.orderId === o.id);
         const isFreeDelivery = o.deliveryFee !== null && Number(o.deliveryFee) === 0;
@@ -679,6 +698,7 @@ export function registerOrderRoutes(app: Express) {
           canCustomerCancel,
           requiresRefundOnCancel,
           items,
+          fulfillments: fulfillmentRows.filter((f) => f.orderId === o.id).map(({ deliveredBy: _deliveredBy, ...fulfillment }) => fulfillment),
           history,
           whatsappMessage,
           whatsappUrl: buildWhatsAppLink(whatsappNumber, whatsappMessage),
@@ -733,10 +753,7 @@ export function registerOrderRoutes(app: Express) {
           prodImgs.find((im) => im.isPrimary && im.mediaType !== 'VIDEO') ||
           prodImgs.find((im) => im.mediaType !== 'VIDEO') ||
           prodImgs[0];
-        return {
-          ...i,
-          imageUrl: primary ? primary.imageUrl : null,
-        };
+        return toCustomerOrderItem(i, primary ? primary.imageUrl : null);
       });
 
       const history = await db
@@ -745,6 +762,7 @@ export function registerOrderRoutes(app: Express) {
         .where(eq(schema.orderStatusHistory.orderId, order.id))
         .orderBy(desc(schema.orderStatusHistory.id));
       const [payment] = await db.select().from(schema.payments).where(eq(schema.payments.orderId, order.id));
+      const fulfillments = await db.select().from(schema.orderFulfillments).where(eq(schema.orderFulfillments.orderId, order.id));
 
       const settingsMap = await getSettingsMap();
       const whatsappNumber = settingsMap.whatsapp_number || '';
@@ -792,6 +810,7 @@ export function registerOrderRoutes(app: Express) {
         canCustomerCancel,
         requiresRefundOnCancel,
         items,
+        fulfillments: fulfillments.map(({ deliveredBy: _deliveredBy, ...fulfillment }) => fulfillment),
         history,
         whatsappMessage,
         whatsappUrl: buildWhatsAppLink(whatsappNumber, whatsappMessage),
@@ -912,7 +931,10 @@ export function registerOrderRoutes(app: Express) {
         // Somente quem ganhou a transição atômica devolve o estoque; agrega linhas de promoção pelo produto.
         if (freshOrder.stockDeducted) {
           const returns = new Map<number, number>();
-          for (const item of items) returns.set(item.productId, (returns.get(item.productId) || 0) + item.quantity);
+          for (const item of items) {
+              if (item.fulfillmentType !== 'DELIVERY') continue;
+              returns.set(item.productId, (returns.get(item.productId) || 0) + item.quantity);
+            }
           for (const [productId, quantity] of returns) {
             const [product] = await tx.select().from(schema.products).where(eq(schema.products.id, productId));
             if (!product) throw new Error('Produto associado ao pedido não encontrado.');
@@ -931,6 +953,7 @@ export function registerOrderRoutes(app: Express) {
           }
         }
 
+        await tx.update(schema.orderFulfillments).set({ status: 'CANCELLED' }).where(and(eq(schema.orderFulfillments.orderId, freshOrder.id), sql`${schema.orderFulfillments.status} NOT IN ('DELIVERED','REFUNDED')`));
         await tx.insert(schema.orderStatusHistory).values({
           orderId: freshOrder.id,
           oldStatus: freshOrder.status,

@@ -83,6 +83,10 @@ export const products = pgTable('products', {
   costLotUnits: integer('cost_lot_units'),
   stock: integer('stock').notNull().default(0),
   stockMinimum: integer('stock_minimum').notNull().default(5),
+  supplierId: integer('supplier_id').references(() => suppliers.id, { onDelete: 'set null' }),
+  supplierProductUrl: text('supplier_product_url'),
+  fulfillmentType: text('fulfillment_type').notNull().default('DELIVERY'),
+  allowPreorder: boolean('allow_preorder').notNull().default(true),
   weight: numeric('weight', { precision: 10, scale: 3 }).default('0.000'), // kg
   viewsCount: integer('views_count').notNull().default(0),
   clicksCount: integer('clicks_count').notNull().default(0),
@@ -191,6 +195,9 @@ export const orders = pgTable('orders', {
   deliveryMinutes: integer('delivery_minutes'), // 60 | 90 | 120 | 180
   estimatedDeliveryAt: timestamp('estimated_delivery_at'),
   scheduledDeliveryAt: timestamp('scheduled_delivery_at'),
+  deliveryEtaAt: timestamp('delivery_eta_at'),
+  preorderEtaStart: timestamp('preorder_eta_start'),
+  preorderEtaEnd: timestamp('preorder_eta_end'),
   deliveredAt: timestamp('delivered_at'),
   reminderSentAt: timestamp('reminder_sent_at'),
   addressSnapshot: jsonb('address_snapshot').$type<AddressSnapshot>().notNull(),
@@ -272,7 +279,8 @@ export const notifications = pgTable('notifications', {
   supportTicketId: integer('support_ticket_id').references(() => supportTickets.id, { onDelete: 'set null' }),
   orderNumber: text('order_number').notNull(),
   oldStatus: text('old_status'),
-  newStatus: text('new_status').notNull(),
+  newStatus: text('new_status'),
+  kind: text('kind').notNull().default('STATUS'),
   title: text('title').notNull(),
   message: text('message').notNull(),
   isRead: boolean('is_read').notNull().default(false),
@@ -307,6 +315,7 @@ export const orderItems = pgTable('order_items', {
   unitPrice: numeric('unit_price', { precision: 10, scale: 2 }).notNull(),
   subtotal: numeric('subtotal', { precision: 10, scale: 2 }).notNull(),
   unitCost: numeric('unit_cost', { precision: 14, scale: 6 }),
+  fulfillmentType: text('fulfillment_type').notNull().default('DELIVERY'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
@@ -407,5 +416,90 @@ export const adminAuditLogs = pgTable(
 export const adminEventKeys = pgTable('admin_event_keys', {
   eventKey: text('event_key').primaryKey(),
   eventType: text('event_type').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+
+export const suppliers = pgTable('suppliers', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  contact: text('contact'),
+  website: text('website'),
+  notes: text('notes'),
+  status: text('status').notNull().default('ACTIVE'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+export const supplierPurchases = pgTable('supplier_purchases', {
+  id: serial('id').primaryKey(),
+  supplierId: integer('supplier_id').notNull().references(() => suppliers.id),
+  productId: integer('product_id').references(() => products.id, { onDelete: 'set null' }),
+  itemName: text('item_name').notNull(),
+  unitCost: numeric('unit_cost', { precision: 14, scale: 6 }).notNull(),
+  quantity: integer('quantity').notNull(),
+  totalCost: numeric('total_cost', { precision: 14, scale: 2 }).notNull(),
+  purchasedAt: timestamp('purchased_at').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  productUrl: text('product_url'),
+  notes: text('notes'),
+  createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+  inventoryMovementId: integer('inventory_movement_id').references(() => inventoryMovements.id, { onDelete: 'set null' }).unique(),
+}, (table) => [index('idx_supplier_purchases_supplier_date').on(table.supplierId, table.purchasedAt)]);
+
+export const orderFulfillments = pgTable('order_fulfillments', {
+  id: serial('id').primaryKey(),
+  orderId: integer('order_id').notNull().references(() => orders.id, { onDelete: 'cascade' }),
+  type: text('type').notNull(),
+  status: text('status').notNull().default('PENDING'),
+  etaAt: timestamp('eta_at'),
+  etaStart: timestamp('eta_start'),
+  etaEnd: timestamp('eta_end'),
+  deliveredAt: timestamp('delivered_at'),
+  deliveredBy: integer('delivered_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [index('idx_order_fulfillments_order').on(table.orderId)]);
+
+export const refunds = pgTable('refunds', {
+  id: serial('id').primaryKey(),
+  orderId: integer('order_id').notNull().references(() => orders.id, { onDelete: 'cascade' }),
+  fulfillmentId: integer('fulfillment_id').references(() => orderFulfillments.id, { onDelete: 'set null' }),
+  amount: numeric('amount', { precision: 14, scale: 2 }).notNull(),
+  scope: text('scope').notNull(),
+  reason: text('reason').notNull(),
+  status: text('status').notNull().default('REQUESTED'),
+  requestedBy: text('requested_by').notNull(),
+  processedBy: integer('processed_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  processedAt: timestamp('processed_at'),
+  notes: text('notes'),
+  // Etapa 2C: fila de aprovação pelo dono (devolução feita manualmente fora do sistema).
+  dueAt: timestamp('due_at'),
+  approvedAmount: numeric('approved_amount', { precision: 14, scale: 2 }),
+  decidedBy: integer('decided_by').references(() => users.id, { onDelete: 'set null' }),
+  decidedAt: timestamp('decided_at'),
+  decisionReason: text('decision_reason'),
+});
+
+export const refundItems = pgTable('refund_items', {
+  id: serial('id').primaryKey(),
+  refundId: integer('refund_id').notNull().references(() => refunds.id, { onDelete: 'cascade' }),
+  orderItemId: integer('order_item_id').notNull().references(() => orderItems.id),
+  quantity: integer('quantity').notNull(),
+  amount: numeric('amount', { precision: 14, scale: 2 }).notNull(),
+  destination: text('destination'),
+});
+
+export const delayNotices = pgTable('delay_notices', {
+  id: serial('id').primaryKey(),
+  orderId: integer('order_id').notNull().references(() => orders.id, { onDelete: 'cascade' }),
+  fulfillmentId: integer('fulfillment_id').notNull().references(() => orderFulfillments.id, { onDelete: 'cascade' }),
+  message: text('message').notNull(),
+  options: jsonb('options').notNull(),
+  waitDays: integer('wait_days').notNull().default(2),
+  status: text('status').notNull().default('PENDING'),
+  choice: text('choice'),
+  answeredAt: timestamp('answered_at'),
+  createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });

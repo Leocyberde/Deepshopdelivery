@@ -236,11 +236,11 @@ export function registerAdminRoutes(app: Express) {
           db
             .select({ value: count() })
             .from(schema.products)
-            .where(and(eq(schema.products.status, 'ACTIVE'), sql`${schema.products.stock} > 0`)),
+            .where(and(eq(schema.products.status, 'ACTIVE'), sql`(${schema.products.stock} > 0 OR ${schema.products.allowPreorder} = TRUE)`)),
           db
             .select({ value: count() })
             .from(schema.products)
-            .where(or(eq(schema.products.status, 'INACTIVE'), sql`${schema.products.stock} <= 0`)),
+            .where(or(eq(schema.products.status, 'INACTIVE'), sql`(${schema.products.stock} <= 0 AND ${schema.products.allowPreorder} = FALSE)`)),
           db.select({ value: count() }).from(schema.categories),
           db
             .select({ value: count() })
@@ -438,8 +438,8 @@ export function registerAdminRoutes(app: Express) {
         };
       };
 
-      const activeProducts = allProducts.filter((p) => p.status === 'ACTIVE' && p.stock > 0);
-      const inactiveProducts = allProducts.filter((p) => p.status === 'INACTIVE' || p.stock <= 0);
+      const activeProducts = allProducts.filter((p) => p.status === 'ACTIVE' && (p.stock > 0 || p.allowPreorder));
+      const inactiveProducts = allProducts.filter((p) => p.status === 'INACTIVE' || (p.stock <= 0 && !p.allowPreorder));
       const lowStockProducts = allProducts.filter(
         (p) => p.status === 'ACTIVE' && p.stock > 0 && p.stock <= Number(p.stockMinimum ?? 5)
       );
@@ -1042,11 +1042,6 @@ export function registerAdminRoutes(app: Express) {
   app.get('/api/admin/products', requireAuth, requireAdmin, async (_req, res) => {
     try {
       await expireOverdueUnpaidOrders();
-      // Garantir que qualquer produto com estoque zerado (<= 0) fique com status INACTIVE
-      await db
-        .update(schema.products)
-        .set({ status: 'INACTIVE', updatedAt: new Date() })
-        .where(and(eq(schema.products.status, 'ACTIVE'), sql`${schema.products.stock} <= 0`));
 
       const allProducts = await db
         .select()
@@ -1552,7 +1547,7 @@ export function registerAdminRoutes(app: Express) {
             .update(schema.products)
             .set({
               stock: sql`${schema.products.stock} - ${totalToDeduct}`,
-              status: sql`CASE WHEN ${schema.products.stock} - ${totalToDeduct} <= 0 THEN 'INACTIVE' ELSE ${schema.products.status} END`,
+              status: sql`CASE WHEN ${schema.products.stock} - ${totalToDeduct} <= 0 AND NOT ${schema.products.allowPreorder} THEN 'INACTIVE' ELSE ${schema.products.status} END`,
               updatedAt: new Date(),
             })
             .where(
@@ -2384,7 +2379,7 @@ export function registerAdminRoutes(app: Express) {
               if (!prod || prod.stock < item.quantity) throw new Error(`Estoque insuficiente para confirmar o item "${item.productName}".`);
               const [deducted] = await tx.update(schema.products).set({
                 stock: sql`${schema.products.stock} - ${item.quantity}`,
-                status: sql`CASE WHEN ${schema.products.stock} - ${item.quantity} <= 0 THEN 'INACTIVE' ELSE ${schema.products.status} END`,
+                status: sql`CASE WHEN ${schema.products.stock} - ${item.quantity} <= 0 AND NOT ${schema.products.allowPreorder} THEN 'INACTIVE' ELSE ${schema.products.status} END`,
                 updatedAt: new Date(),
               }).where(and(eq(schema.products.id, item.productId), eq(schema.products.stock, prod.stock), sql`${schema.products.stock} >= ${item.quantity}`)).returning();
               if (!deducted) throw new Error(`Não foi possível descontar o estoque do item "${item.productName}".`);

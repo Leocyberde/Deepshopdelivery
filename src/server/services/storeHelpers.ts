@@ -9,6 +9,7 @@ export const ORDER_STATUS_LABELS_PT: Record<string, string> = {
   PAID: 'Pago',
   PREPARING: 'Em separação',
   OUT_FOR_DELIVERY: 'Saiu para entrega',
+  PARTIALLY_DELIVERED: 'Parcialmente entregue',
   DELIVERED: 'Entregue',
   CANCELLED: 'Cancelado',
 };
@@ -20,11 +21,12 @@ export const STOCK_DEDUCTED_STATUSES = [
   'PAID',
   'PREPARING',
   'OUT_FOR_DELIVERY',
+  'PARTIALLY_DELIVERED',
   'DELIVERED',
 ];
 
 // Status em que o cliente já realizou o pagamento (exige estorno se cancelado)
-export const PAID_ORDER_STATUSES = ['PAID', 'PREPARING', 'OUT_FOR_DELIVERY', 'DELIVERED'];
+export const PAID_ORDER_STATUSES = ['PAID', 'PREPARING', 'OUT_FOR_DELIVERY', 'PARTIALLY_DELIVERED', 'DELIVERED'];
 
 // Status em que o cliente pode cancelar o pedido (antes de "Saiu para entrega")
 export const CUSTOMER_CANCELLABLE_STATUSES = ['NEW', 'AWAITING_PAYMENT', 'PAID', 'PREPARING'];
@@ -35,9 +37,26 @@ export const VALID_ORDER_STATUSES = [
   'PAID',
   'PREPARING',
   'OUT_FOR_DELIVERY',
+  'PARTIALLY_DELIVERED',
   'DELIVERED',
   'CANCELLED',
 ];
+
+export type FulfillmentStatusLike = { status: string };
+
+/** Fonte única do status agregado do pedido. */
+export function deriveOrderStatusFromFulfillments(
+  orderStatus: string,
+  fulfillments: FulfillmentStatusLike[],
+): string {
+  if (['NEW', 'AWAITING_PAYMENT', 'CANCELLED'].includes(orderStatus)) return orderStatus;
+  const active = fulfillments.filter((item) => !['CANCELLED', 'REFUNDED'].includes(item.status));
+  if (active.length > 0 && active.every((item) => item.status === 'DELIVERED')) return 'DELIVERED';
+  if (active.some((item) => item.status === 'DELIVERED')) return 'PARTIALLY_DELIVERED';
+  if (active.some((item) => item.status === 'OUT_FOR_DELIVERY')) return 'OUT_FOR_DELIVERY';
+  if (active.some((item) => item.status === 'PREPARING')) return 'PREPARING';
+  return orderStatus;
+}
 
 export function computePaymentExpiresAt(deadlineHours = 0.5): Date {
   const validHours = !isNaN(deadlineHours) && deadlineHours > 0 ? deadlineHours : 1;

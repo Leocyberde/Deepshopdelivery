@@ -104,7 +104,10 @@ export async function expireOverdueUnpaidOrders(): Promise<number> {
           // Devolve o saldo reservado e registra cada produto dentro da transação de expiração.
           if (freshOrder.stockDeducted) {
             const returns = new Map<number, number>();
-            for (const item of items) returns.set(item.productId, (returns.get(item.productId) || 0) + item.quantity);
+            for (const item of items) {
+              if (item.fulfillmentType !== 'DELIVERY') continue;
+              returns.set(item.productId, (returns.get(item.productId) || 0) + item.quantity);
+            }
             for (const [productId, quantity] of returns) {
               const [product] = await tx.select().from(schema.products).where(eq(schema.products.id, productId));
               if (!product) throw new Error('Produto associado ao pedido não encontrado.');
@@ -123,7 +126,8 @@ export async function expireOverdueUnpaidOrders(): Promise<number> {
             }
           }
 
-          await tx.insert(schema.orderStatusHistory).values({
+          await tx.update(schema.orderFulfillments).set({ status: 'CANCELLED' }).where(and(eq(schema.orderFulfillments.orderId, freshOrder.id), sql`${schema.orderFulfillments.status} NOT IN ('DELIVERED','REFUNDED')`));
+        await tx.insert(schema.orderStatusHistory).values({
             orderId: freshOrder.id,
             oldStatus: freshOrder.status,
             newStatus: 'CANCELLED',

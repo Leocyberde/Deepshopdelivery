@@ -12,6 +12,7 @@ import {
 } from '../services/storeHelpers.ts';
 import { expireOverdueUnpaidOrders } from '../services/orderExpirationService.ts';
 import { getStoreState } from '../services/storeStatusService.ts';
+import { buildFulfillmentPromises } from '../services/fulfillmentPromises.ts';
 
 export function registerStorefrontRoutes(app: Express) {
   app.get('/api/storefront', async (req, res) => {
@@ -48,7 +49,7 @@ export function registerStorefrontRoutes(app: Express) {
       const prodMap = new Map(allProducts.map((p) => [p.id, p]));
 
       const visibleProducts = allProducts
-        .filter((p) => p.status === 'ACTIVE' && p.stock > 0 && categoryMap.has(p.categoryId))
+        .filter((p) => p.status === 'ACTIVE' && (p.stock > 0 || p.allowPreorder) && categoryMap.has(p.categoryId))
         .map((p) => {
           const prodImgs = allImages.filter((img) => img.productId === p.id);
           const primaryImg =
@@ -74,8 +75,17 @@ export function registerStorefrontRoutes(app: Express) {
                 })
             : [];
 
+          const publicProduct = {
+            id: p.id, storeId: p.storeId, categoryId: p.categoryId, code: p.code,
+            name: p.name, description: p.description, price: p.price,
+            promoPrice: p.promoPrice, promoActive: p.promoActive, promoEndsAt: p.promoEndsAt,
+            promoDurationHours: p.promoDurationHours, promoMaxUnits: p.promoMaxUnits,
+            isKit: p.isKit, weight: p.weight, status: p.status, allowPreorder: p.allowPreorder,
+            createdAt: p.createdAt, updatedAt: p.updatedAt,
+          };
           return {
-            ...p,
+            ...publicProduct,
+            availabilityMode: p.stock > 0 ? 'DELIVERY' : 'PREORDER',
             hasPromo,
             effectivePrice,
             discountPercent,
@@ -94,6 +104,7 @@ export function registerStorefrontRoutes(app: Express) {
         categories: activeCategories,
         products: visibleProducts,
         manualFreeDeliveryActive,
+        fulfillment: buildFulfillmentPromises(settingsMap),
         settings: {
           whatsappNumber: settingsMap.whatsapp_number || '',
           pixKey: settingsMap.pix_key || '',
@@ -143,9 +154,9 @@ export function registerStorefrontRoutes(app: Express) {
         .from(schema.products)
         .where(and(eq(schema.products.id, prodId), eq(schema.products.status, 'ACTIVE')));
 
-      if (!product || product.stock <= 0) {
+      if (!product || (product.stock <= 0 && !product.allowPreorder)) {
         res.status(404).json({
-          error: 'Produto não encontrado ou sem estoque disponível na vitrine.',
+          error: 'Produto não encontrado ou indisponível na vitrine.',
         });
         return;
       }
@@ -196,8 +207,16 @@ export function registerStorefrontRoutes(app: Express) {
 
       // Item 7: REMOVER o "+1" automático de GET /api/products/:id.
       // A visualização passa a ser enviada pelo frontend uma única vez por abertura.
+      const publicProduct = {
+        id: product.id, storeId: product.storeId, categoryId: product.categoryId, code: product.code,
+        name: product.name, description: product.description, price: product.price,
+        promoPrice: product.promoPrice, promoActive: product.promoActive, promoEndsAt: product.promoEndsAt,
+        promoDurationHours: product.promoDurationHours, promoMaxUnits: product.promoMaxUnits,
+        isKit: product.isKit, weight: product.weight, status: product.status, allowPreorder: product.allowPreorder,
+        createdAt: product.createdAt, updatedAt: product.updatedAt,
+      };
       res.json({
-        ...product,
+        ...publicProduct,
         viewsCount: product.viewsCount || 0,
         hasPromo,
         effectivePrice,

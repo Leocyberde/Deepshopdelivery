@@ -20,6 +20,7 @@ import { resolveAddressFreight } from '../../services/freightService.ts';
 import { recordInventoryMovement } from '../services/inventoryService.ts';
 import { PAYMENT_TIMEOUT_REASON_PREFIX, LEGACY_PAYMENT_TIMEOUT_REASON_PREFIX } from '../services/orderExpirationService.ts';
 import { calculateWeightedAverageUnitCost } from '../../utils/profitSimulation.ts';
+import { audit } from './adminPhase3Routes.ts';
 
 const notPaymentExpiredOrder = () => sql`COALESCE(${schema.orders.cancellationReason}, '') NOT LIKE ${PAYMENT_TIMEOUT_REASON_PREFIX + '%'} AND COALESCE(${schema.orders.cancellationReason}, '') NOT LIKE ${LEGACY_PAYMENT_TIMEOUT_REASON_PREFIX + '%'}`;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -47,6 +48,31 @@ function normMoney(value: unknown, fallback = 0): number {
   return Number.isFinite(parsed) ? parsed : Number.NaN;
 }
 
+function optionalSupplierId(value: unknown, fallback: number | null = null): number | null {
+  if (value === undefined) return fallback;
+  if (value === null || value === '') return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : Number.NaN;
+}
+
+function optionalHttpUrl(value: unknown, fallback: string | null = null): string | null {
+  if (value === undefined) return fallback;
+  if (value === null || value === '') return null;
+  try {
+    const url = new URL(String(value));
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+function optionalBoolean(value: unknown, fallback: boolean): boolean {
+  if (value === undefined) return fallback;
+  if (value === true || value === 'true' || value === 1 || value === '1') return true;
+  if (value === false || value === 'false' || value === 0 || value === '0') return false;
+  return Boolean(value);
+}
+
 function productData(body: any, existing?: any) {
   const name = typeof body?.name === 'string' ? body.name.trim() : '';
   const categoryId = Number(body?.categoryId);
@@ -60,6 +86,10 @@ function productData(body: any, existing?: any) {
     ? null
     : normMoney(body.promoPrice);
   const stockMinimum = Number(body?.stockMinimum ?? existing?.stockMinimum ?? 5);
+  const supplierId = optionalSupplierId(body?.supplierId, existing?.supplierId ?? null);
+  const supplierProductUrl = optionalHttpUrl(body?.supplierProductUrl, existing?.supplierProductUrl ?? null);
+  const fulfillmentType = body?.fulfillmentType ?? existing?.fulfillmentType ?? 'DELIVERY';
+  const allowPreorder = optionalBoolean(body?.allowPreorder, existing?.allowPreorder ?? true);
   if (!name || name.length > 120 || (body?.description != null && (typeof body.description !== 'string' || body.description.length > 5000))) {
     throw new Error('Nome ou descrição inválidos.');
   }
@@ -70,6 +100,9 @@ function productData(body: any, existing?: any) {
   if (!Number.isFinite(weight) || weight < 0 || weight > 9_999_999.999) throw new Error('Peso inválido.');
   if (promoPrice !== null && (!Number.isFinite(promoPrice) || promoPrice < 0 || promoPrice > 99_999_999.99)) throw new Error('Preço promocional inválido.');
   if (!Number.isSafeInteger(stockMinimum) || stockMinimum < 0 || stockMinimum > MAX_STOCK) throw new Error('Estoque mínimo inválido.');
+  if (supplierId !== null && !Number.isSafeInteger(supplierId)) throw new Error('Fornecedor inválido.');
+  if (body?.supplierProductUrl !== undefined && body?.supplierProductUrl !== null && body?.supplierProductUrl !== '' && !supplierProductUrl) throw new Error('A URL do produto do fornecedor deve usar http ou https.');
+  if (!['DELIVERY', 'PREORDER'].includes(fulfillmentType)) throw new Error('Tipo de fulfillment inválido.');
   const code = body?.code ? validateAndNormalizeCode(body.code) : existing?.code;
   if (!code) throw new Error('Código inválido. Use uma letra seguida de até três números.');
   const promoActive = Boolean(body?.promoActive) && promoPrice !== null && promoPrice > 0;
@@ -91,6 +124,10 @@ function productData(body: any, existing?: any) {
     costLotUnits: lotUnits,
     weight: weight.toFixed(3),
     stockMinimum,
+    supplierId,
+    supplierProductUrl,
+    fulfillmentType,
+    allowPreorder,
   };
 }
 
@@ -132,15 +169,17 @@ async function changeStock(
   tx: any,
   product: any,
   delta: number,
-  details: { movementType: string; reason: string; actorUserId?: number | null; orderId?: number | null; kitProductId?: number | null; idempotencyKey?: string | null; operationResult?: Record<string, unknown> | null; costFields?: Record<string, unknown> }
+  details: { movementType: string; reason: string; actorUserId?: number | null; orderId?: number | null; kitProductId?: number | null; idempotencyKey?: string | null; operationResult?: Record<string, unknown> | null; costFields?: Record<string, unknown>; recordSupplierPurchase?: boolean; purchaseUnitCost?: number }
 ) {
   const afterStock = product.stock + delta;
   if (!Number.isSafeInteger(afterStock) || afterStock < 0 || afterStock > MAX_STOCK) throw new Error('O movimento deixaria o saldo fora dos limites permitidos.');
-  const nextStatus = product.status === 'ARCHIVED' ? 'ARCHIVED' : afterStock <= 0 ? 'INACTIVE' : 'ACTIVE';
+  const nextStatus = product.status === 'ARCHIVED'
+    ? 'ARCHIVED'
+    : afterStock <= 0 ? (product.allowPreorder && product.status !== 'INACTIVE' ? 'ACTIVE' : 'INACTIVE') : 'ACTIVE';
   const [updated] = await tx.update(schema.products).set({ stock: afterStock, status: nextStatus, updatedAt: new Date(), ...(details.costFields || {}) })
     .where(and(eq(schema.products.id, product.id), eq(schema.products.stock, product.stock))).returning();
   if (!updated) throw new Error('O saldo foi alterado por outra operação. Atualize a tela e tente novamente.');
-  await recordInventoryMovement(tx, {
+  const movement = await recordInventoryMovement(tx, {
     productId: product.id,
     delta,
     beforeStock: product.stock,
@@ -153,7 +192,47 @@ async function changeStock(
     idempotencyKey: details.idempotencyKey,
     operationResult: details.operationResult,
   });
+  if (details.recordSupplierPurchase && delta > 0 && updated.supplierId) {
+    const unitCost = details.purchaseUnitCost ?? Number(updated.costUnitPrecise ?? updated.cost ?? 0);
+    await tx.insert(schema.supplierPurchases).values({
+      supplierId: updated.supplierId,
+      productId: updated.id,
+      itemName: updated.name,
+      unitCost: unitCost.toFixed(6),
+      quantity: delta,
+      totalCost: (unitCost * delta).toFixed(2),
+      purchasedAt: new Date(),
+      productUrl: updated.supplierProductUrl ?? null,
+      notes: 'Compra criada automaticamente pela entrada de estoque.',
+      createdBy: details.actorUserId ?? null,
+      inventoryMovementId: movement.id,
+    }).onConflictDoNothing({ target: schema.supplierPurchases.inventoryMovementId });
+  }
   return updated;
+}
+
+async function recordInitialSupplierPurchase(tx: any, product: any, quantity: number, movement: any, actorUserId: number, unitCost: number) {
+  if (quantity <= 0 || !product.supplierId) return;
+  await tx.insert(schema.supplierPurchases).values({
+    supplierId: product.supplierId,
+    productId: product.id,
+    itemName: product.name,
+    unitCost: unitCost.toFixed(6),
+    quantity,
+    totalCost: (unitCost * quantity).toFixed(2),
+    purchasedAt: new Date(),
+    productUrl: product.supplierProductUrl ?? null,
+    notes: 'Compra criada automaticamente pelo estoque inicial.',
+    createdBy: actorUserId,
+    inventoryMovementId: movement.id,
+  }).onConflictDoNothing({ target: schema.supplierPurchases.inventoryMovementId });
+}
+
+async function validateProductSupplier(tx: any, supplierId: number | null) {
+  if (supplierId === null) return;
+  const [supplier] = await tx.select({ id: schema.suppliers.id, status: schema.suppliers.status })
+    .from(schema.suppliers).where(eq(schema.suppliers.id, supplierId)).limit(1);
+  if (!supplier || supplier.status !== 'ACTIVE') throw new Error('Escolha um fornecedor ativo.');
 }
 
 export function registerAdminPhase2Routes(app: Express) {
@@ -172,11 +251,12 @@ export function registerAdminPhase2Routes(app: Express) {
         price_desc: [desc(schema.products.price), desc(schema.products.id)], stock_asc: [asc(schema.products.stock), desc(schema.products.id)],
       };
       if (!productSorts[sort]) { res.status(400).json({ error: 'Ordenação de produtos inválida.' }); return; }
-      if (!['ACTIVE', 'INACTIVE', 'ARCHIVED', 'NON_ACTIVE', 'ALL'].includes(status)) { res.status(400).json({ error: 'Filtro de status de produtos inválido.' }); return; }
+      if (!['ACTIVE', 'INACTIVE', 'ARCHIVED', 'NON_ACTIVE', 'PREORDER_STOCKOUT', 'ALL'].includes(status)) { res.status(400).json({ error: 'Filtro de status de produtos inválido.' }); return; }
       if (categoryId !== null && (!Number.isSafeInteger(categoryId) || categoryId <= 0)) { res.status(400).json({ error: 'Filtro de categoria inválido.' }); return; }
       const excludeKits = req.query.excludeKits === 'true';
       const filters: any[] = [];
       if (status === 'NON_ACTIVE') filters.push(or(eq(schema.products.status, 'INACTIVE'), eq(schema.products.status, 'ARCHIVED')));
+      else if (status === 'PREORDER_STOCKOUT') filters.push(and(eq(schema.products.status, 'ACTIVE'), sql`${schema.products.stock} <= 0`, eq(schema.products.allowPreorder, true)));
       else if (['ACTIVE', 'INACTIVE', 'ARCHIVED'].includes(status)) filters.push(eq(schema.products.status, status));
       if (Number.isSafeInteger(categoryId) && Number(categoryId) > 0) filters.push(eq(schema.products.categoryId, Number(categoryId)));
       if (excludeKits) filters.push(eq(schema.products.isKit, false));
@@ -243,21 +323,28 @@ export function registerAdminPhase2Routes(app: Express) {
       // A consulta global fica fora da transação para evitar usar uma conexão diferente do cliente transacional.
       const storeId = await getPrimaryStoreId();
       const created = await db.transaction(async (tx) => {
+        await validateProductSupplier(tx, input.supplierId);
         const [product] = await tx.insert(schema.products).values({
           storeId, categoryId: input.categoryId, code: input.code, name: input.name, description: input.description,
           price: input.price, promoPrice: input.promoPrice, promoActive: input.promoActive, promoEndsAt: input.promoEndsAt,
           promoDurationHours: input.promoDurationHours, promoMaxUnits: input.promoMaxUnits, isKit: false, cost: input.cost,
           costUnitPrecise: input.costUnitPrecise, costLotTotal: input.costLotTotal, costLotUnits: input.costLotUnits,
           stock: initialStock, stockMinimum: input.stockMinimum, weight: input.weight,
-          status: initialStock > 0 && req.body?.status !== 'INACTIVE' ? 'ACTIVE' : 'INACTIVE',
+          supplierId: input.supplierId, supplierProductUrl: input.supplierProductUrl,
+          fulfillmentType: input.fulfillmentType, allowPreorder: input.allowPreorder,
+          status: req.body?.status === 'INACTIVE' ? 'INACTIVE' : (initialStock > 0 || input.allowPreorder ? 'ACTIVE' : 'INACTIVE'),
         }).returning();
-        if (initialStock > 0) await recordInventoryMovement(tx, {
+        if (initialStock > 0) {
+          const movement = await recordInventoryMovement(tx, {
           productId: product.id, delta: initialStock, beforeStock: 0, afterStock: initialStock,
           movementType: 'INITIAL_STOCK', reason: 'Saldo inicial informado no cadastro do produto', actorUserId: req.user!.id,
-        });
+          });
+          await recordInitialSupplierPurchase(tx, product, initialStock, movement, req.user!.id, Number(product.costUnitPrecise ?? product.cost ?? 0));
+        }
         if (media) for (const item of media) await tx.insert(schema.productImages).values({ productId: product.id, ...item });
         return product;
       });
+      await audit(req, 'PRODUCT_CREATE', 'PRODUCT', created.id, { supplierId: created.supplierId, allowPreorder: created.allowPreorder, initialStock });
       res.status(201).json(created);
     } catch (error: any) {
       logServerError('admin_product_create_failed', error);
@@ -296,8 +383,12 @@ export function registerAdminPhase2Routes(app: Express) {
       if (!category) { res.status(400).json({ error: 'Categoria inválida.' }); return; }
       const media = parseAndValidateMediaItems(req.body);
       const requestedStatus = ['ACTIVE', 'INACTIVE', 'ARCHIVED'].includes(req.body?.status) ? req.body.status : existing.status;
-      if (requestedStatus === 'ACTIVE' && requestedStock <= 0) { res.status(400).json({ error: 'Produto sem saldo; registre uma entrada de estoque antes de ativá-lo.' }); return; }
-      const targetStatus = requestedStock <= 0 ? 'INACTIVE' : requestedStatus;
+      if (requestedStatus === 'ACTIVE' && requestedStock <= 0 && !input.allowPreorder) { res.status(400).json({ error: 'Produto sem saldo; registre uma entrada de estoque antes de ativá-lo.' }); return; }
+      const targetStatus = requestedStatus === 'INACTIVE'
+        ? 'INACTIVE'
+        : requestedStatus === 'ARCHIVED'
+          ? 'ARCHIVED'
+          : requestedStock <= 0 && !input.allowPreorder ? 'INACTIVE' : 'ACTIVE';
       if (targetStatus === 'ARCHIVED') {
         const [activeKitRef] = await db.select({ id: schema.products.id }).from(schema.productKitItems)
           .innerJoin(schema.products, eq(schema.productKitItems.kitProductId, schema.products.id))
@@ -316,6 +407,7 @@ export function registerAdminPhase2Routes(app: Express) {
         res.status(400).json({ error: 'Custo da compra inválido.' }); return;
       }
       const updated = await db.transaction(async (tx) => {
+        await validateProductSupplier(tx, input.supplierId);
         await tx.execute(sql`SELECT id FROM products WHERE id = ${id} FOR UPDATE`);
         const [locked] = await tx.select().from(schema.products).where(eq(schema.products.id, id)).limit(1);
         if (!locked || locked.stock !== existing.stock) throw new Error('O saldo foi alterado por outra operação. Atualize os dados e tente novamente.');
@@ -338,17 +430,35 @@ export function registerAdminPhase2Routes(app: Express) {
         const [row] = await tx.update(schema.products).set({ ...input, ...costFields, stock: requestedStock, status: targetStatus, updatedAt: new Date() })
           .where(and(eq(schema.products.id, id), eq(schema.products.stock, locked.stock))).returning();
         if (!row) throw new Error('O saldo foi alterado por outra operação. Atualize os dados e tente novamente.');
-        if (delta !== 0) await recordInventoryMovement(tx, {
+        if (delta !== 0) {
+          const movement = await recordInventoryMovement(tx, {
           productId: id, delta, beforeStock: locked.stock, afterStock: requestedStock,
           movementType: delta > 0 ? 'MANUAL_ENTRY' : 'MANUAL_CORRECTION', reason: costReason,
           actorUserId: req.user!.id, idempotencyKey: typeof req.body?.idempotencyKey === 'string' ? req.body.idempotencyKey : null,
-        });
+          });
+          if (delta > 0 && row.supplierId) {
+            const incomingUnitCost = purchaseCostMode === 'lot' && purchaseCost !== null
+              ? purchaseCost / purchaseLotUnits
+              : purchaseCostMode === 'unit' && purchaseCost !== null
+                ? purchaseCost
+                : Number(row.costUnitPrecise ?? row.cost ?? 0);
+            await tx.insert(schema.supplierPurchases).values({
+              supplierId: row.supplierId, productId: row.id, itemName: row.name,
+              unitCost: incomingUnitCost.toFixed(6), quantity: delta,
+              totalCost: (incomingUnitCost * delta).toFixed(2), purchasedAt: new Date(),
+              productUrl: row.supplierProductUrl ?? null,
+              notes: 'Compra criada automaticamente pela entrada de estoque.',
+              createdBy: req.user!.id, inventoryMovementId: movement.id,
+            }).onConflictDoNothing({ target: schema.supplierPurchases.inventoryMovementId });
+          }
+        }
         if (media !== null) {
           await tx.delete(schema.productImages).where(eq(schema.productImages.productId, id));
           for (const item of media) await tx.insert(schema.productImages).values({ productId: id, ...item });
         }
         return row;
       });
+      await audit(req, 'PRODUCT_UPDATE', 'PRODUCT', id, { supplierId: updated.supplierId, allowPreorder: updated.allowPreorder, stock: updated.stock });
       res.json(updated);
     } catch (error: any) {
       logServerError('admin_product_update_failed', error);
@@ -364,7 +474,7 @@ export function registerAdminPhase2Routes(app: Express) {
       if (!Number.isSafeInteger(id) || id <= 0 || !['ACTIVE', 'INACTIVE', 'ARCHIVED'].includes(target)) { res.status(400).json({ error: 'Produto ou status inválido.' }); return; }
       const [product] = await db.select().from(schema.products).where(eq(schema.products.id, id)).limit(1);
       if (!product) { res.status(404).json({ error: 'Produto não encontrado.' }); return; }
-      if (target === 'ACTIVE' && product.stock <= 0) { res.status(409).json({ error: 'Registre entrada de estoque antes de ativar.' }); return; }
+      if (target === 'ACTIVE' && product.stock <= 0 && !product.allowPreorder) { res.status(409).json({ error: 'Registre entrada de estoque antes de ativar.' }); return; }
       if (target === 'ARCHIVED' && product.isKit && product.stock > 0) { res.status(409).json({ error: 'Desmonte o saldo do kit antes de arquivá-lo.' }); return; }
       if (target === 'ARCHIVED' && !product.isKit) {
         const [activeKitRef] = await db.select({ id: schema.products.id }).from(schema.productKitItems)
@@ -375,6 +485,7 @@ export function registerAdminPhase2Routes(app: Express) {
       const [updated] = await db.update(schema.products).set({ status: target, updatedAt: new Date() })
         .where(and(eq(schema.products.id, id), eq(schema.products.stock, product.stock))).returning();
       if (!updated) { res.status(409).json({ error: 'Produto alterado por outra operação.' }); return; }
+      await audit(req, 'PRODUCT_STATUS_UPDATE', 'PRODUCT', id, { status: updated.status });
       res.json(updated);
     } catch (error) {
       logServerError('admin_product_status_failed', error);
@@ -452,13 +563,13 @@ export function registerAdminPhase2Routes(app: Express) {
       const lowOnly = req.query.lowStock === 'true';
       const filters: any[] = [neStatusArchived()];
       if (search) filters.push(or(ilike(schema.products.name, `%${escapedLike(search)}%`), ilike(schema.products.code, `%${escapedLike(search)}%`)));
-      if (lowOnly) filters.push(sql`${schema.products.stock} <= ${schema.products.stockMinimum}`);
+      if (lowOnly) filters.push(and(sql`${schema.products.stock} <= ${schema.products.stockMinimum}`, sql`NOT (${schema.products.status} = 'ACTIVE' AND ${schema.products.allowPreorder} = TRUE AND ${schema.products.stock} <= 0)`));
       const where = and(...filters);
       const [totals, rows, lowStockRows] = await Promise.all([
         db.select({ value: count() }).from(schema.products).where(where),
         db.select({ id: schema.products.id, code: schema.products.code, name: schema.products.name, stock: schema.products.stock, stockMinimum: schema.products.stockMinimum, status: schema.products.status, categoryId: schema.products.categoryId, isKit: schema.products.isKit })
           .from(schema.products).where(where).orderBy(asc(schema.products.stock), asc(schema.products.name)).limit(pageSize).offset((page - 1) * pageSize),
-        db.select({ value: count() }).from(schema.products).where(and(neStatusArchived(), sql`${schema.products.stock} <= ${schema.products.stockMinimum}`)),
+        db.select({ value: count() }).from(schema.products).where(and(neStatusArchived(), sql`${schema.products.stock} <= ${schema.products.stockMinimum}`, sql`NOT (${schema.products.status} = 'ACTIVE' AND ${schema.products.allowPreorder} = TRUE AND ${schema.products.stock} <= 0)`)),
       ]);
       const totalCount = Number(totals[0]?.value || 0);
       res.json({ products: rows, page, pageSize, totalCount, lowStockCount: Number(lowStockRows[0]?.value || 0), totalPages: Math.ceil(totalCount / pageSize) });
@@ -533,6 +644,8 @@ export function registerAdminPhase2Routes(app: Express) {
           movementType: direction === 'IN' ? 'MANUAL_ENTRY' : direction === 'OUT' ? 'MANUAL_EXIT' : 'MANUAL_CORRECTION',
           reason: costResult ? `${reason} (custo informado: ${purchaseCostMode === 'lot' ? 'lote ' + purchaseCost : 'unidade ' + purchaseCost}; médio atualizado para ${costResult.weightedUnitCost}/un.)` : reason,
           actorUserId: req.user!.id, idempotencyKey: key, costFields,
+          recordSupplierPurchase: delta > 0 && (direction === 'IN' || direction === 'SET'),
+          purchaseUnitCost: costResult ? Number(costResult.incomingUnitCost) : Number(product.costUnitPrecise ?? product.cost ?? 0),
           operationResult,
         });
         return { movement, stockDelta: delta, cost: costResult, product: { id: movement.id, stock: movement.stock, status: movement.status, code: movement.code, name: movement.name } };
@@ -543,6 +656,7 @@ export function registerAdminPhase2Routes(app: Express) {
       if ('conflict' in result) { logServerEvent('inventory.manual_movement.conflict', 'warn', { status: 409, productId, adminId: req.user!.id, action: direction, result: 'conflict', reason: 'idempotency_key_reused' }); res.status(409).json({ error: 'Esta chave idempotente já foi usada com dados diferentes.' }); return; }
       if ('duplicate' in result) { res.json({ ...result.result, duplicate: true }); return; }
       logServerEvent('inventory.manual_movement.created', 'info', { productId: result.product.id, adminId: req.user!.id, role: req.user!.role, action: direction, stockDelta: result.stockDelta, result: 'committed' });
+      await audit(req, 'INVENTORY_MOVEMENT_CREATE', 'PRODUCT', result.product.id, { direction, quantity, stockDelta: result.stockDelta, movementId: result.movement.id });
       res.status(201).json({ ...result.product, cost: result.cost, duplicate: false });
     } catch (error: any) {
       logServerError('inventory.manual_movement.failed', error, { productId, adminId: req.user!.id, action: direction, result: 'transaction_rolled_back' });

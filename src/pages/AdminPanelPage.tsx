@@ -27,15 +27,23 @@ import { AdminCustomersSection } from '../components/admin/AdminCustomersSection
 import { AdminSettingsSection } from '../components/admin/AdminSettingsSection.tsx';
 import { AdminProfitRankingSection } from '../components/admin/AdminProfitRankingSection.tsx';
 import { AdminInventorySection } from '../components/admin/AdminInventorySection.tsx';
+import { AdminSuppliersSection } from '../components/admin/AdminSuppliersSection.tsx';
 import { AdminFreightModal } from '../components/admin/AdminFreightModal.tsx';
 import { AdminPhase3Section } from '../components/admin/AdminPhase3Section.tsx';
 import { AdminSupportSection } from '../components/admin/AdminSupportSection.tsx';
+import { AdminFulfillmentSection } from '../components/admin/AdminFulfillmentSection.tsx';
+import { AdminRefundsSection } from '../components/admin/AdminRefundsSection.tsx';
 
 function resolveSectionFromPath(pathname: string): AdminSection {
   if (pathname.includes('/admin/estoque')) return 'STOCK';
+  if (pathname.includes('/admin/fornecedores')) return 'SUPPLIERS';
   if (pathname.includes('/admin/produtos-inativos')) return 'INACTIVE_PRODUCTS';
+  if (pathname.includes('/admin/produtos-em-encomenda')) return 'PREORDER_STOCKOUT';
   if (pathname.includes('/admin/produtos')) return 'PRODUCTS';
   if (pathname.includes('/admin/categorias')) return 'CATEGORIES';
+  if (pathname.includes('/admin/pedidos-delivery')) return 'DELIVERY_ORDERS';
+  if (pathname.includes('/admin/encomendas')) return 'PREORDER_ORDERS';
+  if (pathname.includes('/admin/reembolsos')) return 'REFUNDS';
   if (pathname.includes('/admin/pedidos')) return 'ORDERS';
   if (pathname.includes('/admin/central-ajuda')) return 'SUPPORT';
   if (pathname.includes('/admin/clientes')) return 'CUSTOMERS';
@@ -72,9 +80,14 @@ export const AdminPanelPage: React.FC = () => {
       DASHBOARD: '/admin',
       PRODUCTS: '/admin/produtos',
       INACTIVE_PRODUCTS: '/admin/produtos-inativos',
+      PREORDER_STOCKOUT: '/admin/produtos-em-encomenda',
       STOCK: '/admin/estoque',
+      SUPPLIERS: '/admin/fornecedores',
       CATEGORIES: '/admin/categorias',
       ORDERS: '/admin/pedidos',
+      DELIVERY_ORDERS: '/admin/pedidos-delivery',
+      PREORDER_ORDERS: '/admin/encomendas',
+      REFUNDS: '/admin/reembolsos',
       SUPPORT: '/admin/central-ajuda',
       CUSTOMERS: '/admin/clientes',
       PROFIT_RANKING: '/admin/lucro-ranking',
@@ -88,6 +101,7 @@ export const AdminPanelPage: React.FC = () => {
   const [dashboardData, setDashboardData] = useState<any>(null);
   // State for Categories
   const [categories, setCategories] = useState<any[]>([]);
+  const [supplierOptions, setSupplierOptions] = useState<any[]>([]);
   // State for Products
   const [products, setProducts] = useState<any[]>([]);
   const [productSearch, setProductSearch] = useState('');
@@ -244,6 +258,10 @@ export const AdminPanelPage: React.FC = () => {
   const [purchaseCost, setPurchaseCost] = useState('');
   const [prodWeight, setProdWeight] = useState('0.200');
   const [prodStatus, setProdStatus] = useState<'ACTIVE' | 'INACTIVE'>('ACTIVE');
+  const [prodSupplierId, setProdSupplierId] = useState<number | ''>('');
+  const [prodSupplierUrl, setProdSupplierUrl] = useState('');
+  const [prodFulfillmentType, setProdFulfillmentType] = useState<'DELIVERY' | 'PREORDER'>('DELIVERY');
+  const [prodAllowPreorder, setProdAllowPreorder] = useState(true);
   const [prodImageUrl, setProdImageUrl] = useState('');
   const [prodMediaItems, setProdMediaItems] = useState<ProductMediaItem[]>([]);
   const [newMediaType, setNewMediaType] = useState<'IMAGE' | 'VIDEO'>('IMAGE');
@@ -339,13 +357,14 @@ export const AdminPanelPage: React.FC = () => {
     setAdminLoadError('');
     try {
       const needsDashboard = section === 'DASHBOARD';
-      const needsCategories = ['CATEGORIES', 'PRODUCTS', 'INACTIVE_PRODUCTS'].includes(section);
-      const needsProducts = ['PRODUCTS', 'INACTIVE_PRODUCTS'].includes(section);
+      const needsCategories = ['CATEGORIES', 'PRODUCTS', 'INACTIVE_PRODUCTS', 'PREORDER_STOCKOUT'].includes(section);
+      const needsProducts = ['PRODUCTS', 'INACTIVE_PRODUCTS', 'PREORDER_STOCKOUT'].includes(section);
       const needsCustomers = section === 'CUSTOMERS';
+      const needsSuppliers = ['PRODUCTS', 'INACTIVE_PRODUCTS', 'PREORDER_STOCKOUT', 'SUPPLIERS'].includes(section);
       const categoryIdFromUrl = new URLSearchParams(location.search).get('categoryId') || '';
-      const productParams = new URLSearchParams({ page: String(productPage), pageSize: '25', search: productSearch, status: section === 'INACTIVE_PRODUCTS' ? 'NON_ACTIVE' : 'ACTIVE', sort: productSort });
+      const productParams = new URLSearchParams({ page: String(productPage), pageSize: '25', search: productSearch, status: section === 'INACTIVE_PRODUCTS' ? 'NON_ACTIVE' : section === 'PREORDER_STOCKOUT' ? 'PREORDER_STOCKOUT' : 'ACTIVE', sort: productSort });
       if (categoryIdFromUrl && section === 'PRODUCTS') productParams.set('categoryId', categoryIdFromUrl);
-      const [summary, dash, cats, prods, custs, sets, notifs] = await Promise.all([
+      const [summary, dash, cats, prods, custs, sets, notifs, supps] = await Promise.all([
         apiFetch('/api/admin/dashboard/summary'),
         needsDashboard ? apiFetch('/api/admin/dashboard') : Promise.resolve(null),
         needsCategories ? apiFetch('/api/admin/categories?page=1&pageSize=100') : Promise.resolve(null),
@@ -357,14 +376,18 @@ export const AdminPanelPage: React.FC = () => {
           unreadCount: 0,
           activePopups: [],
         })),
+        needsSuppliers ? apiFetch('/api/admin/suppliers') : Promise.resolve(null),
       ]);
       if (requestSequence !== adminLoadSequence.current) return;
 
       if (needsCategories) setCategories(Array.isArray(cats?.categories) ? cats.categories : []);
       if (needsProducts) {
-        setProducts(Array.isArray(prods?.products) ? prods.products : []);
-        setProductPageMeta({ totalCount: Number(prods?.totalCount || 0), totalPages: Math.max(1, Number(prods?.totalPages || 1)) });
+        const rows = Array.isArray(prods) ? prods : (Array.isArray(prods?.products) ? prods.products : []);
+        const filteredRows = rows;
+        setProducts(filteredRows);
+        setProductPageMeta({ totalCount: Number(prods?.totalCount || filteredRows.length), totalPages: Math.max(1, Number(prods?.totalPages || 1)) });
       }
+      if (supps) setSupplierOptions(Array.isArray(supps.suppliers) ? supps.suppliers : []);
       if (custs) {
         setCustomersData({
           customers: Array.isArray(custs.customers) ? custs.customers : [],
@@ -646,6 +669,10 @@ export const AdminPanelPage: React.FC = () => {
   const openNewProduct = () => {
     setEditingProd(null);
     setFormMode('PRODUCT');
+    setProdSupplierId('');
+    setProdSupplierUrl('');
+    setProdFulfillmentType('DELIVERY');
+    setProdAllowPreorder(true);
     setProdCategoryId(categories[0]?.id || '');
     setProdCode(suggestNextCode('P'));
     setProdName('');
@@ -712,6 +739,10 @@ export const AdminPanelPage: React.FC = () => {
   const openEditProduct = (prod: any) => {
     setEditingProd(prod);
     setFormMode(prod.isKit ? 'KIT' : 'PRODUCT');
+    setProdSupplierId(prod.supplierId ?? '');
+    setProdSupplierUrl(prod.supplierProductUrl || '');
+    setProdFulfillmentType(prod.fulfillmentType === 'PREORDER' ? 'PREORDER' : 'DELIVERY');
+    setProdAllowPreorder(prod.allowPreorder !== false);
     setSelectedKitItems(Object.fromEntries((prod.kitComponents || []).map((item: any) => [Number(item.componentProductId), Number(item.quantityPerKit)])));
     setProdCategoryId(prod.categoryId);
     setProdCode(prod.code || 'A001');
@@ -1126,6 +1157,10 @@ export const AdminPanelPage: React.FC = () => {
           purchaseLotUnits: editingProd && Number(prodStock) > Number(editingProd.stock) && purchaseCostMode === 'lot' ? Number(prodStock) - Number(editingProd.stock) : null,
           idempotencyKey: editingProd && Number(prodStock) !== Number(editingProd.stock) ? crypto.randomUUID() : undefined,
           stockMinimum: Number(prodStockMinimum),
+          supplierId: prodSupplierId === '' ? null : Number(prodSupplierId),
+          supplierProductUrl: prodSupplierUrl.trim() || null,
+          fulfillmentType: prodFulfillmentType,
+          allowPreorder: prodAllowPreorder,
           weight: prodWeight,
           status: prodStatus,
           imageUrl: primaryImageUrl,
@@ -1669,7 +1704,7 @@ ${kitProd.code} - ${kitProd.name}`)) return;
             )}
 
             {/* 2. PRODUTOS & KITS E ABA DE PRODUTOS INATIVOS */}
-            {(section === 'PRODUCTS' || section === 'INACTIVE_PRODUCTS') && (
+            {(section === 'PRODUCTS' || section === 'INACTIVE_PRODUCTS' || section === 'PREORDER_STOCKOUT') && (
               <AdminProductsSection
                 section={section}
                 goToSection={goToSection}
@@ -1690,8 +1725,9 @@ ${kitProd.code} - ${kitProd.name}`)) return;
                 setStockMinimum={setProdStockMinimum}
                 onProductStatusChange={handleProductStatusChange}
                 activeProductsList={activeProductsList}
-                inactiveProductsList={inactiveProductsList}
+                inactiveProductsList={section === 'PREORDER_STOCKOUT' ? products : inactiveProductsList}
                 categories={categories}
+                supplierOptions={supplierOptions}
                 showProdForm={showProdForm}
                 setShowProdForm={setShowProdForm}
                 formMode={formMode}
@@ -1737,6 +1773,14 @@ ${kitProd.code} - ${kitProd.name}`)) return;
                 setProdWeight={setProdWeight}
                 prodStatus={prodStatus}
                 setProdStatus={setProdStatus}
+                prodSupplierId={prodSupplierId}
+                setProdSupplierId={setProdSupplierId}
+                prodSupplierUrl={prodSupplierUrl}
+                setProdSupplierUrl={setProdSupplierUrl}
+                prodFulfillmentType={prodFulfillmentType}
+                setProdFulfillmentType={setProdFulfillmentType}
+                prodAllowPreorder={prodAllowPreorder}
+                setProdAllowPreorder={setProdAllowPreorder}
                 prodImageUrl={prodImageUrl}
                 setProdImageUrl={setProdImageUrl}
                 prodMediaItems={prodMediaItems}
@@ -1769,8 +1813,12 @@ ${kitProd.code} - ${kitProd.name}`)) return;
             )}
 
             {section === 'STOCK' && <AdminInventorySection />}
+            {section === 'SUPPLIERS' && <AdminSuppliersSection apiFetch={apiFetch} toast={toast} />}
             {section === 'PHASE3' && <AdminPhase3Section apiFetch={apiFetch} toast={toast} />}
             {section === 'SUPPORT' && <AdminSupportSection apiFetch={apiFetch} toast={toast} />}
+            {section === 'DELIVERY_ORDERS' && <AdminFulfillmentSection type="DELIVERY" apiFetch={apiFetch} toast={toast} />}
+            {section === 'PREORDER_ORDERS' && <AdminFulfillmentSection type="PREORDER" apiFetch={apiFetch} toast={toast} />}
+            {section === 'REFUNDS' && <AdminRefundsSection isOwner={user?.role === 'SUPER_ADMIN'} apiFetch={apiFetch} toast={toast} />}
 
             {/* 3. CATEGORIAS */}
             {section === 'CATEGORIES' && (

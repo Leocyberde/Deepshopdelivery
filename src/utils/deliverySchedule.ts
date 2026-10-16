@@ -89,16 +89,8 @@ export function getFastDeliveryEstimate(
     const rule = hours[dayKey];
     if (!rule?.enabled) continue;
     const candidateParts = getDatePartsInTimezone(candidateDate, timeZone);
-    return tzToUtc(
-      candidateParts.year,
-      candidateParts.month,
-      candidateParts.day,
-      Number(rule.open.slice(0, 2)),
-      Number(rule.open.slice(3, 5)),
-      0,
-      0,
-      timeZone,
-    );
+    const opening = tzToUtc(candidateParts.year, candidateParts.month, candidateParts.day, Number(rule.open.slice(0, 2)), Number(rule.open.slice(3, 5)), 0, 0, timeZone);
+    return new Date(opening.getTime() + deliveryMinutes * 60_000);
   }
   return firstCandidate;
 }

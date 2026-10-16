@@ -21,6 +21,7 @@ import {
   formatCepMask,
   lookupCepAddress,
 } from '../context/AppContext.tsx';
+import { FulfillmentSummary } from '../components/FulfillmentSummary.tsx';
 import {
   DELIVERY_MINUTE_OPTIONS,
   DELIVERY_OPTION_LABELS,
@@ -579,6 +580,7 @@ export const CheckoutPage: React.FC = () => {
             productId: i.productId,
             productName: i.name,
             quantity: i.quantity,
+            receiveAllAsPreorder: Boolean(i.receiveAllAsPreorder),
           })),
         }),
       });
@@ -999,6 +1001,8 @@ export const CheckoutPage: React.FC = () => {
               </div>;
             })}
           </div>
+
+          <FulfillmentSummary items={selectedCartItems} />
 
           <div className="border-t border-stone-200 pt-4 space-y-2 text-sm">
             <div className="flex justify-between text-zinc-600">
