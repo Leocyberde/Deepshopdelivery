@@ -1,3 +1,4 @@
+import { useFreightQuote, FreightQuoteSummary } from '../components/FreightQuoteSummary.tsx';
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
@@ -50,7 +51,7 @@ interface CustomerAddress {
     distanceKm: number | null;
     fee: number | null;
     isItatiba?: boolean;
-    deliveryMode?: 'DELIVERY' | 'CORREIOS';
+    deliveryMode?: 'DELIVERY' | 'UNAVAILABLE';
     deliveryModeMessage?: string;
     customerMessage: string;
   };
@@ -107,7 +108,7 @@ export const CheckoutPage: React.FC = () => {
   const [storeTimezone, setStoreTimezone] = useState('America/Sao_Paulo');
   const [storeClosed, setStoreClosed] = useState(false);
   const [storeClosedMessage, setStoreClosedMessage] = useState('A loja está fechada no momento.');
-  const [manualFreeDeliveryActive, setManualFreeDeliveryActive] = useState(false);
+  const { quote: freightQuote, loading: quoteLoading, error: quoteError, refresh: refreshQuote } = useFreightQuote(selectedCartItems, selectedAddressId);
   const orderIdempotencyKeyRef = useRef<string | null>(null);
   const paymentIdempotencyKeyRef = useRef<string | null>(null);
 
@@ -173,9 +174,7 @@ export const CheckoutPage: React.FC = () => {
           setStoreHours(storefront.settings.store?.hours || {});
           setStoreTimezone(storefront.settings.store?.timezone || 'America/Sao_Paulo');
         }
-        setManualFreeDeliveryActive(
-          !isAdminRole(user.role) && Boolean(storefront?.manualFreeDeliveryActive)
-        );
+
       })
       .catch((err) => {
         console.error(err);
@@ -372,7 +371,7 @@ export const CheckoutPage: React.FC = () => {
                     <Truck className="w-3.5 h-3.5" />
                     <span>
                       {(createdOrder.deliveryFeeSource === 'MANUAL_FREE_DELIVERY' || createdOrder.deliveryFeeSource === 'MANUAL_FREE_DELIVERY_PERIOD')
-                        ? 'Grátis (cortesia da loja)'
+                        ? 'Frete grátis (benefício da loja)'
                         : 'Frete grátis'}
                     </span>
                   </span>
@@ -466,17 +465,8 @@ export const CheckoutPage: React.FC = () => {
   }
 
   const selectedAddress = addresses.find((a) => a.id === selectedAddressId) || null;
-  const applyingManualFreeDelivery = !isAdmin && manualFreeDeliveryActive;
-  const isConfirmedFreight =
-    applyingManualFreeDelivery ||
-    (selectedAddress?.freight.status === 'CONFIRMED' && selectedAddress.freight.fee !== null);
-  const freightFee = applyingManualFreeDelivery
-    ? 0
-    : isConfirmedFreight && selectedAddress?.freight.fee !== null
-    ? selectedAddress!.freight.fee!
-    : null;
-  const finalTotal =
-    freightFee !== null ? Number((cartSubtotal + freightFee).toFixed(2)) : cartSubtotal;
+  const isConfirmedFreight = freightQuote?.freight?.status === 'OK';
+  const finalTotal = freightQuote?.totals.total ?? cartSubtotal;
   const scheduleMinDate = localDateString(new Date(Date.now() + 24 * 60 * 60 * 1000), storeTimezone);
   const scheduleDayKey = scheduledDate
     ? ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][new Date(`${scheduledDate}T12:00:00Z`).getUTCDay()]
@@ -528,7 +518,7 @@ export const CheckoutPage: React.FC = () => {
         toast('Endereço em Itatiba cadastrado! Temos delivery para sua região.', 'success');
       } else {
         toast(
-          'Endereço cadastrado! Entrega através dos Correios — conferir valor no WhatsApp.',
+          'Endereço cadastrado! Atendemos apenas Itatiba.',
           'info'
         );
       }
@@ -558,6 +548,7 @@ export const CheckoutPage: React.FC = () => {
       toast('Escolha quando você quer receber o pedido.', 'error');
       return;
     }
+    if (quoteLoading || !isConfirmedFreight) { toast(quoteError || 'Não conseguimos calcular o frete agora', 'error'); return; }
     setOrderError(null);
     setSubmittingOrder(true);
     try {
@@ -570,6 +561,7 @@ export const CheckoutPage: React.FC = () => {
         headers: { 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify({
           addressId: selectedAddressId,
+          quoteToken: freightQuote?.quoteToken,
           paymentMethod: 'MERCADOPAGO',
           notes,
           deliveryMode,
@@ -704,7 +696,7 @@ export const CheckoutPage: React.FC = () => {
                             ) : (
                               <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-amber-50 border border-amber-200 text-xs font-semibold text-amber-900">
                                 <Truck className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-                                <span>Entrega através dos Correios — conferir valor no WhatsApp</span>
+                                <span>Atendemos apenas Itatiba</span>
                               </div>
                             )}
                             <div>
@@ -714,7 +706,7 @@ export const CheckoutPage: React.FC = () => {
                                 </span>
                               ) : isItatibaCity(addr.city) ? (
                                 <span className="text-xs font-medium text-amber-800">
-                                  Frete a combinar. A loja vai informar o valor.
+                                  Não conseguimos calcular o frete agora
                                 </span>
                               ) : null}
                             </div>
@@ -894,7 +886,7 @@ export const CheckoutPage: React.FC = () => {
                     ) : (
                       <span>
                         Cidade conferida: <strong>{city.trim()}</strong> —{' '}
-                        <strong>Entrega através dos Correios, conferir valor no WhatsApp.</strong>
+                        <strong>Atendemos apenas Itatiba</strong>
                       </span>
                     )}
                   </div>
@@ -1008,7 +1000,7 @@ export const CheckoutPage: React.FC = () => {
             <div className="flex justify-between text-zinc-600">
               <span>Subtotal</span>
               <span className="font-semibold text-zinc-900 tabular-nums">
-                {formatCurrency(cartSubtotal)}
+                {formatCurrency(freightQuote?.totals.subtotal ?? cartSubtotal)}
               </span>
             </div>
 
@@ -1024,42 +1016,18 @@ export const CheckoutPage: React.FC = () => {
                 {isItatibaCity(selectedAddress.city) ? (
                   <span>Cidade: Itatiba — Temos delivery</span>
                 ) : (
-                  <span>Entrega através dos Correios — conferir valor no WhatsApp</span>
+                  <span>Atendemos apenas Itatiba</span>
                 )}
               </div>
             )}
 
-            {applyingManualFreeDelivery && (
-              <div className="p-3.5 rounded-xl bg-sky-50 border border-sky-200 text-xs text-sky-950">
-                <div className="font-bold">Frete grátis liberado pela loja</div>
-                <p className="mt-1">A cortesia temporária configurada no painel administrativo já foi aplicada a este pedido.</p>
-              </div>
-            )}
-            {applyingManualFreeDelivery ? (
-              <div className="flex justify-between text-emerald-800">
-                <span>Frete (cortesia da loja)</span>
-                <span className="font-semibold tabular-nums">{formatCurrency(0)}</span>
-              </div>
-            ) : selectedAddress ? (
-              isConfirmedFreight ? (
-                <div className="flex justify-between text-zinc-600">
-                  <span>Frete ({selectedAddress.label})</span>
-                  <span className="font-semibold text-emerald-800 tabular-nums">
-                    {formatCurrency(freightFee)}
-                  </span>
-                </div>
-              ) : (
-                <div className="p-3 rounded-lg bg-amber-50/90 border border-amber-200 text-xs text-amber-900 space-y-1">
-                  <div className="font-semibold">Frete a combinar</div>
-                  <p>
-                    A loja vai informar o valor da entrega para este endereço. Você pode concluir o
-                    pedido normalmente e combinar pelo WhatsApp.
-                  </p>
-                </div>
-              )
-            ) : (
-              <div className="text-xs text-zinc-500">Selecione um endereço acima</div>
-            )}
+            <FreightQuoteSummary quote={freightQuote} loading={quoteLoading} error={quoteError} onRetry={async () => {
+              if (selectedAddressId) {
+                try { await apiFetch(`/api/addresses/${selectedAddressId}/recalculate`, { method: 'POST' }); }
+                catch (error: any) { toast(error.message, 'error'); }
+              }
+              refreshQuote();
+            }} />
           </div>
 
           <div className="border-t border-stone-200 pt-4 flex items-center justify-between">
@@ -1090,7 +1058,7 @@ export const CheckoutPage: React.FC = () => {
 
           <button
             type="button"
-            disabled={submittingOrder || !selectedAddressId || storeClosed}
+            disabled={submittingOrder || !selectedAddressId || storeClosed || quoteLoading || !isConfirmedFreight}
             onClick={handlePlaceOrder}
             className="w-full py-3.5 px-5 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 rounded-lg transition-colors disabled:opacity-50"
           >

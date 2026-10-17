@@ -4,6 +4,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { eq, sql } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import fs from 'fs';
+import { AUTOMATIC_FREIGHT_DDL } from './freightDdl.ts';
 import * as schema from './schema.ts';
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -507,6 +508,8 @@ export async function initializeDatabase() {
     INSERT INTO order_fulfillments(order_id, type, status, eta_at, created_at)
     SELECT id, 'DELIVERY', CASE WHEN status = 'CANCELLED' THEN 'CANCELLED' WHEN status = 'DELIVERED' THEN 'DELIVERED' ELSE 'PENDING' END, COALESCE(delivery_eta_at, estimated_delivery_at, scheduled_delivery_at), created_at FROM orders o WHERE NOT EXISTS (SELECT 1 FROM order_fulfillments f WHERE f.order_id=o.id);
   `);
+
+  await pgClient.query(AUTOMATIC_FREIGHT_DDL);
 
   // Check if initial store "DeepShop" exists
   const existingStores = await db.select().from(schema.stores);

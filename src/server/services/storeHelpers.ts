@@ -1,3 +1,4 @@
+import { freightRulesFromSettings } from './freightConfig.ts';
 import { eq } from 'drizzle-orm';
 import { db } from '../../db/index.ts';
 import * as schema from '../../db/schema.ts';
@@ -488,14 +489,8 @@ export async function getSettingsMap(executor: any = db): Promise<Record<string,
 }
 
 export async function getFreightRuleConfig(): Promise<FreightRuleConfig> {
-  const map = await getSettingsMap();
-  return {
-    baseDistanceKm: parseFloat(map.freight_base_km || '4.0') || 4.0,
-    baseFee: parseFloat(map.freight_base_fee || '7.50') || 7.5,
-    extraKmFee: parseFloat(map.freight_extra_km_fee || '1.50') || 1.5,
-  };
+  return freightRulesFromSettings(await getSettingsMap());
 }
-
 export async function getPrimaryStoreId(): Promise<number> {
   const allStores = await db.select().from(schema.stores);
   if (allStores.length > 0) return allStores[0].id;

@@ -1,3 +1,6 @@
+import { GEO_DEFAULTS } from '../services/freightConfig.ts';
+import { validateFreightSettings } from '../services/freightSettingsValidation.ts';
+import { sameOrigin } from './geoAdminRoutes.ts';
 import { logServerError, logServerEvent } from '../logger.ts';
 import { Express } from 'express';
 import bcrypt from 'bcryptjs';
@@ -1777,141 +1780,14 @@ export function registerAdminRoutes(app: Express) {
   });
 
   // Sugestão aritmética simples de frete
-  app.post('/api/admin/freight/suggest', requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const rawKm = parseFloat(String(req.body.distanceKm || '0').replace(',', '.'));
-      if (isNaN(rawKm) || rawKm < 0) {
-        res.status(400).json({ error: 'Informe uma distância válida em km.' });
-        return;
-      }
-      const config = await getFreightRuleConfig();
-      const suggestedFee = calculateSuggestedFreight(rawKm, config);
-      res.json({
-        distanceKm: rawKm,
-        suggestedFee,
-        rule: config,
-      });
-    } catch (error) {
-      logServerError('server_operation_failed', error);
-      res.status(500).json({ error: 'Erro ao calcular sugestão de frete.' });
-    }
+  app.post('/api/admin/freight/suggest', requireAuth, requireAdmin, sameOrigin, (_req, res) => {
+    res.status(410).json({ error: 'Frete manual removido. Use o recálculo automático de distância.', code: 'MANUAL_FREIGHT_REMOVED' });
   });
 
-  // Definir/alterar frete de um endereço pelo ADMIN
-  app.put(
-    '/api/admin/addresses/:id/freight',
-    requireAuth,
-    requireAdmin,
-    async (req: AuthRequest, res) => {
-      try {
-        const addrId = Number(req.params.id);
-        const { distanceKm, deliveryFee, deliveryOrigin, deliveryNotes } = req.body;
+  app.put('/api/admin/addresses/:id/freight', requireAuth, requireAdmin, sameOrigin, (_req, res) => {
+    res.status(410).json({ error: 'Frete manual removido. Use o recálculo automático de distância.', code: 'MANUAL_FREIGHT_REMOVED' });
+  });
 
-        const parsedDistance = parseFloat(String(distanceKm ?? '').replace(',', '.'));
-        const parsedFee = parseFloat(String(deliveryFee ?? '').replace(',', '.'));
-
-        if (isNaN(parsedDistance) || parsedDistance < 0) {
-          res.status(400).json({ error: 'Informe uma distância em km válida (ex: 4,8).' });
-          return;
-        }
-        if (isNaN(parsedFee) || parsedFee < 0) {
-          res.status(400).json({ error: 'Informe um valor de frete válido (ex: 8,50).' });
-          return;
-        }
-
-        const settingsMap = await getSettingsMap();
-        const originText =
-          deliveryOrigin && String(deliveryOrigin).trim()
-            ? String(deliveryOrigin).trim()
-            : settingsMap.store_origin_address || 'Matriz DeepShop';
-
-        const [updated] = await db
-          .update(schema.addresses)
-          .set({
-            deliveryDistanceKm: parsedDistance.toFixed(2),
-            deliveryFee: parsedFee.toFixed(2),
-            deliveryFeeStatus: 'CONFIRMED',
-            deliveryFeeSource: 'MANUAL',
-            deliveryOrigin: originText,
-            deliveryNotes: deliveryNotes ? String(deliveryNotes).trim() : null,
-            deliveryUpdatedBy: req.user!.id,
-            deliveryUpdatedAt: new Date(),
-            updatedAt: new Date(),
-          })
-          .where(eq(schema.addresses.id, addrId))
-          .returning();
-
-        if (!updated) {
-          res.status(404).json({ error: 'Endereço não encontrado.' });
-          return;
-        }
-
-        await db
-          .update(schema.adminNotifications)
-          .set({ isRead: true, popupDismissed: true })
-          .where(eq(schema.adminNotifications.customerId, updated.userId));
-
-        // Se o cliente tiver algum pedido aberto ('NEW' ou 'AWAITING_PAYMENT') aguardando frete neste endereço,
-        // já define o frete no pedido, recalcula o total, inicia o cronômetro de 1h e notifica o cliente!
-        const deadlineHours = Math.max(
-          0.1,
-          parseFloat(settingsMap.payment_deadline_hours || '0.5') || 0.5
-        );
-        const customerOrders = await db
-          .select()
-          .from(schema.orders)
-          .where(eq(schema.orders.userId, updated.userId));
-
-        for (const ord of customerOrders) {
-          if (
-            (ord.status === 'NEW' || ord.status === 'AWAITING_PAYMENT') &&
-            ord.deliveryFee === null &&
-            (!ord.addressSnapshot?.id || ord.addressSnapshot.id === addrId)
-          ) {
-            const sub = parseFloat(ord.subtotal);
-            const nextTot = Number((sub + parsedFee).toFixed(2));
-            const nextExpires = computePaymentExpiresAt(deadlineHours);
-
-            await db
-              .update(schema.orders)
-              .set({
-                deliveryFee: parsedFee.toFixed(2),
-                deliveryDistanceKm: parsedDistance.toFixed(2),
-                deliveryFeeSource: 'MANUAL',
-                total: nextTot.toFixed(2),
-                paymentExpiresAt: nextExpires,
-                updatedAt: new Date(),
-              })
-              .where(eq(schema.orders.id, ord.id));
-
-            await db.insert(schema.notifications).values({
-              userId: updated.userId,
-              orderId: ord.id,
-              orderNumber: ord.orderNumber,
-              oldStatus: ord.status,
-              newStatus: ord.status,
-              title: `💰 Frete definido e pagamento liberado! (Pedido #${ord.orderNumber})`,
-              message: `O frete do seu pedido #${ord.orderNumber} foi confirmado em R$ ${parsedFee
-                .toFixed(2)
-                .replace('.', ',')}. O pagamento via PIX/WhatsApp já está liberado e você tem 1 hora para realizar o pagamento antes que a reserva do estoque expire!`,
-              isRead: false,
-              popupDismissed: false,
-            });
-          }
-        }
-
-        res.json({
-          ...updated,
-          freight: resolveAddressFreight(updated),
-        });
-      } catch (error) {
-        logServerError('server_operation_failed', error);
-        res.status(500).json({ error: 'Erro ao salvar frete do endereço.' });
-      }
-    }
-  );
-
-  // Admin: Pedidos — filtros e paginação executados no banco; a listagem não carrega itens nem histórico.
   app.get('/api/admin/orders', requireAuth, requireAdmin, async (req, res) => {
     try {
       await expireOverdueUnpaidOrders();
@@ -1935,7 +1811,7 @@ export function registerAdminRoutes(app: Express) {
         res.status(400).json({ error: 'A busca deve ter no máximo 100 caracteres.' });
         return;
       }
-      if (status !== 'ALL' && status !== 'PENDING_FREIGHT' && !VALID_ORDER_STATUSES.includes(status)) {
+      if (status !== 'ALL' && !VALID_ORDER_STATUSES.includes(status)) {
         res.status(400).json({ error: 'Filtro de status inválido.' });
         return;
       }
@@ -1963,9 +1839,7 @@ export function registerAdminRoutes(app: Express) {
       }
 
       const filters: any[] = [notPaymentExpiredOrder()];
-      if (status === 'PENDING_FREIGHT') {
-        filters.push(isNull(schema.orders.deliveryFee), ne(schema.orders.status, 'CANCELLED'));
-      } else if (status !== 'ALL') {
+      if (status !== 'ALL') {
         filters.push(eq(schema.orders.status, status));
       }
       if (search) {
@@ -2156,117 +2030,9 @@ export function registerAdminRoutes(app: Express) {
   });
 
   // Admin: Definir ou alterar o frete direto no pedido
-  app.put(
-    '/api/admin/orders/:id/freight',
-    requireAuth,
-    requireAdmin,
-    async (req: AuthRequest, res) => {
-      try {
-        const orderId = Number(req.params.id);
-        const { deliveryFee, deliveryDistanceKm, alsoUpdateAddress, isManualFreeDelivery } =
-          req.body;
-
-        const parsedFee = isManualFreeDelivery
-          ? 0
-          : parseFloat(String(deliveryFee ?? '').replace(',', '.'));
-        const parsedDist =
-          deliveryDistanceKm !== undefined &&
-          deliveryDistanceKm !== null &&
-          deliveryDistanceKm !== ''
-            ? parseFloat(String(deliveryDistanceKm).replace(',', '.'))
-            : null;
-
-        if (isNaN(parsedFee) || parsedFee < 0) {
-          res.status(400).json({ error: 'Informe um valor de frete válido.' });
-          return;
-        }
-
-        const [existingOrder] = await db
-          .select()
-          .from(schema.orders)
-          .where(eq(schema.orders.id, orderId));
-
-        if (!existingOrder) {
-          res.status(404).json({ error: 'Pedido não encontrado.' });
-          return;
-        }
-
-        const subtotalNum = parseFloat(existingOrder.subtotal);
-        const newTotalNum = Number((subtotalNum + parsedFee).toFixed(2));
-        const nextSource =
-          isManualFreeDelivery || parsedFee === 0 ? 'MANUAL_FREE_DELIVERY' : 'MANUAL';
-
-        const settingsMap = await getSettingsMap();
-        const deadlineHours = Math.max(
-          0.1,
-          parseFloat(settingsMap.payment_deadline_hours || '0.5') || 0.5
-        );
-        const wasWaitingForFreight = existingOrder.deliveryFee === null;
-        const isUnpaidOrder =
-          existingOrder.status === 'NEW' || existingOrder.status === 'AWAITING_PAYMENT';
-        const nextPaymentExpiresAt = isUnpaidOrder
-          ? existingOrder.paymentExpiresAt || computePaymentExpiresAt(deadlineHours)
-          : existingOrder.paymentExpiresAt;
-
-        const [updatedOrder] = await db
-          .update(schema.orders)
-          .set({
-            deliveryFee: parsedFee.toFixed(2),
-            deliveryDistanceKm:
-              parsedDist !== null && !isNaN(parsedDist)
-                ? parsedDist.toFixed(2)
-                : existingOrder.deliveryDistanceKm,
-            deliveryFeeSource: nextSource,
-            total: newTotalNum.toFixed(2),
-            paymentExpiresAt: nextPaymentExpiresAt,
-            updatedAt: new Date(),
-          })
-          .where(eq(schema.orders.id, orderId))
-          .returning();
-
-        if (isUnpaidOrder && wasWaitingForFreight) {
-          await db.insert(schema.notifications).values({
-            userId: existingOrder.userId,
-            orderId: existingOrder.id,
-            orderNumber: existingOrder.orderNumber,
-            oldStatus: existingOrder.status,
-            newStatus: existingOrder.status,
-            title: `💰 Frete definido e pagamento liberado! (Pedido #${existingOrder.orderNumber})`,
-            message:
-              parsedFee === 0
-                ? `A loja liberou Entrega Grátis para o seu pedido #${existingOrder.orderNumber}! O pagamento via PIX/WhatsApp já está disponível e você tem 1 hora para concluir o pagamento.`
-                : `O frete do seu pedido #${existingOrder.orderNumber} foi definido em R$ ${parsedFee
-                    .toFixed(2)
-                    .replace('.', ',')}. O pagamento via PIX/WhatsApp já está liberado e você tem 1 hora para realizar o pagamento antes que a reserva do estoque expire!`,
-            isRead: false,
-            popupDismissed: false,
-          });
-        }
-
-        if (alsoUpdateAddress && existingOrder.addressSnapshot?.id) {
-          await db
-            .update(schema.addresses)
-            .set({
-              deliveryFee: parsedFee.toFixed(2),
-              deliveryDistanceKm:
-                parsedDist !== null && !isNaN(parsedDist) ? parsedDist.toFixed(2) : null,
-              deliveryFeeStatus: 'CONFIRMED',
-              deliveryFeeSource: 'MANUAL',
-              deliveryOrigin: settingsMap.store_origin_address || 'Matriz DeepShop',
-              deliveryUpdatedBy: req.user!.id,
-              deliveryUpdatedAt: new Date(),
-              updatedAt: new Date(),
-            })
-            .where(eq(schema.addresses.id, existingOrder.addressSnapshot.id));
-        }
-
-        res.json(updatedOrder);
-      } catch (error) {
-        logServerError('server_operation_failed', error);
-        res.status(500).json({ error: 'Erro ao atualizar frete do pedido.' });
-      }
-    }
-  );
+  app.put('/api/admin/orders/:id/freight', requireAuth, requireAdmin, sameOrigin, (_req, res) => {
+    res.status(410).json({ error: 'Frete manual removido. Use o recálculo automático de distância.', code: 'MANUAL_FREIGHT_REMOVED' });
+  });
 
   app.put(
     '/api/admin/orders/:id/status',
@@ -2502,13 +2268,14 @@ export function registerAdminRoutes(app: Express) {
     try {
       const map = await getSettingsMap();
       res.json({
+        ...Object.fromEntries(Object.entries(GEO_DEFAULTS).map(([key, fallback]) => [key, map[key] ?? fallback])),
         whatsapp_number: map.whatsapp_number || '',
         pix_key: map.pix_key || '',
         pix_instructions: map.pix_instructions || '',
         freight_base_km: map.freight_base_km || '4.0',
         freight_base_fee: map.freight_base_fee || '7.50',
         freight_extra_km_fee: map.freight_extra_km_fee || '1.50',
-        store_origin_address: map.store_origin_address || 'Matriz DeepShop',
+        store_origin_address: map.store_origin_address || '',
         payment_deadline_hours: map.payment_deadline_hours || '0.5',
         cpf_strict_validation_enabled: map.cpf_strict_validation_enabled || 'false',
         store_timezone: map.store_timezone || DEFAULT_STORE_TIMEZONE,
@@ -2536,9 +2303,10 @@ export function registerAdminRoutes(app: Express) {
     }
   });
 
-  app.put('/api/admin/settings', requireAuth, requireAdmin, async (req, res) => {
+  app.put('/api/admin/settings', requireAuth, requireAdmin, sameOrigin, async (req: AuthRequest, res) => {
     try {
       const allowedKeys = [
+        ...Object.keys(GEO_DEFAULTS),
         'whatsapp_number',
         'pix_key',
         'pix_instructions',
@@ -2567,6 +2335,10 @@ export function registerAdminRoutes(app: Express) {
         'callmebot_enabled',
       ];
 
+      if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) { res.status(400).json({ error: 'Configurações inválidas.' }); return; }
+      const previous = await getSettingsMap();
+      const freightError = validateFreightSettings(req.body, previous);
+      if (freightError) { res.status(400).json({ error: freightError }); return; }
       if (req.body.store_hours !== undefined) {
         let parsedHours: any;
         try {
@@ -2585,23 +2357,16 @@ export function registerAdminRoutes(app: Express) {
         res.status(400).json({ error: 'Status da loja inválido.' });
         return;
       }
-      for (const key of allowedKeys) {
-        if (req.body[key] !== undefined) {
-          const val = String(req.body[key]).trim();
-          const existing = await db
-            .select()
-            .from(schema.settings)
-            .where(eq(schema.settings.key, key));
-          if (existing.length > 0) {
-            await db
-              .update(schema.settings)
-              .set({ value: val, updatedAt: new Date() })
-              .where(eq(schema.settings.key, key));
-          } else {
-            await db.insert(schema.settings).values({ key, value: val });
+      await db.transaction(async (tx) => {
+        for (const key of allowedKeys) {
+          if (req.body[key] === undefined) continue;
+          const value = String(req.body[key]).trim();
+          await tx.insert(schema.settings).values({ key, value }).onConflictDoUpdate({ target: schema.settings.key, set: { value, updatedAt: new Date() } });
+          if ((key.startsWith('freight_') || key.startsWith('geo_') || key === 'store_origin_address') && previous[key] !== value) {
+            await tx.insert(schema.adminAuditLogs).values({ actorUserId: req.user!.id, actorEmail: req.user!.email, action: 'FREIGHT_SETTINGS_UPDATED', entityType: 'settings', entityId: key, details: { previous: previous[key] ?? null, value } });
           }
         }
-      }
+      });
 
       const updated = await getSettingsMap();
       res.json(updated);

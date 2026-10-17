@@ -70,6 +70,10 @@ export interface DatabaseBackupPayload {
     refunds: any[];
     refundItems: any[];
     delayNotices: any[];
+    geoDistanceCache?: any[];
+    geoApiUsage?: any[];
+    geoLookupLog?: any[];
+    freightLegacyRuns?: any[];
   };
 }
 
@@ -101,7 +105,7 @@ export async function exportFullBackupJson(): Promise<DatabaseBackupPayload> {
     orderFulfillments,
     refunds,
     refundItems,
-    delayNotices,
+    delayNotices, geoDistanceCache, geoApiUsage, geoLookupLog, freightLegacyRuns,
   ] = await Promise.all([
     db.select().from(schema.stores),
     db.select().from(schema.users),
@@ -130,6 +134,7 @@ export async function exportFullBackupJson(): Promise<DatabaseBackupPayload> {
     db.select().from(schema.refunds),
     db.select().from(schema.refundItems),
     db.select().from(schema.delayNotices),
+    db.select().from(schema.geoDistanceCache), db.select().from(schema.geoApiUsage), db.select().from(schema.geoLookupLog), db.select().from(schema.freightLegacyRuns),
   ]);
   const safeUsers = users.map(({ resetCodeHash, resetCodeExpiresAt, resetCodeAttempts, ...user }) => user);
 
@@ -164,7 +169,7 @@ export async function exportFullBackupJson(): Promise<DatabaseBackupPayload> {
       orderFulfillments,
       refunds,
       refundItems,
-      delayNotices,
+      delayNotices, geoDistanceCache, geoApiUsage, geoLookupLog, freightLegacyRuns,
     },
   };
 }
@@ -317,6 +322,12 @@ export async function exportFullPostgresSqlDump(): Promise<string> {
     );
   }
 
+  for (const a of data.tables.addresses) lines.push(`UPDATE addresses SET delivery_cache_key=${sqlVal(a.deliveryCacheKey ?? null)}, delivery_in_area=${sqlVal(a.deliveryInArea ?? null)} WHERE id=${sqlVal(a.id)};`);
+  for (const row of data.tables.geoDistanceCache || []) lines.push(`INSERT INTO geo_distance_cache(cache_key,origin_text,destination_text,distance_meters,duration_seconds,provider,hit_count,created_at,updated_at) VALUES(${sqlVal(row.cacheKey)},${sqlVal(row.originText)},${sqlVal(row.destinationText)},${sqlVal(row.distanceMeters)},${sqlVal(row.durationSeconds)},${sqlVal(row.provider)},${sqlVal(row.hitCount)},${sqlVal(row.createdAt)},${sqlVal(row.updatedAt)}) ON CONFLICT DO NOTHING;`);
+  for (const row of data.tables.geoApiUsage || []) lines.push(`INSERT INTO geo_api_usage(month,calls) VALUES(${sqlVal(row.month)},${sqlVal(row.calls)}) ON CONFLICT(month) DO UPDATE SET calls=GREATEST(geo_api_usage.calls,EXCLUDED.calls);`);
+  for (const row of data.tables.geoLookupLog || []) lines.push(`INSERT INTO geo_lookup_log(id,user_id,created_at) VALUES(${sqlVal(row.id)},${sqlVal(row.userId)},${sqlVal(row.createdAt)}) ON CONFLICT DO NOTHING;`);
+  for (const row of data.tables.freightLegacyRuns || []) lines.push(`INSERT INTO freight_legacy_runs(id,actor_user_id,plan,created_at,executed_at,result) VALUES(${sqlVal(row.id)},${sqlVal(row.actorUserId)},${sqlVal(row.plan)},${sqlVal(row.createdAt)},${sqlVal(row.executedAt)},${sqlVal(row.result)}) ON CONFLICT DO NOTHING;`);
+
   for (const o of data.tables.orders) {
     lines.push(
       `INSERT INTO orders (id, order_number, user_id, store_id, subtotal, delivery_fee, delivery_distance_km, delivery_fee_source, total, payment_method, change_for, status, is_first_order_free_delivery, used_free_delivery_ticket, stock_deducted, payment_expires_at, delivered_at, reminder_sent_at, cancellation_reason, refund_requested, notes, address_snapshot, created_at, updated_at) VALUES (${sqlVal(o.id)}, ${sqlVal(o.orderNumber)}, ${sqlVal(o.userId)}, ${sqlVal(o.storeId)}, ${sqlVal(o.subtotal)}, ${sqlVal(o.deliveryFee)}, ${sqlVal(o.deliveryDistanceKm)}, ${sqlVal(o.deliveryFeeSource)}, ${sqlVal(o.total)}, ${sqlVal(o.paymentMethod ?? 'PIX')}, ${sqlVal(o.changeFor)}, ${sqlVal(o.status)}, ${sqlVal(o.isFirstOrderFreeDelivery)}, ${sqlVal(o.usedFreeDeliveryTicket)}, ${sqlVal(o.stockDeducted)}, ${sqlVal(o.paymentExpiresAt)}, ${sqlVal(o.deliveredAt)}, ${sqlVal(o.reminderSentAt)}, ${sqlVal(o.cancellationReason)}, ${sqlVal(o.refundRequested)}, ${sqlVal(o.notes)}, ${sqlVal(o.addressSnapshot)}, ${sqlVal(o.createdAt)}, ${sqlVal(o.updatedAt)}) ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, stock_deducted = EXCLUDED.stock_deducted, delivered_at = EXCLUDED.delivered_at, reminder_sent_at = EXCLUDED.reminder_sent_at, updated_at = EXCLUDED.updated_at;`
@@ -458,7 +469,7 @@ export async function restoreFromBackupJson(payload: DatabaseBackupPayload): Pro
   const tableNames = [
     'stores', 'users', 'categories', 'products', 'productKitItems', 'productImages', 'addresses', 'orders',
     'payments', 'supportTickets', 'supportMessages', 'orderItems', 'orderStatusHistory', 'productInteractions',
-    'notifications', 'adminNotifications', 'inventoryMovements', 'settings', 'storedObjects', 'adminAuditLogs', 'adminEventKeys', 'suppliers', 'supplierPurchases', 'orderFulfillments', 'refunds', 'refundItems', 'delayNotices',
+    'notifications', 'adminNotifications', 'inventoryMovements', 'settings', 'storedObjects', 'adminAuditLogs', 'adminEventKeys', 'suppliers', 'supplierPurchases', 'orderFulfillments', 'refunds', 'refundItems', 'delayNotices', 'geoDistanceCache', 'geoApiUsage', 'geoLookupLog', 'freightLegacyRuns',
   ] as const;
   for (const tableName of tableNames) {
     const rows = (t as any)[tableName];
@@ -689,6 +700,8 @@ export async function restoreFromBackupJson(payload: DatabaseBackupPayload): Pro
           deliveryFee: a.deliveryFee ?? null,
           deliveryFeeStatus: a.deliveryFeeStatus || 'PENDING',
           deliveryFeeSource: a.deliveryFeeSource || 'MANUAL',
+          deliveryCacheKey: a.deliveryCacheKey ?? null,
+          deliveryInArea: a.deliveryInArea ?? null,
           deliveryOrigin: a.deliveryOrigin ?? null,
           deliveryNotes: a.deliveryNotes ?? null,
           deliveryUpdatedBy: a.deliveryUpdatedBy ?? null,
@@ -1001,6 +1014,15 @@ export async function restoreFromBackupJson(payload: DatabaseBackupPayload): Pro
     for (const key of t.adminEventKeys || []) {
       await tx.insert(schema.adminEventKeys).values({ eventKey: key.eventKey, eventType: key.eventType, createdAt: toDate(key.createdAt) }).onConflictDoNothing();
     }
+    for (const row of t.geoDistanceCache || []) {
+      await tx.insert(schema.geoDistanceCache).values({ ...row, createdAt: toDate(row.createdAt), updatedAt: toDate(row.updatedAt) }).onConflictDoNothing();
+    }
+    for (const row of t.geoApiUsage || []) {
+      // Restore must never reduce current quota usage.
+      await tx.insert(schema.geoApiUsage).values(row).onConflictDoUpdate({ target: schema.geoApiUsage.month, set: { calls: sql`GREATEST(${schema.geoApiUsage.calls}, ${Number(row.calls)})` } });
+    }
+    for (const row of t.geoLookupLog || []) await tx.insert(schema.geoLookupLog).values({ ...row, createdAt: toDate(row.createdAt) }).onConflictDoNothing();
+    for (const row of t.freightLegacyRuns || []) await tx.insert(schema.freightLegacyRuns).values({ ...row, createdAt: toDate(row.createdAt), executedAt: toNullableDate(row.executedAt) }).onConflictDoNothing();
     // Sincroniza todas as sequências SERIAL do PostgreSQL após restaurar IDs explícitos
     const serialTables = [
       'stores',
@@ -1026,6 +1048,7 @@ export async function restoreFromBackupJson(payload: DatabaseBackupPayload): Pro
       'refunds',
       'refund_items',
       'delay_notices',
+      'geo_lookup_log',
     ];
     for (const tbl of serialTables) {
       await tx.execute(sql.raw(`SELECT setval(pg_get_serial_sequence('${tbl}', 'id'), COALESCE((SELECT MAX(id) FROM ${tbl}), 1), (SELECT COUNT(*) > 0 FROM ${tbl}));`));

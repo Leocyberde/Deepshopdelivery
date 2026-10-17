@@ -1,3 +1,6 @@
+import { calculateAddressDistance, FreightError } from '../services/geoService.ts';
+import { isServedAddress, outOfAreaMessage } from '../../services/freightService.ts';
+import { getSettingsMap } from '../services/storeHelpers.ts';
 import { logServerError } from '../logger.ts';
 import { Express } from 'express';
 import { eq, desc, and } from 'drizzle-orm';
@@ -240,6 +243,8 @@ export function registerAddressRoutes(app: Express) {
         return;
       }
 
+      if (!isServedAddress({ city, state })) { res.status(422).json({ error: 'Atendemos apenas Itatiba', code: 'CITY_NOT_SERVED' }); return; }
+
       const created = await db.transaction(async (tx) => {
         if (isPrimary === true) {
           await tx.update(schema.addresses).set({ isPrimary: false }).where(eq(schema.addresses.userId, req.user!.id));
@@ -261,7 +266,7 @@ export function registerAddressRoutes(app: Express) {
           deliveryDistanceKm: null,
           deliveryFee: null,
           deliveryFeeStatus: 'PENDING',
-          deliveryFeeSource: 'MANUAL',
+          deliveryFeeSource: 'DISTANCE_UNAVAILABLE',
           latitude: null,
           longitude: null,
         })
@@ -269,10 +274,11 @@ export function registerAddressRoutes(app: Express) {
         return row;
       });
 
-      res.status(201).json({
-        ...created,
-        freight: resolveAddressFreight(created),
-      });
+      const result = await calculateAddressDistance(created.id, req.user!.id);
+      const code = result.address.deliveryInArea === false ? 'OUT_OF_DELIVERY_AREA' : result.geo.code;
+      const status = code === 'OUT_OF_DELIVERY_AREA' ? 422 : code === 'DAILY_LIMIT' ? 429 : 201;
+      res.status(status).json({ ...result.address, address: result.address, code, geo: result.geo, freight: resolveAddressFreight(result.address),
+        ...(status === 422 ? { error: outOfAreaMessage((await getSettingsMap()).freight_out_of_area_whatsapp) } : status === 429 ? { error: 'Limite diário de consultas atingido. Tente novamente em 24 horas.' } : {}) });
     } catch (error) {
       logServerError('server_operation_failed', error);
       res.status(500).json({ error: 'Erro ao salvar endereço.' });
@@ -321,6 +327,7 @@ export function registerAddressRoutes(app: Express) {
         return;
       }
 
+      if (!isServedAddress(existing) || !isServedAddress({ city, state })) { res.status(422).json({ error: 'Atendemos apenas Itatiba', code: 'CITY_NOT_SERVED' }); return; }
       const locationChanged = didAddressLocationChange(existing, {
         zipCode: String(zipCode),
         street: String(street),
@@ -350,6 +357,9 @@ export function registerAddressRoutes(app: Express) {
         updateFields.deliveryDistanceKm = null;
         updateFields.deliveryUpdatedBy = null;
         updateFields.deliveryUpdatedAt = null;
+        updateFields.deliveryCacheKey = null;
+        updateFields.deliveryInArea = null;
+        updateFields.deliveryFeeSource = 'DISTANCE_UNAVAILABLE';
       }
 
       const updated = await db.transaction(async (tx) => {
@@ -360,22 +370,38 @@ export function registerAddressRoutes(app: Express) {
         return row;
       });
 
-      res.json({
-        ...updated,
-        locationChangedResetFreight: locationChanged,
-        freight: resolveAddressFreight(updated),
-      });
+      const result = locationChanged || updated.deliveryDistanceKm === null
+        ? await calculateAddressDistance(updated.id, req.user!.id) : { address: updated, geo: { code: 'OK' } };
+      const code = result.address.deliveryInArea === false ? 'OUT_OF_DELIVERY_AREA' : result.geo.code;
+      res.status(code === 'OUT_OF_DELIVERY_AREA' ? 422 : code === 'DAILY_LIMIT' ? 429 : 200).json({ ...result.address, address: result.address, code, geo: result.geo, freight: resolveAddressFreight(result.address),
+        ...(code === 'OUT_OF_DELIVERY_AREA' ? { error: outOfAreaMessage((await getSettingsMap()).freight_out_of_area_whatsapp) } : code === 'DAILY_LIMIT' ? { error: 'Limite diário de consultas atingido. Tente novamente em 24 horas.' } : {}) });
     } catch (error) {
       logServerError('server_operation_failed', error);
       res.status(500).json({ error: 'Erro ao atualizar endereço.' });
     }
   });
 
-  app.post('/api/addresses/:id/primary', requireAuth, async (req: AuthRequest, res) => {
+  app.post('/api/addresses/:id/recalculate', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isSafeInteger(id) || id <= 0) { res.status(400).json({ error: 'Endereço inválido.' }); return; }
+      const [owned] = await db.select().from(schema.addresses).where(and(eq(schema.addresses.id, id), eq(schema.addresses.userId, req.user!.id)));
+      if (!owned) { res.status(404).json({ error: 'Endereço não encontrado.' }); return; }
+      const result = await calculateAddressDistance(id, req.user!.id);
+      const code = result.address.deliveryInArea === false ? 'OUT_OF_DELIVERY_AREA' : result.geo.code;
+      res.status(code === 'DAILY_LIMIT' ? 429 : code === 'OUT_OF_DELIVERY_AREA' ? 422 : 200).json({ ...result.address, code, freight: resolveAddressFreight(result.address), ...(code === 'DAILY_LIMIT' ? { error: 'Limite diário de consultas atingido. Tente novamente em 24 horas.' } : code === 'OUT_OF_DELIVERY_AREA' ? { error: outOfAreaMessage((await getSettingsMap()).freight_out_of_area_whatsapp) } : {}) });
+    } catch (error) {
+      if (error instanceof FreightError) { res.status(error.status).json({ error: error.message, code: error.code }); return; }
+      logServerError('geo.owner.retry.failed', error); res.status(500).json({ error: 'Erro ao calcular distância.' });
+    }
+  });
+
+  app.post('/api/addresses/:id/primary' , requireAuth, async (req: AuthRequest, res) => {
     try {
       const addrId = Number(req.params.id);
       const [existing] = await db.select().from(schema.addresses).where(and(eq(schema.addresses.id, addrId), eq(schema.addresses.userId, req.user!.id)));
       if (!existing) { res.status(404).json({ error: 'Endereço não encontrado.' }); return; }
+      if (!isServedAddress(existing)) { res.status(422).json({ error: 'Atendemos apenas Itatiba' }); return; }
       const updated = await db.transaction(async (tx) => {
         await tx.update(schema.addresses).set({ isPrimary: false }).where(eq(schema.addresses.userId, req.user!.id));
         const [row] = await tx.update(schema.addresses).set({ isPrimary: true, updatedAt: new Date() }).where(eq(schema.addresses.id, addrId)).returning();
@@ -398,6 +424,7 @@ export function registerAddressRoutes(app: Express) {
         return;
       }
 
+      if (!isServedAddress(existing)) { res.status(422).json({ error: 'Atendemos apenas Itatiba' }); return; }
       await db.transaction(async (tx) => {
         await tx.delete(schema.addresses).where(eq(schema.addresses.id, addrId));
         if (existing.isPrimary) {

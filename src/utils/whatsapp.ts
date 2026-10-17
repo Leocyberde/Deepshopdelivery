@@ -83,11 +83,7 @@ export function buildOrderWhatsAppMessage(order: WhatsAppOrderPayload): string {
       String(order.deliveryFeeSource || '').toUpperCase()
     );
     lines.push(isStoreCourtesy ? 'Entrega: Grátis (cortesia da loja)' : 'Entrega: Grátis');
-    if (!isItatiba) {
-      lines.push('Modalidade: Entrega através dos Correios — conferir valor no WhatsApp');
-    } else {
-      lines.push('Modalidade: Temos delivery (Região de Itatiba)');
-    }
+    lines.push(isItatiba ? 'Modalidade: Temos delivery (Região de Itatiba)' : 'Modalidade: entrega indisponível (atendemos apenas Itatiba)');
     lines.push(`Total: R$${formatBrlPlain(order.subtotal)}`);
   } else {
     const hasConfirmedFreight =
@@ -106,14 +102,14 @@ export function buildOrderWhatsAppMessage(order: WhatsAppOrderPayload): string {
       lines.push(
         isItatiba
           ? 'Modalidade: Temos delivery (Região de Itatiba)'
-          : 'Modalidade: Entrega através dos Correios — conferir valor no WhatsApp'
+          : 'Modalidade: entrega indisponível (atendemos apenas Itatiba)'
       );
       lines.push(`Total: R$${formatBrlPlain(order.total)}`);
     } else {
       lines.push(
         isItatiba
-          ? 'Entrega: a combinar (Temos delivery em Itatiba)'
-          : 'Entrega: Entrega através dos Correios — conferir valor no WhatsApp'
+          ? 'Entrega: frete indisponível no histórico (Temos delivery em Itatiba)'
+          : 'Entrega: indisponível (atendemos apenas Itatiba)'
       );
       lines.push(`Total (sem o frete): R$${formatBrlPlain(order.subtotal)}`);
     }

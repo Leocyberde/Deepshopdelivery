@@ -1,3 +1,4 @@
+import { serializeFreightSettings } from '../utils/freightSettingsPayload.ts';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -18,7 +19,7 @@ import {
 } from '../context/AppContext.tsx';
 import { playAdminAlertSound } from '../utils/soundAlert.ts';
 import { AdminSidebar, AdminSection } from '../components/admin/AdminSidebar.tsx';
-import { AdminNewCustomerAlert } from '../components/admin/AdminNewCustomerAlert.tsx';
+import { AdminNotificationsDrawer } from '../components/admin/AdminNotificationsDrawer.tsx';
 import { AdminDashboardSection } from '../components/admin/AdminDashboardSection.tsx';
 import { AdminProductsSection } from '../components/admin/AdminProductsSection.tsx';
 import { AdminCategoriesSection } from '../components/admin/AdminCategoriesSection.tsx';
@@ -28,7 +29,7 @@ import { AdminSettingsSection } from '../components/admin/AdminSettingsSection.t
 import { AdminProfitRankingSection } from '../components/admin/AdminProfitRankingSection.tsx';
 import { AdminInventorySection } from '../components/admin/AdminInventorySection.tsx';
 import { AdminSuppliersSection } from '../components/admin/AdminSuppliersSection.tsx';
-import { AdminFreightModal } from '../components/admin/AdminFreightModal.tsx';
+
 import { AdminPhase3Section } from '../components/admin/AdminPhase3Section.tsx';
 import { AdminSupportSection } from '../components/admin/AdminSupportSection.tsx';
 import { AdminFulfillmentSection } from '../components/admin/AdminFulfillmentSection.tsx';
@@ -186,9 +187,6 @@ export const AdminPanelPage: React.FC = () => {
     activePopups: [],
   });
   const [showAdminNotifsDrawer, setShowAdminNotifsDrawer] = useState(false);
-  const [notifFreightKmMap, setNotifFreightKmMap] = useState<Record<number, string>>({});
-  const [notifFreightFeeMap, setNotifFreightFeeMap] = useState<Record<number, string>>({});
-  const [savingNotifFreightId, setSavingNotifFreightId] = useState<number | null>(null);
 
   // Alerta Sonoro de Novos Pedidos e Novos Clientes (Item 3.3)
   const [soundAlertsEnabled, setSoundAlertsEnabled] = useState<boolean>(() => {
@@ -276,16 +274,8 @@ export const AdminPanelPage: React.FC = () => {
   const [reactivateStockInputs, setReactivateStockInputs] = useState<Record<number, string>>({});
   const [activatingProductId, setActivatingProductId] = useState<number | null>(null);
 
-  // Address Freight Modal State
-  const [freightModalAddr, setFreightModalAddr] = useState<any | null>(null);
-  const [freightKmInput, setFreightKmInput] = useState('');
-  const [freightFeeInput, setFreightFeeInput] = useState('');
-  const [freightOriginInput, setFreightOriginInput] = useState('');
-  const [freightNotesInput, setFreightNotesInput] = useState('');
-  const [suggestedFeePreview, setSuggestedFeePreview] = useState<number | null>(null);
-  const [customerFilter, setCustomerFilter] = useState<
-    'ALL' | 'PENDING_FREIGHT' | 'WITH_FREE_DELIVERY'
-  >('ALL');
+  // Customer segment filter state
+  const [customerFilter, setCustomerFilter] = useState<'ALL' | 'WITH_FREE_DELIVERY'>('ALL');
 
   // Order Detail & Order Freight Edit State
   const [selectedAdminOrder, setSelectedAdminOrder] = useState<any | null>(null);
@@ -301,10 +291,6 @@ export const AdminPanelPage: React.FC = () => {
   const [orderActionPendingId, setOrderActionPendingId] = useState<number | null>(null);
   const orderActionPendingRef = useRef<number | null>(null);
   const [adminLoadError, setAdminLoadError] = useState('');
-  const [editingOrderFreight, setEditingOrderFreight] = useState(false);
-  const [orderFreightKm, setOrderFreightKm] = useState('');
-  const [orderFreightFee, setOrderFreightFee] = useState('');
-  const [orderAlsoUpdateAddress, setOrderAlsoUpdateAddress] = useState(true);
 
   const userId = user?.id;
   const userRole = user?.role;
@@ -552,25 +538,6 @@ export const AdminPanelPage: React.FC = () => {
     }, 6000);
     return () => clearInterval(interval);
   }, [userId, userRole, apiFetch, toast, section, loadOrdersPage]);
-
-  // Calculate arithmetic freight suggestion locally whenever distance changes
-  useEffect(() => {
-    const raw = parseFloat(freightKmInput.replace(',', '.'));
-    if (isNaN(raw) || raw < 0) {
-      setSuggestedFeePreview(null);
-      return;
-    }
-    const baseKm = customersData.freightRule.baseDistanceKm || 4;
-    const baseFee = customersData.freightRule.baseFee || 7.5;
-    const extraFee = customersData.freightRule.extraKmFee || 1.5;
-
-    if (raw <= baseKm) {
-      setSuggestedFeePreview(Number(baseFee.toFixed(2)));
-    } else {
-      const extra = raw - baseKm;
-      setSuggestedFeePreview(Number((baseFee + extra * extraFee).toFixed(2)));
-    }
-  }, [freightKmInput, customersData.freightRule]);
 
   if (!user) {
     return (
@@ -1238,45 +1205,18 @@ ${kitProd.code} - ${kitProd.name}`)) return;
     } catch (err: any) { toast(err?.message || 'Não foi possível mudar o status.', 'error'); }
   };
 
-  // Handlers for Address Freight
-  const openAddressFreightModal = (addr: any, customerName?: string) => {
-    setFreightModalAddr({ ...addr, customerName: customerName || addr.customerName });
-    setFreightKmInput(addr.deliveryDistanceKm ? String(addr.deliveryDistanceKm) : '');
-    setFreightFeeInput(addr.deliveryFee ? String(addr.deliveryFee) : '');
-    setFreightOriginInput(addr.deliveryOrigin || customersData.defaultOrigin);
-    setFreightNotesInput(addr.deliveryNotes || '');
-  };
-
-  const handleSaveAddressFreight = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!freightModalAddr) return;
+  // Automatic recalculation; no distance/fee input is accepted by the server.
+  const recalculateAddressDistance = async (addr: any) => {
     try {
-      await apiFetch(`/api/admin/addresses/${freightModalAddr.id}/freight`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          distanceKm: freightKmInput,
-          deliveryFee: freightFeeInput,
-          deliveryOrigin: freightOriginInput,
-          deliveryNotes: freightNotesInput,
-        }),
-      });
-      toast('Frete do endereço confirmado e salvo!', 'success');
-      setFreightModalAddr(null);
-      await loadAdminData();
-    } catch (err: any) {
-      toast(err.message, 'error');
-    }
+      await apiFetch(`/api/admin/addresses/${addr.id}/recalculate`, { method: 'POST' });
+      toast('Distância recalculada automaticamente.', 'success'); await loadAdminData();
+    } catch (error: any) { toast(error.message, 'error'); }
   };
-
-  // Detalhe carregado só quando solicitado, para não trafegar itens/histórico de toda a lista.
   const handleOpenAdminOrder = async (order: any, editFreight = false) => {
     setSelectedAdminOrder(order);
-    setEditingOrderFreight(editFreight);
     setOrdersError('');
     setOrderDetailsLoading(true);
     if (editFreight) {
-      setOrderFreightFee('');
-      setOrderFreightKm('');
     }
     goToSection('ORDERS');
     try {
@@ -1332,61 +1272,13 @@ ${kitProd.code} - ${kitProd.name}`)) return;
     }
   };
 
-  const handleSaveOrderFreight = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedAdminOrder) return;
-    try {
-      await apiFetch(`/api/admin/orders/${selectedAdminOrder.id}/freight`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          deliveryFee: orderFreightFee,
-          deliveryDistanceKm: orderFreightKm,
-          alsoUpdateAddress: orderAlsoUpdateAddress,
-        }),
-      });
-      toast(
-        'Frete definido! Pagamento liberado para o cliente com prazo de 1h iniciado.',
-        'success'
-      );
-      setEditingOrderFreight(false);
-      await Promise.all([loadOrdersPage(), loadAdminData()]);
-      const refreshed = await apiFetch(`/api/admin/orders/${selectedAdminOrder.id}`);
-      setSelectedAdminOrder((prev: any) => (prev ? { ...prev, ...refreshed } : null));
-    } catch (err: any) {
-      toast(err.message, 'error');
-    }
-  };
-
-  const handleSetOrderManualFreeDelivery = async (orderId: number) => {
-    try {
-      await apiFetch(`/api/admin/orders/${orderId}/freight`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          deliveryFee: '0.00',
-          isManualFreeDelivery: true,
-          alsoUpdateAddress: false,
-        }),
-      });
-      toast(
-        'Entrega Grátis (R$ 0,00) aplicada! Pagamento liberado ao cliente com prazo de 1h.',
-        'success'
-      );
-      setEditingOrderFreight(false);
-      await Promise.all([loadOrdersPage(), loadAdminData()]);
-      const refreshed = await apiFetch(`/api/admin/orders/${orderId}`);
-      setSelectedAdminOrder((prev: any) => (prev ? { ...prev, ...refreshed } : null));
-    } catch (err: any) {
-      toast(err.message, 'error');
-    }
-  };
-
   // Handler for Settings
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       await apiFetch('/api/admin/settings', {
         method: 'PUT',
-        body: JSON.stringify(settingsForm),
+        body: JSON.stringify(serializeFreightSettings(settingsForm)),
       });
       toast('Configurações salvas com sucesso!', 'success');
       await loadAdminData();
@@ -1415,10 +1307,7 @@ ${kitProd.code} - ${kitProd.name}`)) return;
     try {
       await apiFetch('/api/admin/settings', {
         method: 'PUT',
-        body: JSON.stringify({
-          ...settingsForm,
-          cpf_strict_validation_enabled: nextValue,
-        }),
+        body: JSON.stringify({ cpf_strict_validation_enabled: nextValue }),
       });
       setSettingsForm((prev) => ({
         ...prev,
@@ -1432,60 +1321,6 @@ ${kitProd.code} - ${kitProd.name}`)) return;
       );
     } catch (err: any) {
       toast(err.message, 'error');
-    }
-  };
-
-  // Handlers para Notificações de Novo Cliente no Painel Admin
-  const handleNotifKmChange = (notifId: number, rawKm: string) => {
-    setNotifFreightKmMap((prev) => ({ ...prev, [notifId]: rawKm }));
-    const parsedKm = parseFloat(rawKm.replace(',', '.'));
-    if (!isNaN(parsedKm) && parsedKm >= 0) {
-      const rule = customersData.freightRule;
-      const suggested =
-        parsedKm <= rule.baseDistanceKm
-          ? rule.baseFee
-          : rule.baseFee + (parsedKm - rule.baseDistanceKm) * rule.extraKmFee;
-      setNotifFreightFeeMap((prev) => ({ ...prev, [notifId]: suggested.toFixed(2) }));
-    }
-  };
-
-  const handleSaveFreightFromNotification = async (notif: any) => {
-    if (!notif.address?.id) {
-      toast('Este cliente não possui endereço vinculado na notificação.', 'error');
-      return;
-    }
-    const kmVal =
-      notifFreightKmMap[notif.id] ??
-      (notif.address.deliveryDistanceKm ? String(notif.address.deliveryDistanceKm) : '');
-    const feeVal =
-      notifFreightFeeMap[notif.id] ??
-      (notif.address.deliveryFee ? String(notif.address.deliveryFee) : '');
-
-    if (!kmVal || !feeVal) {
-      toast('Informe a distância (km) e o valor do frete (R$) para salvar.', 'error');
-      return;
-    }
-
-    setSavingNotifFreightId(notif.id);
-    try {
-      await apiFetch(`/api/admin/addresses/${notif.address.id}/freight`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          distanceKm: kmVal,
-          deliveryFee: feeVal,
-          deliveryOrigin: customersData.defaultOrigin || 'Matriz DeepShop',
-          deliveryNotes: 'Cadastrado via notificação de novo cliente',
-        }),
-      });
-      toast(
-        `Frete e distância de ${notif.customer?.name || 'cliente'} cadastrados e confirmados!`,
-        'success'
-      );
-      await loadAdminData();
-    } catch (err: any) {
-      toast(err.message, 'error');
-    } finally {
-      setSavingNotifFreightId(null);
     }
   };
 
@@ -1652,20 +1487,13 @@ ${kitProd.code} - ${kitProd.name}`)) return;
         </div>
 
         {/* Alerta em Tempo Real / Pop-up de Novo Cliente Cadastrado */}
-        <AdminNewCustomerAlert
+        <AdminNotificationsDrawer
           adminNotifsData={adminNotifsData}
           showAdminNotifsDrawer={showAdminNotifsDrawer}
           setShowAdminNotifsDrawer={setShowAdminNotifsDrawer}
-          notifFreightKmMap={notifFreightKmMap}
-          notifFreightFeeMap={notifFreightFeeMap}
-          setNotifFreightFeeMap={setNotifFreightFeeMap}
-          savingNotifFreightId={savingNotifFreightId}
           handleMarkAllAdminNotifsRead={handleMarkAllAdminNotifsRead}
           handleMarkAdminNotifRead={handleMarkAdminNotifRead}
           handleDismissAdminNotifPopup={handleDismissAdminNotifPopup}
-          handleNotifKmChange={handleNotifKmChange}
-          handleSaveFreightFromNotification={handleSaveFreightFromNotification}
-          openAddressFreightModal={openAddressFreightModal}
         />
 
         {adminLoadError && (
@@ -1696,7 +1524,7 @@ ${kitProd.code} - ${kitProd.name}`)) return;
                   setOrderPage(1);
                 }}
                 goToSection={goToSection}
-                openAddressFreightModal={openAddressFreightModal}
+                recalculateAddressDistance={recalculateAddressDistance}
                 openOrderFreightFromAlert={(ord) => void handleOpenAdminOrder(ord, true)}
                 openEditProduct={openEditProduct}
                 onOpenOrder={(ord) => void handleOpenAdminOrder(ord)}
@@ -1877,17 +1705,6 @@ ${kitProd.code} - ${kitProd.name}`)) return;
                 onOpenOrder={(order) => void handleOpenAdminOrder(order)}
                 selectedAdminOrder={selectedAdminOrder}
                 setSelectedAdminOrder={setSelectedAdminOrder}
-                editingOrderFreight={editingOrderFreight}
-                setEditingOrderFreight={setEditingOrderFreight}
-                orderFreightKm={orderFreightKm}
-                setOrderFreightKm={setOrderFreightKm}
-                orderFreightFee={orderFreightFee}
-                setOrderFreightFee={setOrderFreightFee}
-                orderAlsoUpdateAddress={orderAlsoUpdateAddress}
-                setOrderAlsoUpdateAddress={setOrderAlsoUpdateAddress}
-                freightRule={customersData.freightRule}
-                handleSaveOrderFreight={handleSaveOrderFreight}
-                handleSetOrderManualFreeDelivery={handleSetOrderManualFreeDelivery}
                 handleChangeOrderStatus={handleChangeOrderStatus}
                 onRefreshOrders={loadOrdersPage}
               />
@@ -1900,7 +1717,7 @@ ${kitProd.code} - ${kitProd.name}`)) return;
                 pendingAddrCount={pendingAddrCount}
                 customerFilter={customerFilter}
                 setCustomerFilter={setCustomerFilter}
-                openAddressFreightModal={openAddressFreightModal}
+                recalculateAddressDistance={recalculateAddressDistance}
               />
             )}
 
@@ -1921,22 +1738,6 @@ ${kitProd.code} - ${kitProd.name}`)) return;
         )}
       </main>
 
-      {/* Modal de Definição Manual de Frete por Endereço */}
-      <AdminFreightModal
-        freightModalAddr={freightModalAddr}
-        setFreightModalAddr={setFreightModalAddr}
-        freightKmInput={freightKmInput}
-        setFreightKmInput={setFreightKmInput}
-        freightFeeInput={freightFeeInput}
-        setFreightFeeInput={setFreightFeeInput}
-        freightOriginInput={freightOriginInput}
-        setFreightOriginInput={setFreightOriginInput}
-        freightNotesInput={freightNotesInput}
-        setFreightNotesInput={setFreightNotesInput}
-        suggestedFeePreview={suggestedFeePreview}
-        freightRule={customersData.freightRule}
-        handleSaveAddressFreight={handleSaveAddressFreight}
-      />
     </div>
   );
 };

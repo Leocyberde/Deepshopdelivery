@@ -30,10 +30,10 @@ interface AdminDashboardSectionProps {
   pendingAddrCount: number;
   pendingOrdCount: number;
   orders: any[];
-  setCustomerFilter: (val: 'ALL' | 'PENDING_FREIGHT' | 'WITH_FREE_DELIVERY') => void;
+  setCustomerFilter: (val: 'ALL' | 'WITH_FREE_DELIVERY') => void;
   setOrderStatusFilter: (val: string) => void;
   goToSection: (target: AdminSection) => void;
-  openAddressFreightModal: (addr: any, customerName?: string) => void;
+  recalculateAddressDistance: (addr: any, customerName?: string) => void;
   openOrderFreightFromAlert: (ord: any) => void;
   openEditProduct: (prod: any) => void;
   onOpenOrder: (ord: any) => void;
@@ -47,7 +47,7 @@ export const AdminDashboardSection: React.FC<AdminDashboardSectionProps> = ({
   setCustomerFilter,
   setOrderStatusFilter,
   goToSection,
-  openAddressFreightModal,
+  recalculateAddressDistance,
   openOrderFreightFromAlert,
   openEditProduct,
   onOpenOrder,
@@ -723,10 +723,7 @@ export const AdminDashboardSection: React.FC<AdminDashboardSectionProps> = ({
               </div>
               <button
                 type="button"
-                onClick={() => {
-                  setCustomerFilter('PENDING_FREIGHT');
-                  goToSection('CUSTOMERS');
-                }}
+                onClick={() => goToSection('CUSTOMERS')}
                 className="text-xs font-semibold text-amber-950 underline"
               >
                 Ver clientes
@@ -748,10 +745,10 @@ export const AdminDashboardSection: React.FC<AdminDashboardSectionProps> = ({
                   </div>
                   <button
                     type="button"
-                    onClick={() => openAddressFreightModal(addr, addr.customerName)}
+                    onClick={() => recalculateAddressDistance(addr, addr.customerName)}
                     className="px-3 py-1.5 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 rounded-lg shrink-0"
                   >
-                    Definir Frete
+                    Recalcular distância
                   </button>
                 </div>
               ))}

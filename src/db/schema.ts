@@ -140,6 +140,8 @@ export const addresses = pgTable('addresses', {
   deliveryFee: numeric('delivery_fee', { precision: 10, scale: 2 }),
   deliveryFeeStatus: text('delivery_fee_status').notNull().default('PENDING'), // 'PENDING' | 'CONFIRMED'
   deliveryFeeSource: text('delivery_fee_source').notNull().default('MANUAL'), // 'MANUAL' | 'GOOGLE'
+  deliveryCacheKey: text('delivery_cache_key'),
+  deliveryInArea: boolean('delivery_in_area'),
   deliveryOrigin: text('delivery_origin'),
   deliveryNotes: text('delivery_notes'),
   deliveryUpdatedBy: integer('delivery_updated_by'),
@@ -503,3 +505,12 @@ export const delayNotices = pgTable('delay_notices', {
   createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
+
+export const geoDistanceCache = pgTable('geo_distance_cache', {
+  cacheKey: text('cache_key').primaryKey(), originText: text('origin_text').notNull(), destinationText: text('destination_text').notNull(),
+  distanceMeters: integer('distance_meters').notNull(), durationSeconds: integer('duration_seconds').notNull(), provider: text('provider').notNull(), hitCount: integer('hit_count').notNull().default(0),
+  createdAt: timestamp('created_at').notNull().defaultNow(), updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+export const geoApiUsage = pgTable('geo_api_usage', { month: text('month').primaryKey(), calls: integer('calls').notNull().default(0) });
+export const geoLookupLog = pgTable('geo_lookup_log', { id: serial('id').primaryKey(), userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }), createdAt: timestamp('created_at').notNull().defaultNow() });
+export const freightLegacyRuns = pgTable('freight_legacy_runs', { id: text('id').primaryKey(), actorUserId: integer('actor_user_id').references(() => users.id), plan: jsonb('plan').notNull(), createdAt: timestamp('created_at').notNull().defaultNow(), executedAt: timestamp('executed_at'), result: jsonb('result') });

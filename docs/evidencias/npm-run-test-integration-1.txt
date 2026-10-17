@@ -1,0 +1,265 @@
+DATA_HORA: 2026-10-17T01:08:52+00:00
+COMANDO: npm run test:integration
+--- SAIDA COMPLETA ---
+
+> achadinhos-delivery@0.0.0 test:integration
+> tsx --test --test-concurrency=1 tests/integration/*.test.ts
+
+TAP version 13
+# Subtest: F01 cadastro automático, cache CEP+número entre clientes e variações de rua, campos manipulados ignorados
+ok 1 - F01 cadastro automático, cache CEP+número entre clientes e variações de rua, campos manipulados ignorados
+  ---
+  duration_ms: 2587.644099
+  ...
+# Subtest: F02 edição de complemento/bairro/apelido/rua não consulta; mudar número/CEP consulta
+ok 2 - F02 edição de complemento/bairro/apelido/rua não consulta; mudar número/CEP consulta
+  ---
+  duration_ms: 327.71674
+  ...
+# Subtest: F03 trocar origem invalida distância salva, quote/pedido/listagem não consultam Google; retry recalcula
+ok 3 - F03 trocar origem invalida distância salva, quote/pedido/listagem não consultam Google; retry recalcula
+  ---
+  duration_ms: 257.933299
+  ...
+# Subtest: F04 consistência quote/pedido, preço promocional e todos itens/preorder contam mínimos; valores do front ignorados
+ok 4 - F04 consistência quote/pedido, preço promocional e todos itens/preorder contam mínimos; valores do front ignorados
+  ---
+  duration_ms: 203.332166
+  ...
+# Subtest: F05 Itatiba apenas, fora da área salvo com distância; >20 bloqueia mesmo com benefício; 15-20 normal
+ok 5 - F05 Itatiba apenas, fora da área salvo com distância; >20 bloqueia mesmo com benefício; 15-20 normal
+  ---
+  duration_ms: 256.643837
+  ...
+# Subtest: F06 limite de 15 cache misses por 24h; 16º salva endereço sem distância e retorna 429
+ok 6 - F06 limite de 15 cache misses por 24h; 16º salva endereço sem distância e retorna 429
+  ---
+  duration_ms: 1453.30717
+  ...
+# Subtest: F07 cota atômica inclusive falhas e avisos únicos por mês no limiar configurado
+ok 7 - F07 cota atômica inclusive falhas e avisos únicos por mês no limiar configurado
+  ---
+  duration_ms: 220.645379
+  ...
+# Subtest: F08 single-flight: cinco cadastros simultâneos do mesmo destino usam uma chamada
+ok 8 - F08 single-flight: cinco cadastros simultâneos do mesmo destino usam uma chamada
+  ---
+  duration_ms: 125.489863
+  ...
+# Subtest: F09 Google 403/429/ZERO_RESULTS/JSON inválido/timeout: sem distância/sem gratuidade; retry funciona
+ok 9 - F09 Google 403/429/ZERO_RESULTS/JSON inválido/timeout: sem distância/sem gratuidade; retry funciona
+  ---
+  duration_ms: 8564.740386
+  ...
+# Subtest: F10 permissões, propriedade, configurações validadas/persistentes/auditadas e rotas antigas 410
+ok 10 - F10 permissões, propriedade, configurações validadas/persistentes/auditadas e rotas antigas 410
+  ---
+  duration_ms: 196.477235
+  ...
+# Subtest: F11 benefício em lote, data/revogação e auditoria; tickets antigos não concedidos/consumidos/alterados
+ok 11 - F11 benefício em lote, data/revogação e auditoria; tickets antigos não concedidos/consumidos/alterados
+  ---
+  duration_ms: 179.83017
+  ...
+# LEGACY_TEST_COUNTS {"released":1,"cancelled":2,"failed":0,"skipped":0}
+# TICKET_CUSTOMERS_TEST_COUNT 1
+# Subtest: F12 dry-run é somente leitura; execução libera Itatiba/cancela cidade e >limite/restaura estoque; pagos intocados; replay idempotente
+ok 12 - F12 dry-run é somente leitura; execução libera Itatiba/cancela cidade e >limite/restaura estoque; pagos intocados; replay idempotente
+  ---
+  duration_ms: 167.109177
+  ...
+# {"timestamp":"2026-10-17T01:09:10.411Z","level":"info","event":"application.starting","environment":"development","port":3212}
+# {"timestamp":"2026-10-17T01:09:10.412Z","level":"info","event":"database.initialization.started","environment":"development"}
+# {"timestamp":"2026-10-17T01:09:10.429Z","level":"info","event":"database.connection.ready","environment":"development","source":"pool_connect","result":"connected"}
+# {"timestamp":"2026-10-17T01:09:10.970Z","level":"info","event":"database.initialization.completed","environment":"development"}
+# (!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+#   - `__dirname` (vite.config.ts:11:27). Use `import.meta.dirname` instead
+# Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+# {"timestamp":"2026-10-17T01:09:11.221Z","level":"info","event":"http.server.listening","environment":"development","port":3212}
+# {"timestamp":"2026-10-17T01:09:11.221Z","level":"info","event":"application.ready","environment":"development","port":3212}
+# {"timestamp":"2026-10-17T01:09:11.468Z","level":"info","event":"auth.login.succeeded","environment":"development","requestId":"318fd350-c9d6-49d1-b55c-29b77e83022f","method":"POST","route":"/api/auth/login","userId":2,"role":"SUPER_ADMIN","result":"success"}
+# {"timestamp":"2026-10-17T01:09:11.469Z","level":"info","event":"http.request.completed","environment":"development","requestId":"318fd350-c9d6-49d1-b55c-29b77e83022f","method":"POST","route":"/api/auth/login","status":200,"durationMs":133.93}
+# {"timestamp":"2026-10-17T01:09:11.594Z","level":"info","event":"auth.login.succeeded","environment":"development","requestId":"4afa4875-a494-47f9-9ddc-276bbb8723cd","method":"POST","route":"/api/auth/login","userId":3,"role":"CUSTOMER","result":"success"}
+# {"timestamp":"2026-10-17T01:09:11.595Z","level":"info","event":"http.request.completed","environment":"development","requestId":"4afa4875-a494-47f9-9ddc-276bbb8723cd","method":"POST","route":"/api/auth/login","status":200,"durationMs":121.14}
+# {"timestamp":"2026-10-17T01:09:11.612Z","level":"info","event":"http.request.completed","environment":"development","requestId":"ff89275d-4b86-429d-95d9-4903be1e1b27","method":"GET","route":"/api/admin/fulfillments","status":200,"durationMs":12.75}
+# {"timestamp":"2026-10-17T01:09:11.631Z","level":"info","event":"http.request.completed","environment":"development","requestId":"366d124b-d280-49ac-b402-7f850e27fad1","method":"PATCH","route":"/api/admin/fulfillments/:id/status","status":200,"durationMs":15.77}
+# {"timestamp":"2026-10-17T01:09:11.643Z","level":"info","event":"http.request.completed","environment":"development","requestId":"04dcb747-9a6d-4d2c-9d23-94a68c65921d","method":"PATCH","route":"/api/admin/fulfillments/:id/status","status":200,"durationMs":8.66}
+# {"timestamp":"2026-10-17T01:09:11.657Z","level":"info","event":"http.request.completed","environment":"development","requestId":"f17a8c56-1d8c-48eb-bf0c-d6c995bfccd0","method":"PATCH","route":"/api/admin/fulfillments/:id/status","status":200,"durationMs":11.34}
+# {"timestamp":"2026-10-17T01:09:11.669Z","level":"info","event":"http.request.completed","environment":"development","requestId":"4a4c7465-817f-4327-8827-c6812308b4e3","method":"POST","route":"/api/admin/fulfillments/:id/notify","status":201,"durationMs":9.13}
+# {"timestamp":"2026-10-17T01:09:11.678Z","level":"info","event":"http.request.completed","environment":"development","requestId":"6e5c85ea-45c8-42a6-bb30-2d7c16913f40","method":"GET","route":"/api/notifications","status":200,"durationMs":5.57}
+# Subtest: B2/B6: lista enriquecida, status agregado, aviso e notificação do cliente
+ok 13 - B2/B6: lista enriquecida, status agregado, aviso e notificação do cliente
+  ---
+  duration_ms: 2865.979307
+  ...
+# {"timestamp":"2026-10-17T01:09:11.701Z","level":"info","event":"http.request.completed","environment":"development","requestId":"c5aa1494-137e-46dd-9c7a-4a4d6c302601","method":"POST","route":"/api/admin/fulfillments/notify-batch","status":201,"durationMs":18.08}
+# {"timestamp":"2026-10-17T01:09:11.724Z","level":"info","event":"http.request.completed","environment":"development","requestId":"b24e5a6b-df24-49ad-8ee9-bc02cc0fba75","method":"POST","route":"/api/admin/fulfillments/notify-batch","status":201,"durationMs":18.75}
+# {"timestamp":"2026-10-17T01:09:11.742Z","level":"info","event":"http.request.completed","environment":"development","requestId":"92c40b89-d7ed-447a-bb19-623d70fd0549","method":"POST","route":"/api/admin/fulfillments/notify-batch","status":201,"durationMs":13.65}
+# Subtest: B6.1: lote ignora partes finalizadas e avisa no máximo uma vez por pedido
+ok 14 - B6.1: lote ignora partes finalizadas e avisa no máximo uma vez por pedido
+  ---
+  duration_ms: 63.111433
+  ...
+# {"timestamp":"2026-10-17T01:09:11.748Z","level":"warn","event":"security.admin_access.denied","environment":"development","requestId":"dffebe28-ab0f-4c2b-a3a2-05cecb7fe52d","method":"GET","route":"/api/admin/fulfillments","status":403,"result":"denied","reason":"role_denied","userId":3,"role":"CUSTOMER"}
+# {"timestamp":"2026-10-17T01:09:11.749Z","level":"warn","event":"http.request.completed","environment":"development","requestId":"dffebe28-ab0f-4c2b-a3a2-05cecb7fe52d","method":"GET","route":"/api/admin/fulfillments","status":403,"durationMs":4.95}
+# {"timestamp":"2026-10-17T01:09:11.756Z","level":"warn","event":"security.admin_access.denied","environment":"development","requestId":"d846060b-b217-466f-9add-77c9c103763b","method":"POST","route":"/api/admin/fulfillments/notify-batch","status":403,"result":"denied","reason":"role_denied","userId":3,"role":"CUSTOMER"}
+# {"timestamp":"2026-10-17T01:09:11.757Z","level":"warn","event":"http.request.completed","environment":"development","requestId":"d846060b-b217-466f-9add-77c9c103763b","method":"POST","route":"/api/admin/fulfillments/notify-batch","status":403,"durationMs":5.13}
+# {"timestamp":"2026-10-17T01:09:11.762Z","level":"warn","event":"security.admin_access.denied","environment":"development","requestId":"de3734a0-2de8-4f09-9f47-71a404745790","method":"POST","route":"/api/admin/fulfillments/:id/delay-notice","status":403,"result":"denied","reason":"role_denied","userId":3,"role":"CUSTOMER"}
+# {"timestamp":"2026-10-17T01:09:11.762Z","level":"warn","event":"http.request.completed","environment":"development","requestId":"de3734a0-2de8-4f09-9f47-71a404745790","method":"POST","route":"/api/admin/fulfillments/:id/delay-notice","status":403,"durationMs":4.24}
+# {"timestamp":"2026-10-17T01:09:11.997Z","level":"info","event":"auth.login.succeeded","environment":"development","requestId":"cbb583af-c10e-4f6e-8bfa-247b62f81a68","method":"POST","route":"/api/auth/login","userId":4,"role":"CUSTOMER","result":"success"}
+# {"timestamp":"2026-10-17T01:09:11.997Z","level":"info","event":"http.request.completed","environment":"development","requestId":"cbb583af-c10e-4f6e-8bfa-247b62f81a68","method":"POST","route":"/api/auth/login","status":200,"durationMs":117.5}
+# {"timestamp":"2026-10-17T01:09:12.010Z","level":"info","event":"http.request.completed","environment":"development","requestId":"98c863f8-754a-4bb1-a93c-2e59c00aadf9","method":"POST","route":"/api/admin/fulfillments/:id/delay-notice","status":201,"durationMs":11.32}
+# {"timestamp":"2026-10-17T01:09:12.017Z","level":"warn","event":"http.request.completed","environment":"development","requestId":"8aa9e5d6-ab62-4832-8330-5b5a2d9541f6","method":"POST","route":"/api/delay-notices/:id/respond","status":400,"durationMs":5.06}
+# {"timestamp":"2026-10-17T01:09:12.040Z","level":"info","event":"http.request.completed","environment":"development","requestId":"3012c2c3-379b-4b79-afc4-851722eedb63","method":"POST","route":"/api/delay-notices/:id/respond","status":200,"durationMs":16.83}
+# Subtest: Autorização: cliente não usa rotas admin nem responde aviso de outro cliente
+ok 15 - Autorização: cliente não usa rotas admin nem responde aviso de outro cliente
+  ---
+  duration_ms: 297.808616
+  ...
+# {"timestamp":"2026-10-17T01:09:12.054Z","level":"info","event":"http.request.completed","environment":"development","requestId":"80bcdea5-bb41-4cc7-9702-22bcab7463f7","method":"POST","route":"/api/admin/fulfillments/:id/delay-notice","status":201,"durationMs":9.68}
+# {"timestamp":"2026-10-17T01:09:12.062Z","level":"warn","event":"http.request.completed","environment":"development","requestId":"213fe401-63d6-42f3-ba94-41354b8671c5","method":"POST","route":"/api/admin/fulfillments/:id/delay-notice","status":409,"durationMs":6.6}
+# {"timestamp":"2026-10-17T01:09:12.069Z","level":"info","event":"http.request.completed","environment":"development","requestId":"d72ce189-7698-4134-9bb8-5c37f60e2c18","method":"GET","route":"/api/admin/delay-notices","status":200,"durationMs":5.91}
+# {"timestamp":"2026-10-17T01:09:12.078Z","level":"info","event":"http.request.completed","environment":"development","requestId":"39e80d7b-aa39-411b-929d-f1d6e953695b","method":"POST","route":"/api/delay-notices/:id/respond","status":200,"durationMs":7.4}
+# {"timestamp":"2026-10-17T01:09:12.090Z","level":"info","event":"http.request.completed","environment":"development","requestId":"da1570ac-6735-4b01-ba82-ab2793e69253","method":"POST","route":"/api/admin/fulfillments/:id/delay-notice","status":201,"durationMs":9.5}
+# {"timestamp":"2026-10-17T01:09:12.101Z","level":"info","event":"http.request.completed","environment":"development","requestId":"d62405b1-4b90-48f0-b0d8-42302bd66b55","method":"POST","route":"/api/delay-notices/:id/respond","status":200,"durationMs":9.25}
+# {"timestamp":"2026-10-17T01:09:12.110Z","level":"warn","event":"http.request.completed","environment":"development","requestId":"58446d10-a83c-40bf-8e2e-d7fce4daa18c","method":"POST","route":"/api/admin/fulfillments/:id/delay-notice","status":409,"durationMs":6.5}
+# {"timestamp":"2026-10-17T01:09:12.118Z","level":"warn","event":"http.request.completed","environment":"development","requestId":"e6de4b30-daba-4ecc-ac99-4ea8091ff2dc","method":"POST","route":"/api/admin/fulfillments/:id/delay-notice","status":400,"durationMs":6.18}
+# {"timestamp":"2026-10-17T01:09:12.129Z","level":"info","event":"http.request.completed","environment":"development","requestId":"41aff899-da25-416c-bdc9-7e92ae6a3645","method":"POST","route":"/api/admin/fulfillments/:id/delay-notice","status":201,"durationMs":8.91}
+# {"timestamp":"2026-10-17T01:09:12.141Z","level":"info","event":"http.request.completed","environment":"development","requestId":"1a91b7e5-d0a3-4348-9717-7d17c31ede0b","method":"POST","route":"/api/delay-notices/:id/respond","status":200,"durationMs":7.98}
+# {"timestamp":"2026-10-17T01:09:12.142Z","level":"info","event":"http.request.completed","environment":"development","requestId":"a2dbaec1-155c-4cd8-9848-ecc518514366","method":"POST","route":"/api/delay-notices/:id/respond","status":200,"durationMs":11.01}
+# {"timestamp":"2026-10-17T01:09:12.151Z","level":"warn","event":"http.request.completed","environment":"development","requestId":"534f227d-6f37-491d-b0f9-7d7b55f36aec","method":"POST","route":"/api/admin/fulfillments/:id/delay-notice","status":409,"durationMs":6.31}
+# Subtest: B7: atraso, WAIT/EXCHANGE/REFUND, travas e resposta idempotente
+ok 16 - B7: atraso, WAIT/EXCHANGE/REFUND, travas e resposta idempotente
+  ---
+  duration_ms: 110.006432
+  ...
+# {"timestamp":"2026-10-17T01:09:12.183Z","level":"info","event":"application.shutdown.started","environment":"development","signal":"SIGTERM"}
+# {"timestamp":"2026-10-17T01:09:12.184Z","level":"info","event":"http.server.closed","environment":"development"}
+# {"timestamp":"2026-10-17T01:09:12.184Z","level":"info","event":"database.pool.shutdown.started","environment":"development"}
+# {"timestamp":"2026-10-17T01:09:12.185Z","level":"info","event":"database.pool.closed","environment":"development"}
+# {"timestamp":"2026-10-17T01:09:12.185Z","level":"info","event":"application.shutdown.completed","environment":"development"}
+# {"timestamp":"2026-10-17T01:09:14.579Z","level":"info","event":"application.starting","environment":"development","port":3213}
+# {"timestamp":"2026-10-17T01:09:14.580Z","level":"info","event":"database.initialization.started","environment":"development"}
+# {"timestamp":"2026-10-17T01:09:14.598Z","level":"info","event":"database.connection.ready","environment":"development","source":"pool_connect","result":"connected"}
+# {"timestamp":"2026-10-17T01:09:15.141Z","level":"info","event":"database.initialization.completed","environment":"development"}
+# (!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+#   - `__dirname` (vite.config.ts:11:27). Use `import.meta.dirname` instead
+# Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+# {"timestamp":"2026-10-17T01:09:15.389Z","level":"info","event":"http.server.listening","environment":"development","port":3213}
+# {"timestamp":"2026-10-17T01:09:15.389Z","level":"info","event":"application.ready","environment":"development","port":3213}
+# {"timestamp":"2026-10-17T01:09:15.658Z","level":"info","event":"auth.login.succeeded","environment":"development","requestId":"eae72caf-9f29-4a35-9ed9-8af090b84259","method":"POST","route":"/api/auth/login","userId":5,"role":"SUPER_ADMIN","result":"success"}
+# {"timestamp":"2026-10-17T01:09:15.660Z","level":"info","event":"http.request.completed","environment":"development","requestId":"eae72caf-9f29-4a35-9ed9-8af090b84259","method":"POST","route":"/api/auth/login","status":200,"durationMs":134.31}
+# {"timestamp":"2026-10-17T01:09:15.785Z","level":"info","event":"auth.login.succeeded","environment":"development","requestId":"47e3a4f2-abcc-4177-b977-6c335cbf5fb5","method":"POST","route":"/api/auth/login","userId":6,"role":"GERENTE","result":"success"}
+# {"timestamp":"2026-10-17T01:09:15.786Z","level":"info","event":"http.request.completed","environment":"development","requestId":"47e3a4f2-abcc-4177-b977-6c335cbf5fb5","method":"POST","route":"/api/auth/login","status":200,"durationMs":121.13}
+# {"timestamp":"2026-10-17T01:09:15.907Z","level":"info","event":"auth.login.succeeded","environment":"development","requestId":"58b12b23-1f77-4c4e-b8ae-c38bd546f759","method":"POST","route":"/api/auth/login","userId":7,"role":"CUSTOMER","result":"success"}
+# {"timestamp":"2026-10-17T01:09:15.908Z","level":"info","event":"http.request.completed","environment":"development","requestId":"58b12b23-1f77-4c4e-b8ae-c38bd546f759","method":"POST","route":"/api/auth/login","status":200,"durationMs":117.92}
+# {"timestamp":"2026-10-17T01:09:15.937Z","level":"info","event":"http.request.completed","environment":"development","requestId":"29bcd491-cdd8-4b17-80ef-be2d9702ecc0","method":"POST","route":"/api/admin/fulfillments/:id/delay-notice","status":201,"durationMs":18.77}
+# {"timestamp":"2026-10-17T01:09:15.952Z","level":"info","event":"http.request.completed","environment":"development","requestId":"5f2d85a0-6536-4d75-94f5-8b097d18be57","method":"POST","route":"/api/delay-notices/:id/respond","status":200,"durationMs":12.22}
+# {"timestamp":"2026-10-17T01:09:15.962Z","level":"warn","event":"http.request.completed","environment":"development","requestId":"e4e2d6db-4497-48e8-b2f1-a710c37b03b4","method":"GET","route":"/api/admin/refunds","status":403,"durationMs":6.16}
+# {"timestamp":"2026-10-17T01:09:15.968Z","level":"warn","event":"security.admin_access.denied","environment":"development","requestId":"b9805900-723d-41c2-9569-71206876ea12","method":"GET","route":"/api/admin/refunds","status":403,"result":"denied","reason":"role_denied","userId":7,"role":"CUSTOMER"}
+# {"timestamp":"2026-10-17T01:09:15.969Z","level":"warn","event":"http.request.completed","environment":"development","requestId":"b9805900-723d-41c2-9569-71206876ea12","method":"GET","route":"/api/admin/refunds","status":403,"durationMs":5.09}
+# {"timestamp":"2026-10-17T01:09:15.980Z","level":"warn","event":"http.request.completed","environment":"development","requestId":"8f1804eb-e57e-4777-84ec-bdd09d154bd5","method":"POST","route":"/api/admin/refunds/:id/approve","status":403,"durationMs":8.23}
+# {"timestamp":"2026-10-17T01:09:15.989Z","level":"warn","event":"http.request.completed","environment":"development","requestId":"9478059b-edc9-4ae4-9b69-694bbd1b3c24","method":"POST","route":"/api/admin/refunds/:id/reject","status":403,"durationMs":6.02}
+# {"timestamp":"2026-10-17T01:09:16.001Z","level":"info","event":"http.request.completed","environment":"development","requestId":"11805a77-0253-4526-b8ca-ac441a67a20b","method":"GET","route":"/api/admin/refunds","status":200,"durationMs":9.11}
+# {"timestamp":"2026-10-17T01:09:16.012Z","level":"warn","event":"http.request.completed","environment":"development","requestId":"2a2de989-0290-4a80-b7a9-0fa18b5e7e6f","method":"POST","route":"/api/admin/refunds/:id/approve","status":400,"durationMs":8.56}
+# {"timestamp":"2026-10-17T01:09:16.023Z","level":"warn","event":"http.request.completed","environment":"development","requestId":"f3331c41-f928-491d-b34f-3b67e104a00f","method":"POST","route":"/api/admin/refunds/:id/approve","status":400,"durationMs":8.97}
+# {"timestamp":"2026-10-17T01:09:16.034Z","level":"warn","event":"http.request.completed","environment":"development","requestId":"68b16e6f-ee66-43fb-b5bd-d577ec541ec9","method":"POST","route":"/api/admin/refunds/:id/approve","status":400,"durationMs":7.75}
+# {"timestamp":"2026-10-17T01:09:16.043Z","level":"warn","event":"http.request.completed","environment":"development","requestId":"9f731235-2c40-4da4-a8e7-faf81dd66111","method":"POST","route":"/api/admin/refunds/:id/approve","status":400,"durationMs":6.41}
+# {"timestamp":"2026-10-17T01:09:16.051Z","level":"warn","event":"http.request.completed","environment":"development","requestId":"2540e4de-25dd-4283-b9f1-02fa6fca16ac","method":"POST","route":"/api/admin/refunds/:id/approve","status":400,"durationMs":5.96}
+# {"timestamp":"2026-10-17T01:09:16.059Z","level":"warn","event":"http.request.completed","environment":"development","requestId":"dd8af9f3-5416-45fd-b4c9-0925dbe16b6a","method":"POST","route":"/api/admin/refunds/:id/approve","status":400,"durationMs":6.29}
+# {"timestamp":"2026-10-17T01:09:16.070Z","level":"warn","event":"http.request.completed","environment":"development","requestId":"3c79f642-4bb9-4e0b-a675-916d125c09e9","method":"POST","route":"/api/admin/refunds/:id/mark-refunded","status":409,"durationMs":8.14}
+# {"timestamp":"2026-10-17T01:09:16.081Z","level":"info","event":"http.request.completed","environment":"development","requestId":"bf2aa5ab-8117-4340-84fd-f30c1a41503e","method":"POST","route":"/api/admin/refunds/:id/approve","status":200,"durationMs":9.46}
+# {"timestamp":"2026-10-17T01:09:16.092Z","level":"warn","event":"http.request.completed","environment":"development","requestId":"2024ab09-ade2-41a8-a1af-1072d1790444","method":"POST","route":"/api/admin/refunds/:id/approve","status":409,"durationMs":7.53}
+# {"timestamp":"2026-10-17T01:09:16.101Z","level":"warn","event":"http.request.completed","environment":"development","requestId":"de4f1bb7-d1c8-43db-af7a-d90afdb332c9","method":"POST","route":"/api/admin/refunds/:id/reject","status":409,"durationMs":7.27}
+# {"timestamp":"2026-10-17T01:09:16.116Z","level":"warn","event":"http.request.completed","environment":"development","requestId":"5de4ca2b-2270-4e44-b8ac-d3b8f9d3f970","method":"PATCH","route":"/api/admin/fulfillments/:id/status","status":400,"durationMs":8.35}
+# {"timestamp":"2026-10-17T01:09:16.128Z","level":"info","event":"http.request.completed","environment":"development","requestId":"eb1bb7ec-bebd-4342-b635-4fc549709863","method":"POST","route":"/api/admin/refunds/:id/mark-refunded","status":200,"durationMs":9.48}
+# {"timestamp":"2026-10-17T01:09:16.138Z","level":"warn","event":"http.request.completed","environment":"development","requestId":"61792357-a454-47f8-8dcf-08a65b4b63c4","method":"POST","route":"/api/admin/refunds/:id/mark-refunded","status":409,"durationMs":7.26}
+# Subtest: 2C: só o dono acessa a fila; valor limitado aos itens (sem frete); aprovar, travar entrega e marcar devolvido
+ok 17 - 2C: só o dono acessa a fila; valor limitado aos itens (sem frete); aprovar, travar entrega e marcar devolvido
+  ---
+  duration_ms: 3134.053703
+  ...
+# {"timestamp":"2026-10-17T01:09:16.156Z","level":"info","event":"http.request.completed","environment":"development","requestId":"0a950aad-b357-4da1-aa4e-ce5e0bc6c2c9","method":"POST","route":"/api/admin/fulfillments/:id/delay-notice","status":201,"durationMs":10.78}
+# {"timestamp":"2026-10-17T01:09:16.167Z","level":"info","event":"http.request.completed","environment":"development","requestId":"f9bbc746-3362-4e39-8edc-a175a8c60fe1","method":"POST","route":"/api/delay-notices/:id/respond","status":200,"durationMs":8.5}
+# {"timestamp":"2026-10-17T01:09:16.174Z","level":"warn","event":"http.request.completed","environment":"development","requestId":"e6f09ec8-8582-4b6d-9f18-087022727a10","method":"POST","route":"/api/admin/refunds/:id/reject","status":400,"durationMs":5.98}
+# {"timestamp":"2026-10-17T01:09:16.181Z","level":"warn","event":"http.request.completed","environment":"development","requestId":"f1aa7269-de27-4146-b15d-9a423e13d55b","method":"POST","route":"/api/admin/refunds/:id/reject","status":400,"durationMs":5.31}
+# {"timestamp":"2026-10-17T01:09:16.192Z","level":"info","event":"http.request.completed","environment":"development","requestId":"c5b470ca-647e-47ac-9338-cf157f13969c","method":"POST","route":"/api/admin/refunds/:id/reject","status":200,"durationMs":8.81}
+# {"timestamp":"2026-10-17T01:09:16.202Z","level":"warn","event":"http.request.completed","environment":"development","requestId":"fff60f8c-4b31-4591-82ed-adb30e4b4f45","method":"POST","route":"/api/admin/refunds/:id/approve","status":409,"durationMs":6.88}
+# Subtest: 2C: recusa exige motivo, avisa o cliente e mantém a encomenda ativa
+ok 18 - 2C: recusa exige motivo, avisa o cliente e mantém a encomenda ativa
+  ---
+  duration_ms: 62.094765
+  ...
+# {"timestamp":"2026-10-17T01:09:16.218Z","level":"info","event":"http.request.completed","environment":"development","requestId":"792780bd-4823-465b-b0fa-930fb0acec03","method":"POST","route":"/api/admin/fulfillments/:id/delay-notice","status":201,"durationMs":9.96}
+# {"timestamp":"2026-10-17T01:09:16.228Z","level":"info","event":"http.request.completed","environment":"development","requestId":"aea72402-b75a-4c31-9b8c-ca825b714864","method":"POST","route":"/api/delay-notices/:id/respond","status":200,"durationMs":8.48}
+# {"timestamp":"2026-10-17T01:09:16.240Z","level":"info","event":"http.request.completed","environment":"development","requestId":"ccd5601d-bddd-4852-9bea-42f10e1306fe","method":"GET","route":"/api/admin/refunds","status":200,"durationMs":10.4}
+# {"timestamp":"2026-10-17T01:09:16.249Z","level":"info","event":"http.request.completed","environment":"development","requestId":"bb45a09d-fa33-4b3a-a0e4-22f4064edffa","method":"GET","route":"/api/admin/refunds","status":200,"durationMs":7.86}
+# Subtest: 2C: passou de 24h apenas sinaliza e avisa o dono uma única vez; nunca aprova sozinho
+ok 19 - 2C: passou de 24h apenas sinaliza e avisa o dono uma única vez; nunca aprova sozinho
+  ---
+  duration_ms: 49.161691
+  ...
+# {"timestamp":"2026-10-17T01:09:16.266Z","level":"info","event":"http.request.completed","environment":"development","requestId":"b3b52987-9e5c-4eb0-996c-cd7da0ab3b16","method":"POST","route":"/api/admin/fulfillments/:id/delay-notice","status":201,"durationMs":9.33}
+# {"timestamp":"2026-10-17T01:09:16.276Z","level":"info","event":"http.request.completed","environment":"development","requestId":"eb7e7b29-90bc-4edd-a79c-5b4e176c2891","method":"POST","route":"/api/delay-notices/:id/respond","status":200,"durationMs":8.26}
+# {"timestamp":"2026-10-17T01:09:16.289Z","level":"info","event":"http.request.completed","environment":"development","requestId":"11fbf59a-4a6b-447f-868f-77123dfe5b58","method":"POST","route":"/api/admin/refunds/:id/approve","status":200,"durationMs":11.66}
+# {"timestamp":"2026-10-17T01:09:16.301Z","level":"info","event":"http.request.completed","environment":"development","requestId":"7b18fade-10ad-4658-a90f-e31680cfd60e","method":"POST","route":"/api/admin/refunds/:id/mark-refunded","status":200,"durationMs":10.85}
+# {"timestamp":"2026-10-17T01:09:16.310Z","level":"warn","event":"http.request.completed","environment":"development","requestId":"328152c5-0b55-4eaf-813f-bca41cd9a933","method":"POST","route":"/api/admin/fulfillments/:id/delay-notice","status":409,"durationMs":6.19}
+# {"timestamp":"2026-10-17T01:09:16.319Z","level":"info","event":"http.request.completed","environment":"development","requestId":"4d555ecd-243a-4b16-936a-67825f4752ac","method":"GET","route":"/api/admin/refunds","status":200,"durationMs":7.74}
+# Subtest: 2C: reembolso total sem informar valor usa o máximo, fecha a parte encomenda e recalcula o pedido
+ok 20 - 2C: reembolso total sem informar valor usa o máximo, fecha a parte encomenda e recalcula o pedido
+  ---
+  duration_ms: 67.694686
+  ...
+# {"timestamp":"2026-10-17T01:09:16.351Z","level":"info","event":"application.shutdown.started","environment":"development","signal":"SIGTERM"}
+# {"timestamp":"2026-10-17T01:09:16.352Z","level":"info","event":"http.server.closed","environment":"development"}
+# {"timestamp":"2026-10-17T01:09:16.352Z","level":"info","event":"database.pool.shutdown.started","environment":"development"}
+# {"timestamp":"2026-10-17T01:09:16.353Z","level":"info","event":"database.pool.closed","environment":"development"}
+# {"timestamp":"2026-10-17T01:09:16.354Z","level":"info","event":"application.shutdown.completed","environment":"development"}
+# {"timestamp":"2026-10-17T01:09:17.498Z","level":"warn","event":"application.configuration.warning","environment":"development","reason":"temporary_jwt_secret_in_development"}
+# Subtest: rotas de fornecedores e compras são registradas com CRUD e filtros
+ok 21 - rotas de fornecedores e compras são registradas com CRUD e filtros
+  ---
+  duration_ms: 1.54192
+  ...
+# {"timestamp":"2026-10-17T01:09:19.482Z","level":"info","event":"application.starting","environment":"development","port":3211}
+# {"timestamp":"2026-10-17T01:09:19.483Z","level":"info","event":"database.initialization.started","environment":"development"}
+# {"timestamp":"2026-10-17T01:09:19.500Z","level":"info","event":"database.connection.ready","environment":"development","source":"pool_connect","result":"connected"}
+# {"timestamp":"2026-10-17T01:09:20.042Z","level":"info","event":"database.initialization.completed","environment":"development"}
+# (!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+#   - `__dirname` (vite.config.ts:11:27). Use `import.meta.dirname` instead
+# Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+# {"timestamp":"2026-10-17T01:09:20.287Z","level":"info","event":"http.server.listening","environment":"development","port":3211}
+# {"timestamp":"2026-10-17T01:09:20.287Z","level":"info","event":"application.ready","environment":"development","port":3211}
+# {"timestamp":"2026-10-17T01:09:20.518Z","level":"info","event":"auth.login.succeeded","environment":"development","requestId":"b3a275cc-f5f7-43b0-9043-1b46b556816c","method":"POST","route":"/api/auth/login","userId":8,"role":"SUPER_ADMIN","result":"success"}
+# {"timestamp":"2026-10-17T01:09:20.519Z","level":"info","event":"http.request.completed","environment":"development","requestId":"b3a275cc-f5f7-43b0-9043-1b46b556816c","method":"POST","route":"/api/auth/login","status":200,"durationMs":133.48}
+# {"timestamp":"2026-10-17T01:09:20.547Z","level":"info","event":"http.request.completed","environment":"development","requestId":"bf0c95af-a4b6-4525-b5e2-72a797cdad7e","method":"POST","route":"/api/admin/suppliers","status":201,"durationMs":15.51}
+# {"timestamp":"2026-10-17T01:09:20.565Z","level":"info","event":"http.request.completed","environment":"development","requestId":"39081be5-2717-4f10-926c-d21eaa798918","method":"POST","route":"/api/admin/products","status":201,"durationMs":14.57}
+# {"timestamp":"2026-10-17T01:09:20.581Z","level":"info","event":"http.request.completed","environment":"development","requestId":"f18f7f98-f642-43b9-b43b-95952b550770","method":"GET","route":"/api/admin/products","status":200,"durationMs":12.02}
+# {"timestamp":"2026-10-17T01:09:20.596Z","level":"info","event":"http.request.completed","environment":"development","requestId":"5dcd0648-47cc-412a-a3df-ab07a2fdff54","method":"POST","status":201,"durationMs":11.86}
+# {"timestamp":"2026-10-17T01:09:20.607Z","level":"info","event":"http.request.completed","environment":"development","requestId":"df2a744b-37cd-496a-bac7-125465c31dcf","method":"GET","route":"/api/admin/suppliers/:id/purchases","status":200,"durationMs":7.87}
+# {"timestamp":"2026-10-17T01:09:20.627Z","level":"info","event":"http.request.completed","environment":"development","requestId":"00a6e4ac-2f6d-4c73-afe0-1e779646e5bb","method":"POST","route":"/api/admin/products","status":201,"durationMs":17.14}
+# {"timestamp":"2026-10-17T01:09:20.645Z","level":"info","event":"inventory.manual_movement.created","environment":"development","requestId":"e4125dac-2d76-4765-8e8f-1c57bffde35c","method":"POST","route":"/api/admin/inventory/movements","productId":67,"adminId":8,"role":"SUPER_ADMIN","action":"IN","stockDelta":1,"result":"committed"}
+# {"timestamp":"2026-10-17T01:09:20.647Z","level":"info","event":"http.request.completed","environment":"development","requestId":"e4125dac-2d76-4765-8e8f-1c57bffde35c","method":"POST","route":"/api/admin/inventory/movements","status":201,"durationMs":16.99}
+# {"timestamp":"2026-10-17T01:09:20.656Z","level":"info","event":"http.request.completed","environment":"development","requestId":"6d7eb61a-5645-4241-95d7-b5e07192a7c4","method":"POST","route":"/api/admin/inventory/movements","status":200,"durationMs":7.92}
+# {"timestamp":"2026-10-17T01:09:20.665Z","level":"info","event":"http.request.completed","environment":"development","requestId":"9987ab23-2f22-4abd-8665-fff6d57dc165","method":"GET","route":"/api/admin/suppliers/:id/purchases","status":200,"durationMs":6.84}
+# {"timestamp":"2026-10-17T01:09:20.683Z","level":"info","event":"http.request.completed","environment":"development","requestId":"68ed9f0d-f51a-4b6e-bb89-bc2a0737e7fa","method":"PUT","route":"/api/admin/products/:id","status":200,"durationMs":15.75}
+# {"timestamp":"2026-10-17T01:09:20.691Z","level":"warn","event":"http.request.completed","environment":"development","requestId":"08617cfa-b2f0-4675-ae59-de8aa4dca5c4","method":"DELETE","route":"/api/admin/suppliers/:id","status":409,"durationMs":6.9}
+# Subtest: B3/B4 API real: fornecedor, produto preorder, compras, totais e bloqueio de histórico
+ok 22 - B3/B4 API real: fornecedor, produto preorder, compras, totais e bloqueio de histórico
+  ---
+  duration_ms: 2814.629978
+  ...
+# {"timestamp":"2026-10-17T01:09:20.725Z","level":"info","event":"application.shutdown.started","environment":"development","signal":"SIGTERM"}
+# {"timestamp":"2026-10-17T01:09:20.726Z","level":"info","event":"http.server.closed","environment":"development"}
+# {"timestamp":"2026-10-17T01:09:20.726Z","level":"info","event":"database.pool.shutdown.started","environment":"development"}
+# {"timestamp":"2026-10-17T01:09:20.727Z","level":"info","event":"database.pool.closed","environment":"development"}
+# {"timestamp":"2026-10-17T01:09:20.727Z","level":"info","event":"application.shutdown.completed","environment":"development"}
+1..22
+# tests 22
+# suites 0
+# pass 22
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 29062.796607

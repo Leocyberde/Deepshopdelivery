@@ -25,6 +25,7 @@ export function permissionForRequest(req: Request): AdminPermission | null {
   const p = req.path;
   if (/\/database\//.test(p) || /\/phase3\/backup/.test(p)) return 'backup';
   if (/\/phase3\/administrators/.test(p) || /\/credentials/.test(p)) return 'administrators';
+  if (/\/geo\//.test(p)) return 'settings';
   if (/\/settings|\/callmebot/.test(p)) return 'settings';
   if (/\/phase3\/audit/.test(p)) return 'audit';
   if (/\/finance|\/analytics/.test(p)) return 'finance';

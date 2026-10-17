@@ -1,3 +1,4 @@
+import { registerGeoAdminRoutes } from './src/server/routes/geoAdminRoutes.ts';
 import 'dotenv/config'; // deve ser o primeiro import: JWT_SECRET e configuração do PostgreSQL são lidos ao carregar os módulos
 import express from 'express';
 import helmet from 'helmet';
@@ -193,6 +194,7 @@ async function startServer() {
   }
   // Register modular API routes
   registerStorageRoutes(app);
+  registerGeoAdminRoutes(app);
   registerAdminPhase2Routes(app);
   registerAdminPhase3Routes(app);
   registerDeliveryOrdersRoutes(app);

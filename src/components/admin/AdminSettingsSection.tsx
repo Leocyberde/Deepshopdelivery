@@ -1,3 +1,4 @@
+import { AdminAutomaticFreightSettings } from './AdminAutomaticFreightSettings.tsx';
 import React, { useState, useEffect, useCallback } from 'react';
 import { Lock, Eye, EyeOff, KeyRound, Database, Download, Upload, Server, CheckCircle2 } from 'lucide-react';
 import { useApp } from '../../context/AppContext.tsx';
@@ -553,7 +554,7 @@ psql -U postgres -d achadinhos -f achadinhos-postgresql-vps.sql`}
 
         <div className="space-y-4">
           <h2 className="text-sm font-bold text-zinc-900 border-b border-stone-200 pb-2">
-            2. Parâmetros da Sugestão Aritmética de Frete (Seção 10.2)
+            Frete
           </h2>
 
           <div className="space-y-1">
@@ -626,17 +627,8 @@ psql -U postgres -d achadinhos -f achadinhos-postgresql-vps.sql`}
             </div>
           </div>
 
-          <div className="p-3.5 rounded-lg bg-stone-50 border border-stone-200 text-xs text-zinc-600 space-y-1">
-            <div className="font-semibold text-zinc-900">
-              Exemplos de verificação (Teste 4 — Regra padrão 4 km = R$ 7,50 + R$ 1,50/km
-              proporcional):
-            </div>
-            <div className="font-mono">
-              3,1 km = R$ 7,50 · 4,0 km = R$ 7,50 · 6,5 km = R$ 11,25 · 10,4 km = R$ 17,10
-            </div>
-          </div>
+          <AdminAutomaticFreightSettings form={settingsForm} setForm={setSettingsForm} />
         </div>
-
         {/* 3. Validação de CPF Real (Inativo no Teste / Ativo em Produção - Requisito 1) */}
         <div className="space-y-4">
           <h2 className="text-sm font-bold text-zinc-900 border-b border-stone-200 pb-2">

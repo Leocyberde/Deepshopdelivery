@@ -1,3 +1,5 @@
+import { calculateAddressDistance } from '../services/geoService.ts';
+import { isServedAddress } from '../../services/freightService.ts';
 import { logServerError, logServerEvent } from '../logger.ts';
 import { Express } from 'express';
 import bcrypt from 'bcryptjs';
@@ -216,10 +218,11 @@ export function registerAuthRoutes(app: Express) {
           addrInput.state
       );
 
+      if (hasAddressFields && !isServedAddress(addrInput)) { res.status(422).json({ error: 'Atendemos apenas Itatiba', code: 'CITY_NOT_SERVED' }); return; }
       const passwordHash = await bcrypt.hash(String(password), 10);
 
       // Cria o cliente, o endereço inicial (Requisito 3) e a notificação para o painel Admin em transação
-      const { newUser, createdAddress, createdAdminNotification } = await db.transaction(
+      let { newUser, createdAddress, createdAdminNotification } = await db.transaction(
         async (tx) => {
           const [insertedUser] = await tx
             .insert(schema.users)
@@ -256,21 +259,13 @@ export function registerAuthRoutes(app: Express) {
                 deliveryDistanceKm: null,
                 deliveryFee: null,
                 deliveryFeeStatus: 'PENDING',
-                deliveryFeeSource: 'MANUAL',
+                deliveryFeeSource: 'DISTANCE_UNAVAILABLE',
                 latitude: null,
                 longitude: null,
               })
               .returning();
             insertedAddress = addrRow;
           }
-
-          const addrSummary = insertedAddress
-            ? `${insertedAddress.street}, ${insertedAddress.number}${
-                insertedAddress.complement ? ` (${insertedAddress.complement})` : ''
-              } — ${insertedAddress.neighborhood}, ${insertedAddress.city}/${insertedAddress.state} (CEP ${
-                insertedAddress.zipCode
-              })`
-            : 'Endereço ainda não informado';
 
           const [adminNotif] = await tx
             .insert(schema.adminNotifications)
@@ -279,9 +274,7 @@ export function registerAuthRoutes(app: Express) {
               customerId: insertedUser.id,
               addressId: insertedAddress ? insertedAddress.id : null,
               title: `Novo Cliente Cadastrado: ${insertedUser.name}`,
-              message: `CPF: ${insertedUser.cpf || 'Não informado'} · Tel: ${
-                insertedUser.phone
-              } · Endereço: ${addrSummary}. Cadastre a distância e o frete deste cliente.`,
+              message: 'Novo cliente cadastrado. O frete é calculado automaticamente.',
               isRead: false,
               popupDismissed: false,
             })
@@ -295,6 +288,7 @@ export function registerAuthRoutes(app: Express) {
         }
       );
 
+      if (createdAddress) createdAddress = (await calculateAddressDistance(createdAddress.id, newUser.id)).address;
       const payload: AuthUserPayload = {
         id: newUser.id,
         email: newUser.email,
@@ -306,7 +300,8 @@ export function registerAuthRoutes(app: Express) {
 
       logServerEvent('auth.registration.succeeded', 'info', { userId: newUser.id, role: 'CUSTOMER', result: 'created' });
 
-      res.status(201).json({
+      res.status(createdAddress?.deliveryInArea === false ? 422 : 201).json({
+        ...(createdAddress?.deliveryInArea === false ? { code: 'OUT_OF_DELIVERY_AREA', error: 'Não entregamos nessa região. Entre em contato através do WhatsApp: 11910509385' } : {}),
         token,
         user: {
           id: newUser.id,

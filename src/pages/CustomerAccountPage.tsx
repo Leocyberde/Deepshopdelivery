@@ -53,7 +53,7 @@ interface AddressItem {
     distanceKm: number | null;
     fee: number | null;
     isItatiba?: boolean;
-    deliveryMode?: 'DELIVERY' | 'CORREIOS';
+    deliveryMode?: 'DELIVERY' | 'UNAVAILABLE';
     deliveryModeMessage?: string;
     customerMessage: string;
   };
@@ -522,7 +522,7 @@ export const CustomerAccountPage: React.FC = () => {
         );
         if (res.locationChangedResetFreight) {
           toast(
-            'Endereço atualizado! Como dados de localização mudaram, o frete voltou para "a combinar".',
+            'Endereço atualizado! A distância será calculada automaticamente.',
             'info'
           );
         } else {
@@ -547,7 +547,7 @@ export const CustomerAccountPage: React.FC = () => {
           toast('Endereço em Itatiba cadastrado! Temos delivery para sua região.', 'success');
         } else {
           toast(
-            'Endereço cadastrado! Entrega através dos Correios — conferir valor no WhatsApp.',
+            'Endereço cadastrado! Atendemos apenas Itatiba.',
             'info'
           );
         }
@@ -772,7 +772,7 @@ export const CustomerAccountPage: React.FC = () => {
               {orders.map((order) => {
                 const isExpanded = selectedOrder?.id === order.id;
                 const isFirstOrderFree = Number(order.deliveryFee) === 0;
-                const freeDeliveryLabel = 'Frete grátis';
+                const freeDeliveryLabel = order.deliveryFeeSource === 'MANUAL_FREE_DELIVERY_PERIOD' ? 'Frete grátis (benefício da loja)' : 'Frete grátis';
                 const hasConfirmedFreight =
                   isFirstOrderFree ||
                   (order.deliveryFee !== null &&
@@ -900,14 +900,14 @@ export const CustomerAccountPage: React.FC = () => {
                           <div className="text-sm font-bold text-zinc-900 tabular-nums">
                             {hasConfirmedFreight
                               ? formatCurrency(order.total)
-                              : `${formatCurrency(order.subtotal)} + frete a combinar`}
+                              : `${formatCurrency(order.subtotal)} + frete indisponível no histórico`}
                           </div>
                           <div className="text-[11px] text-zinc-500 tabular-nums">
                             {isFirstOrderFree
                               ? `Frete: Grátis (${freeDeliveryLabel})`
                               : hasConfirmedFreight
                               ? `Frete: ${formatCurrency(order.deliveryFee)}`
-                              : 'Frete: a combinar'}
+                              : 'Frete: indisponível no histórico'}
                           </div>
                         </div>
 
@@ -1119,7 +1119,7 @@ export const CustomerAccountPage: React.FC = () => {
             <div>
               <h2 className="text-lg font-bold text-zinc-900">Endereços de Entrega</h2>
               <p className="text-xs text-zinc-500">
-                Nota: Alterar rua, número, bairro, cidade ou CEP volta o frete para "a combinar".
+                A distância é calculada automaticamente. Alterar CEP ou número atualiza a cotação.
                 Alterar apenas o apelido mantém o frete confirmado.
               </p>
             </div>
@@ -1307,7 +1307,7 @@ export const CustomerAccountPage: React.FC = () => {
                   ) : (
                     <span>
                       Cidade conferida: <strong>{city.trim()}</strong> —{' '}
-                      <strong>Entrega através dos Correios, conferir valor no WhatsApp.</strong>
+                      <strong>Atendemos apenas Itatiba</strong>
                     </span>
                   )}
                 </div>
@@ -1370,7 +1370,7 @@ export const CustomerAccountPage: React.FC = () => {
                       ) : (
                         <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-50 border border-amber-200 text-xs font-semibold text-amber-900">
                           <Truck className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-                          <span>Entrega através dos Correios — conferir valor no WhatsApp</span>
+                          <span>Atendemos apenas Itatiba</span>
                         </div>
                       )}
                       {confirmed ? (
@@ -1379,7 +1379,7 @@ export const CustomerAccountPage: React.FC = () => {
                         </div>
                       ) : isItatibaCity(addr.city) ? (
                         <div className="text-xs font-medium text-amber-800">
-                          Frete a combinar. A loja vai informar o valor do delivery.
+                          Não conseguimos calcular o frete agora
                         </div>
                       ) : null}
                     </div>

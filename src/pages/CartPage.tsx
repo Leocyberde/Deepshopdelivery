@@ -1,3 +1,4 @@
+import { useFreightQuote, FreightQuoteSummary } from '../components/FreightQuoteSummary.tsx';
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Trash2, Minus, Plus, ArrowRight, ShoppingBag, ArrowLeft, Store } from 'lucide-react';
@@ -19,6 +20,10 @@ export const CartPage: React.FC = () => {
   const navigate = useNavigate();
   const selectedCount = cart.filter((item) => item.selected !== false).length;
   const selectedQuantity = cart.reduce((sum, item) => sum + (item.selected !== false ? item.quantity : 0), 0);
+  const [addresses, setAddresses] = useState<any[]>([]);
+  const [addressId, setAddressId] = useState<number | null>(null);
+  const { quote, loading: quoteLoading, error: quoteError, refresh } = useFreightQuote(cart.filter((item) => item.selected !== false), addressId);
+  useEffect(() => { if (user) apiFetch<any[]>('/api/addresses').then((rows) => { setAddresses(rows); setAddressId(rows.find((row) => row.isPrimary)?.id || rows[0]?.id || null); }).catch(() => {}); }, [user?.id, apiFetch]);
   const [storeClosed, setStoreClosed] = useState(false);
   const [storeClosedMessage, setStoreClosedMessage] = useState('A loja está fechada no momento.');
 
@@ -209,18 +214,16 @@ export const CartPage: React.FC = () => {
             <div className="flex items-center justify-between text-zinc-600">
               <span>Subtotal dos produtos</span>
               <span className="font-semibold text-zinc-900 tabular-nums">
-                {formatCurrency(cartSubtotal)}
+                {formatCurrency(quote?.totals.subtotal ?? cartSubtotal)}
               </span>
             </div>
-            <div className="flex items-center justify-between text-xs text-zinc-500">
-              <span>Entrega</span>
-              <span>Definida pelo endereço no checkout</span>
-            </div>
+            {user && <label className="block text-xs">Endereço para cotação<select aria-label="Endereço para cotação" value={addressId || ''} onChange={(e) => setAddressId(Number(e.target.value) || null)} className="mt-1 w-full rounded-lg border p-2"><option value="">Selecione um endereço</option>{addresses.map((address) => <option key={address.id} value={address.id}>{address.label} — {address.city}</option>)}</select></label>}
+            <FreightQuoteSummary quote={quote} loading={quoteLoading} error={quoteError} onRetry={async () => { if (addressId) { try { await apiFetch(`/api/addresses/${addressId}/recalculate`, { method: 'POST' }); } catch (error: any) { toast(error.message, 'error'); } } refresh(); }} />
           </div>
 
           <div className="flex items-center justify-between text-base font-bold text-zinc-900">
-            <span>Subtotal</span>
-            <span className="tabular-nums">{formatCurrency(cartSubtotal)}</span>
+            <span>{quote?.freight?.status === 'OK' ? 'Total' : 'Subtotal'}</span>
+            <span className="tabular-nums">{formatCurrency(quote?.totals.total ?? cartSubtotal)}</span>
           </div>
 
           <button
@@ -241,7 +244,7 @@ export const CartPage: React.FC = () => {
           </Link>
         </div>
       </div>
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-stone-200 bg-white/95 p-3 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] backdrop-blur lg:hidden"><div className="mx-auto flex max-w-[1100px] items-center justify-between gap-3"><div><div className="text-xs text-zinc-500">{selectedQuantity} unidade(s) selecionada(s)</div><div className="font-bold tabular-nums">{formatCurrency(cartSubtotal)}</div></div><button type="button" disabled={storeClosed || selectedCount === 0} onClick={() => navigate(user ? '/checkout' : '/login?redirect=/checkout')} className="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50">{selectedCount === 0 ? 'Selecione itens' : 'Fazer pedido'}<ArrowRight className="h-4 w-4" /></button></div></div>
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-stone-200 bg-white/95 p-3 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] backdrop-blur lg:hidden"><div className="mx-auto flex max-w-[1100px] items-center justify-between gap-3"><div><div className="text-xs text-zinc-500">{selectedQuantity} unidade(s) selecionada(s)</div><div className="font-bold tabular-nums">{formatCurrency(quote?.totals.subtotal ?? cartSubtotal)}</div></div><button type="button" disabled={storeClosed || selectedCount === 0} onClick={() => navigate(user ? '/checkout' : '/login?redirect=/checkout')} className="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50">{selectedCount === 0 ? 'Selecione itens' : 'Fazer pedido'}<ArrowRight className="h-4 w-4" /></button></div></div>
     </main>
   );
 };

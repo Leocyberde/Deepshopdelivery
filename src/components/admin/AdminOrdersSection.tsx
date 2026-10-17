@@ -39,17 +39,6 @@ interface AdminOrdersSectionProps {
   onOpenOrder: (order: any) => void;
   selectedAdminOrder: any | null;
   setSelectedAdminOrder: (ord: any | null) => void;
-  editingOrderFreight: boolean;
-  setEditingOrderFreight: (val: boolean) => void;
-  orderFreightKm: string;
-  setOrderFreightKm: (val: string) => void;
-  orderFreightFee: string;
-  setOrderFreightFee: (val: string) => void;
-  orderAlsoUpdateAddress: boolean;
-  setOrderAlsoUpdateAddress: (val: boolean) => void;
-  freightRule: { baseDistanceKm: number; baseFee: number; extraKmFee: number };
-  handleSaveOrderFreight: (e: React.FormEvent) => void;
-  handleSetOrderManualFreeDelivery: (orderId: number) => void;
   handleChangeOrderStatus: (orderId: number, newStatus: string, reason?: string) => void | boolean | Promise<void | boolean>;
   onRefreshOrders?: () => void;
 }
@@ -84,17 +73,6 @@ export const AdminOrdersSection: React.FC<AdminOrdersSectionProps> = ({
   onOpenOrder,
   selectedAdminOrder,
   setSelectedAdminOrder,
-  editingOrderFreight,
-  setEditingOrderFreight,
-  orderFreightKm,
-  setOrderFreightKm,
-  orderFreightFee,
-  setOrderFreightFee,
-  orderAlsoUpdateAddress,
-  setOrderAlsoUpdateAddress,
-  freightRule,
-  handleSaveOrderFreight,
-  handleSetOrderManualFreeDelivery,
   handleChangeOrderStatus,
   onRefreshOrders,
 }) => {
@@ -197,17 +175,6 @@ export const AdminOrdersSection: React.FC<AdminOrdersSectionProps> = ({
           }`}
         >
           Todos ({Number(ordersData.totalCount || 0)})
-        </button>
-        <button
-          type="button"
-          onClick={() => setOrderStatusFilter('PENDING_FREIGHT')}
-          className={`px-3 py-1.5 text-xs font-medium rounded-md whitespace-nowrap ${
-            orderStatusFilter === 'PENDING_FREIGHT'
-              ? 'bg-white text-zinc-900 shadow-xs'
-              : 'text-zinc-600'
-          }`}
-        >
-          Frete a Combinar / Aprovar
         </button>
         {ORDER_STATUS_LIST.map((st) => (
           <button
@@ -409,7 +376,7 @@ export const AdminOrdersSection: React.FC<AdminOrdersSectionProps> = ({
                           ? 'Grátis (R$ 0,00)'
                           : selectedAdminOrder.deliveryFee !== null
                           ? formatCurrency(selectedAdminOrder.deliveryFee)
-                          : 'A combinar'}
+                          : 'Legado sem frete'}
                       </span>
                     </div>
                     <div className="flex justify-between text-sm font-bold text-zinc-900 pt-1">
@@ -422,140 +389,7 @@ export const AdminOrdersSection: React.FC<AdminOrdersSectionProps> = ({
                 </div>
               </div>
 
-              {/* Definir ou Editar Frete Direto no Pedido (Seção 10.1 item 6 e Seção 14) */}
-              <div
-                className={`border rounded-lg p-4 space-y-3 ${
-                  selectedAdminOrder.deliveryFee === null &&
-                  (selectedAdminOrder.status === 'NEW' ||
-                    selectedAdminOrder.status === 'AWAITING_PAYMENT')
-                    ? 'bg-amber-50/70 border-amber-300'
-                    : 'bg-stone-50 border-stone-200'
-                }`}
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <h4 className="text-xs font-bold text-zinc-900">Frete deste Pedido</h4>
-                    <p className="text-[11px] text-zinc-600">
-                      {selectedAdminOrder.deliveryFee === null &&
-                      (selectedAdminOrder.status === 'NEW' ||
-                        selectedAdminOrder.status === 'AWAITING_PAYMENT')
-                        ? 'Defina o frete (ou Entrega Grátis) para liberar o pagamento ao cliente e iniciar o prazo de {paymentDeadlineLabel}.'
-                        : 'Defina o frete ou coloque Entrega Grátis (R$ 0,00) com 1 clique.'}
-                    </p>
-                  </div>
-                  {!editingOrderFreight && (
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleSetOrderManualFreeDelivery(selectedAdminOrder.id)}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-emerald-900 bg-emerald-50 border border-emerald-300 hover:bg-emerald-100 rounded-lg cursor-pointer"
-                      >
-                        <Truck className="w-3.5 h-3.5 text-emerald-700" />
-                        <span>Colocar Entrega Grátis (R$ 0,00)</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setOrderFreightKm(
-                            selectedAdminOrder.deliveryDistanceKm
-                              ? String(selectedAdminOrder.deliveryDistanceKm)
-                              : ''
-                          );
-                          setOrderFreightFee(
-                            selectedAdminOrder.deliveryFee
-                              ? String(selectedAdminOrder.deliveryFee)
-                              : ''
-                          );
-                          setEditingOrderFreight(true);
-                        }}
-                        className="px-3 py-1.5 text-xs font-semibold text-zinc-900 bg-white border border-stone-300 hover:bg-stone-100 rounded-lg"
-                      >
-                        {selectedAdminOrder.deliveryFee === null
-                          ? 'Definir Frete e Liberar Pagamento'
-                          : 'Editar Frete'}
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {editingOrderFreight && (
-                  <form
-                    onSubmit={handleSaveOrderFreight}
-                    className="border-t border-stone-200 pt-3 space-y-3"
-                  >
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <label className="block text-xs font-semibold text-zinc-700">
-                          Distância em km (opcional)
-                        </label>
-                        <input
-                          type="number"
-                          step="0.1"
-                          min="0"
-                          value={orderFreightKm}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setOrderFreightKm(val);
-                            const num = parseFloat(val);
-                            if (!isNaN(num) && num >= 0) {
-                              const sug =
-                                num <= freightRule.baseDistanceKm
-                                  ? freightRule.baseFee
-                                  : freightRule.baseFee +
-                                    (num - freightRule.baseDistanceKm) * freightRule.extraKmFee;
-                              setOrderFreightFee(sug.toFixed(2));
-                            }
-                          }}
-                          placeholder="Ex: 4.8"
-                          className="w-full px-3 py-1.5 text-xs bg-white border border-stone-300 rounded-lg font-mono"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="block text-xs font-semibold text-zinc-700">
-                          Valor do Frete (R$)
-                        </label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          required
-                          value={orderFreightFee}
-                          onChange={(e) => setOrderFreightFee(e.target.value)}
-                          placeholder="Ex: 8.50"
-                          className="w-full px-3 py-1.5 text-xs bg-white border border-stone-300 rounded-lg font-mono"
-                        />
-                      </div>
-                    </div>
-
-                    <label className="flex items-center gap-2 text-xs text-zinc-700 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={orderAlsoUpdateAddress}
-                        onChange={(e) => setOrderAlsoUpdateAddress(e.target.checked)}
-                      />
-                      <span>
-                        Também confirmar este frete no endereço do cliente para compras futuras
-                      </span>
-                    </label>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="submit"
-                        className="px-4 py-1.5 text-xs font-semibold text-white bg-zinc-900 rounded-lg"
-                      >
-                        Salvar, Liberar Pagamento e Iniciar {paymentDeadlineLabel}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setEditingOrderFreight(false)}
-                        className="px-3 py-1.5 text-xs text-zinc-600"
-                      >
-                        Cancelar
-                      </button>
-                    </div>
-                  </form>
-                )}
-              </div>
+              <div className="rounded-lg border p-4 text-xs text-zinc-600">Distância: {selectedAdminOrder.deliveryDistanceKm ?? 'indisponível'} km · Origem: {selectedAdminOrder.deliveryFeeSource || 'histórico'}<br />Frete somente leitura. Pedidos antigos sem frete são tratados pela ação com dry-run em Configurações → Frete.</div>
             </div>
 
             {/* Right: Status Control, Snapshot & History */}

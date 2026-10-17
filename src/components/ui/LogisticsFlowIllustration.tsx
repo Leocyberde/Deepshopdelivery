@@ -214,7 +214,7 @@ export const LogisticsFlowIllustration: React.FC = () => {
         <div className="text-[11px] leading-tight text-right">
           <div className="font-bold text-zinc-900">Na palma da mão em poucas horas</div>
           <div className="text-[#087BFF] font-semibold">
-            Delivery exclusivo: Região de Itatiba · Correios p/ outras cidades
+            Delivery exclusivo: Itatiba
           </div>
         </div>
       </div>

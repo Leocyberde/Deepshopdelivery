@@ -679,13 +679,12 @@ export function registerAdminPhase2Routes(app: Express) {
       const sort = typeof req.query.sort === 'string' ? req.query.sort : 'newest';
       const customerSorts: Record<string, any[]> = { newest: [desc(schema.users.id)], name_asc: [asc(schema.users.name), desc(schema.users.id)], name_desc: [desc(schema.users.name), desc(schema.users.id)] };
       if (!customerSorts[sort]) { res.status(400).json({ error: 'Ordenação de clientes inválida.' }); return; }
-      if (!['ALL', 'PENDING_FREIGHT', 'WITH_FREE_DELIVERY'].includes(segment)) { res.status(400).json({ error: 'Filtro de segmento de clientes inválido.' }); return; }
+      if (!['ALL', 'WITH_FREE_DELIVERY'].includes(segment)) { res.status(400).json({ error: 'Filtro de segmento de clientes inválido.' }); return; }
       if (!['ALL', 'ACTIVE', 'INACTIVE', 'BLOCKED'].includes(status) || !['ALL', 'PENDING', 'NONE'].includes(lgpd)) { res.status(400).json({ error: 'Filtro de clientes inválido.' }); return; }
       const filters: any[] = [eq(schema.users.role, 'CUSTOMER')];
       if (['ACTIVE', 'INACTIVE', 'BLOCKED'].includes(status)) filters.push(eq(schema.users.status, status));
       if (lgpd === 'PENDING') filters.push(isNotNull(schema.users.deletionRequestedAt));
       if (lgpd === 'NONE') filters.push(sql`${schema.users.deletionRequestedAt} IS NULL`);
-      if (segment === 'PENDING_FREIGHT') filters.push(sql`EXISTS (SELECT 1 FROM addresses a WHERE a.user_id = ${schema.users.id} AND a.delivery_fee_status = 'PENDING')`);
       if (segment === 'WITH_FREE_DELIVERY') filters.push(sql`${schema.users.freeDeliveryUntil} > NOW()`);
       if (search) {
         const pattern = `%${escapedLike(search)}%`;
@@ -769,30 +768,6 @@ export function registerAdminPhase2Routes(app: Express) {
     } catch (error) { logServerError('admin_customer_status_failed', error); res.status(500).json({ error: 'Não foi possível atualizar o cliente.' }); }
   });
 
-  app.put('/api/admin/customers/:id/free-delivery-period', requireAuth, requireAdmin, async (req: AuthRequest, res) => {
-    try {
-      const id = Number(req.params.id);
-      const days = Number(req.body?.days);
-      if (!Number.isSafeInteger(id) || id <= 0 || !Number.isSafeInteger(days) || days < 0 || days > 3650) {
-        res.status(400).json({ error: 'Informe uma quantidade de dias válida entre 0 e 3650.' });
-        return;
-      }
-      const [customer] = await db.select({ id: schema.users.id, name: schema.users.name })
-        .from(schema.users)
-        .where(and(eq(schema.users.id, id), eq(schema.users.role, 'CUSTOMER')));
-      if (!customer) { res.status(404).json({ error: 'Cliente não encontrado.' }); return; }
-      const until = days === 0 ? null : new Date(Date.now() + days * 24 * 60 * 60 * 1000);
-      const [updated] = await db.update(schema.users)
-        .set({ freeDeliveryUntil: until, updatedAt: new Date() })
-        .where(eq(schema.users.id, id))
-        .returning({ id: schema.users.id, freeDeliveryUntil: schema.users.freeDeliveryUntil });
-      logServerEvent('admin.customer.free_delivery_period.updated', 'info', { customerId: id, days, result: 'updated' });
-      res.json({ customerId: id, customerName: customer.name, days, freeDeliveryUntil: updated?.freeDeliveryUntil || null, message: days > 0 ? `Frete grátis liberado para ${customer.name} por ${days} dia(s).` : `Frete grátis por período removido de ${customer.name}.` });
-    } catch (error) {
-      logServerError('admin.customer.free_delivery_period.failed', error);
-      res.status(500).json({ error: 'Não foi possível atualizar o período de frete grátis.' });
-    }
-  });
   // O reset assistido permanece desativado até existir entrega verificável do código ao cliente.
   // Nunca retorna código, hash, token ou segredo ao painel administrativo.
   app.post('/api/admin/customers/:id/reset-code', requireAuth, requireAdmin, (_req, res) => {

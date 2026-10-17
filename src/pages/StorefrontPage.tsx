@@ -749,7 +749,7 @@ export const StorefrontPage: React.FC = () => {
               <span>Delivery exclusivo para a região de Itatiba por enquanto</span>
               <span aria-hidden="true"> · </span>
               <span className="text-stone-500 font-medium">
-                Outras cidades: envio pelos Correios via WhatsApp
+                Atendemos apenas Itatiba
               </span>
             </div>
 
@@ -764,7 +764,7 @@ export const StorefrontPage: React.FC = () => {
                 Lembrando que nosso delivery expresso atende apenas a região de Itatiba por
                 enquanto
               </strong>{' '}
-              (para outras cidades, enviamos através dos Correios — confira o valor no WhatsApp).
+              Atendemos apenas Itatiba.
             </p>
 
             <div className="flex flex-wrap items-center gap-3 pt-1">

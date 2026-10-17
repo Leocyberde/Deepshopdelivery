@@ -1,16 +1,18 @@
+import { createHmac } from 'node:crypto';
 import { isAdminRole } from '../governance.ts';
 import { logServerError, logServerEvent } from '../logger.ts';
 import { Express } from 'express';
 import { eq, desc, and, sql, inArray, count, type InferSelectModel } from 'drizzle-orm';
 import { db } from '../../db/index.ts';
 import * as schema from '../../db/schema.ts';
-import { calculateSuggestedFreight, resolveAddressFreight } from '../../services/freightService.ts';
+import { freightForSavedAddress, requireAvailableFreight, FreightError } from '../services/geoService.ts';
+import { isServedAddress } from '../../services/freightService.ts';
 import {
   buildOrderWhatsAppMessage,
   buildRefundWhatsAppMessage,
   buildWhatsAppLink,
 } from '../../utils/whatsapp.ts';
-import { AuthRequest, requireAuth } from '../middleware/auth.ts';
+import { AuthRequest, requireAuth, JWT_SECRET } from '../middleware/auth.ts';
 import {
   CUSTOMER_CANCELLABLE_STATUSES,
   PAID_ORDER_STATUSES,
@@ -87,21 +89,44 @@ import { getCurrentStoreState } from '../services/storeStatusService.ts';
 import { notifyNewOrder } from '../services/orderNotificationService.ts';
 
 const notPaymentExpiredOrder = () => sql`COALESCE(${schema.orders.cancellationReason}, '') NOT LIKE ${PAYMENT_TIMEOUT_REASON_PREFIX + '%'} AND COALESCE(${schema.orders.cancellationReason}, '') NOT LIKE ${LEGACY_PAYMENT_TIMEOUT_REASON_PREFIX + '%'}`;
+function quoteToken(userId: number, addressId: number, items: any[], subtotal: number, freight: any) {
+  const merged = new Map<number, any>();
+  for (const item of items) {
+    const id = Number(item.productId), previous = merged.get(id);
+    if (previous) previous.quantity += Number(item.quantity);
+    else merged.set(id, { productId: id, quantity: Number(item.quantity), receiveAllAsPreorder: Boolean(item.receiveAllAsPreorder) });
+  }
+  const payload = { userId, addressId, items: [...merged.values()].sort((a,b) => a.productId - b.productId), subtotal, distanceKm: freight.distanceKm, fee: freight.finalFee, source: freight.source, normalFee: freight.normalFee };
+  return createHmac('sha256', JWT_SECRET).update(JSON.stringify(payload)).digest('hex');
+}
 export function registerOrderRoutes(app: Express) {
   app.post('/api/cart/quote', requireAuth, async (req: AuthRequest, res) => {
     try {
-      if (!Array.isArray(req.body?.items) || req.body.items.length === 0) {
+      if (!Array.isArray(req.body?.items) || req.body.items.length === 0 || req.body.items.length > 50) {
         res.status(400).json({ error: 'Informe os itens para cotação.' });
         return;
       }
       const settings = await getSettingsMap();
       const maxQty = Math.max(1, Number(settings.max_qty_per_item || 20));
-      const products = await db.select().from(schema.products).where(sql`${schema.products.id} = ANY(${req.body.items.map((i: any) => Number(i.productId)).filter((id: number) => Number.isSafeInteger(id))})`);
+      const productIds = req.body.items
+        .map((i: any) => Number(i?.productId))
+        .filter((id: number) => Number.isSafeInteger(id) && id > 0);
+      const products = productIds.length
+        ? await db.select().from(schema.products).where(inArray(schema.products.id, productIds))
+        : [];
       const byId = new Map(products.map((p) => [p.id, p]));
+      const quoteItems = new Map<number, any>();
+      for (const raw of req.body.items) {
+        const productId = Number(raw?.productId), quantity = Number(raw?.quantity);
+        if (!Number.isSafeInteger(productId) || !Number.isSafeInteger(quantity) || quantity < 1) { res.status(400).json({ error: 'Item inválido.' }); return; }
+        const existing = quoteItems.get(productId);
+        if (existing) existing.quantity += quantity;
+        else quoteItems.set(productId, { ...raw, productId, quantity });
+      }
       const lines: Array<Record<string, unknown>> = [];
       let deliverySubtotal = 0;
       let preorderSubtotal = 0;
-      for (const raw of req.body.items) {
+      for (const raw of quoteItems.values()) {
         const productId = Number(raw?.productId);
         const quantity = Number(raw?.quantity);
         if (!Number.isSafeInteger(productId) || !Number.isSafeInteger(quantity) || quantity < 1 || quantity > maxQty) {
@@ -109,7 +134,7 @@ export function registerOrderRoutes(app: Express) {
           return;
         }
         const product = byId.get(productId);
-        if (!product || product.status !== 'ACTIVE' || (product.stock <= 0 && !product.allowPreorder)) {
+        if (!product || product.status !== 'ACTIVE' || ((product.stock < quantity || raw.receiveAllAsPreorder) && !product.allowPreorder)) {
           res.status(409).json({ error: 'Um produto da cotação não está mais disponível.' });
           return;
         }
@@ -124,11 +149,19 @@ export function registerOrderRoutes(app: Express) {
         deliverySubtotal += deliveryLine; preorderSubtotal += preorderLine;
         lines.push({ productId, quantity, deliveryQty: split.deliveryQty, preorderQty: split.preorderQty, deliveryPromoQty, preorderPromoQty, deliverySubtotal: deliveryLine.toFixed(2), preorderSubtotal: preorderLine.toFixed(2), unitPrice: blendedUnitPrice.toFixed(2), receiveAllAsPreorder: Boolean(raw.receiveAllAsPreorder) });
       }
-      // O cliente nunca define o frete. Nesta etapa a cotação sem endereço é apenas dos produtos;
-      // o frete definitivo é recalculado no servidor durante a criação do pedido.
-      const totals = calculateOrderPartTotals(deliverySubtotal, preorderSubtotal, 0);
-      res.json({ lines, totals, promises: buildFulfillmentPromises(settings), quotedAt: new Date().toISOString(), maxQtyPerItem: maxQty });
+      let freight = null;
+      if (req.body.addressId !== undefined && req.body.addressId !== null) {
+        const id = Number(req.body.addressId);
+        if (!Number.isSafeInteger(id) || id <= 0) { res.status(400).json({ error: 'Endereço inválido.' }); return; }
+        const [address] = await db.select().from(schema.addresses).where(and(eq(schema.addresses.id, id), eq(schema.addresses.userId, req.user!.id)));
+        if (!address) { res.status(404).json({ error: 'Endereço não encontrado.' }); return; }
+        const [customer] = await db.select({ until: schema.users.freeDeliveryUntil }).from(schema.users).where(eq(schema.users.id, req.user!.id));
+        freight = freightForSavedAddress(address, settings, Number((deliverySubtotal + preorderSubtotal).toFixed(2)), customer?.until);
+      }
+      const totals = calculateOrderPartTotals(deliverySubtotal, preorderSubtotal, freight?.finalFee || 0);
+      res.json({ lines, totals, freight, quoteToken: freight?.status === 'OK' ? quoteToken(req.user!.id, Number(req.body.addressId), req.body.items, totals.subtotal, freight) : null, promises: buildFulfillmentPromises(settings), quotedAt: new Date().toISOString(), maxQtyPerItem: maxQty });
     } catch (error) {
+      if (error instanceof FreightError) { res.status(error.status).json({ error: error.message, code: error.code }); return; }
       logServerError('cart.quote.failed', error);
       const message = error instanceof Error ? error.message : '';
       res.status(message ? 400 : 500).json({ error: message || 'Erro ao cotar a sacola.' });
@@ -197,10 +230,11 @@ export function registerOrderRoutes(app: Express) {
         );
 
       if (!address) {
-        res.status(400).json({ error: 'Endereço inválido ou não pertence à sua conta.' });
+        res.status(404).json({ error: 'Endereço inválido ou não pertence à sua conta.' });
         return;
       }
 
+      if (!isServedAddress(address)) { res.status(422).json({ error: 'Atendemos apenas Itatiba', code: 'CITY_NOT_SERVED' }); return; }
       if (idempotencyKey) {
         const [previousOrder] = await db.select().from(schema.orders).where(eq(schema.orders.idempotencyKey, idempotencyKey));
         if (previousOrder) {
@@ -301,6 +335,7 @@ export function registerOrderRoutes(app: Express) {
         }
 
         for (const rawItem of mergedItemsMap.values()) {
+          if (rawItem.quantity > Math.max(1, Number(settingsMap.max_qty_per_item || 20))) throw new Error('A quantidade máxima por produto é 99 unidades.');
           const prodId = rawItem.productId;
           const qty = rawItem.quantity;
 
@@ -352,47 +387,14 @@ export function registerOrderRoutes(app: Express) {
           pushPart(deliveryQty, 'DELIVERY', deliveryPromoQty);
           pushPart(split.preorderQty, 'PREORDER', preorderPromoQty);
         }
-        const evaluatedFreight = resolveAddressFreight(address);
-        const freightRule = await getFreightRuleConfig();
-        const automaticFreight = evaluatedFreight.isItatiba && evaluatedFreight.status !== 'CONFIRMED'
-          ? (() => {
-              const distanceKm = evaluatedFreight.distanceKm ?? freightRule.baseDistanceKm;
-              const fee = calculateSuggestedFreight(distanceKm, freightRule);
-              return {
-                ...evaluatedFreight,
-                status: 'CONFIRMED' as const,
-                distanceKm,
-                fee,
-                source: 'AUTO',
-                customerMessage: `Delivery automático para Itatiba — Frete: R$ ${fee.toFixed(2).replace('.', ',')}`,
-              };
-            })()
-          : evaluatedFreight;
-        const [customerPromotion] = await tx
-          .select({ freeDeliveryUntil: schema.users.freeDeliveryUntil })
-          .from(schema.users)
-          .where(eq(schema.users.id, req.user!.id));
-        const manualPeriodFreeDelivery = Boolean(
-          customerPromotion?.freeDeliveryUntil && customerPromotion.freeDeliveryUntil > new Date()
-        );
-        const deliveryDistanceStr =
-            automaticFreight.status === 'CONFIRMED' && automaticFreight.distanceKm !== null
-              ? automaticFreight.distanceKm.toFixed(2)
-              : null;
-
-        let deliveryFeeStr: string | null;
-        let deliveryFeeSource: string;
-
-        if (manualPeriodFreeDelivery) {
-          deliveryFeeStr = '0.00';
-          deliveryFeeSource = 'MANUAL_FREE_DELIVERY_PERIOD';
-        } else {
-          deliveryFeeStr =
-            automaticFreight.status === 'CONFIRMED' && automaticFreight.fee !== null
-              ? automaticFreight.fee.toFixed(2)
-              : null;
-          deliveryFeeSource = automaticFreight.status === 'CONFIRMED' ? 'AUTO' : 'MANUAL';
-        }
+        const [customerPromotion] = await tx.select({ freeDeliveryUntil: schema.users.freeDeliveryUntil }).from(schema.users).where(eq(schema.users.id, req.user!.id));
+        const [currentAddress] = await tx.select().from(schema.addresses).where(and(eq(schema.addresses.id, address.id), eq(schema.addresses.userId, req.user!.id))).for('share');
+        if (!currentAddress) throw new FreightError('NOT_FOUND', 404, 'Endereço não encontrado.');
+        const freight = requireAvailableFreight(freightForSavedAddress(currentAddress, settingsMap, subtotalNum, customerPromotion?.freeDeliveryUntil));
+        if (req.body.quoteToken !== undefined && req.body.quoteToken !== quoteToken(req.user!.id, address.id, items, subtotalNum, freight)) throw new FreightError('QUOTE_CHANGED', 409, 'A cotação mudou. Atualize o resumo e confirme novamente.');
+        const deliveryDistanceStr = freight.distanceKm!.toFixed(2);
+        const deliveryFeeStr = freight.finalFee!.toFixed(2);
+        const deliveryFeeSource = freight.source;
 
         const totalNum =
           deliveryFeeStr !== null
@@ -401,8 +403,7 @@ export function registerOrderRoutes(app: Express) {
 
         const changeForStr: string | null = null;
 
-        // Se o frete já for conhecido ou grátis, o pagamento já fica liberado com cronômetro de 1h.
-        // Se o frete estiver "Em análise" (null), aguarda o Admin definir o frete para iniciar o cronômetro de 1h.
+        // New orders always have computed freight and payment deadline; null is legacy only.
         const paymentReleased = deliveryFeeStr !== null;
         const paymentExpiresAt = paymentReleased
           ? computePaymentExpiresAt(deadlineHours)
@@ -411,18 +412,18 @@ export function registerOrderRoutes(app: Express) {
         const orderNumber = await getNextGlobalOrderNumber(tx);
 
         const addressSnapshot: schema.AddressSnapshot = {
-          id: address.id,
-          label: address.label,
-          zipCode: address.zipCode,
-          street: address.street,
-          number: address.number,
-          complement: address.complement,
-          neighborhood: address.neighborhood,
-          city: address.city,
-          state: address.state,
-          reference: address.reference,
-          deliveryOrigin: address.deliveryOrigin,
-          deliveryNotes: address.deliveryNotes,
+          id: currentAddress.id,
+          label: currentAddress.label,
+          zipCode: currentAddress.zipCode,
+          street: currentAddress.street,
+          number: currentAddress.number,
+          complement: currentAddress.complement,
+          neighborhood: currentAddress.neighborhood,
+          city: currentAddress.city,
+          state: currentAddress.state,
+          reference: currentAddress.reference,
+          deliveryOrigin: currentAddress.deliveryOrigin,
+          deliveryNotes: currentAddress.deliveryNotes,
         };
 
         const [newOrder] = await tx
@@ -577,6 +578,7 @@ export function registerOrderRoutes(app: Express) {
         whatsappUrl,
       });
     } catch (error: any) {
+      if (error instanceof FreightError) { res.status(error.status).json({ error: error.message, code: error.code }); return; }
       const rawRetryKey = req.get('Idempotency-Key') ?? req.body?.idempotencyKey;
       const retryKey = rawRetryKey === undefined || rawRetryKey === null ? null : String(rawRetryKey).trim();
       if (retryKey) {

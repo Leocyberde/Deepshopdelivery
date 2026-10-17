@@ -138,7 +138,7 @@ export const AuthPage: React.FC = () => {
         if (found.state) setRegState(found.state);
         const cityCheckMsg = isItatibaCity(found.city)
           ? 'Cidade: Itatiba — Temos delivery! Informe o número da residência.'
-          : `Cidade: ${found.city}/${found.state} — Entrega através dos Correios (conferir valor no WhatsApp).`;
+          : `Cidade: ${found.city}/${found.state} — Atendemos apenas Itatiba.`;
         setRegCepFeedback(`Endereço preenchido automaticamente! ${cityCheckMsg}`);
       } else {
         setRegCepFeedback('CEP não encontrado automaticamente. Preencha os campos manualmente.');
@@ -658,7 +658,7 @@ export const AuthPage: React.FC = () => {
                     </span>
                   ) : (
                     <span>
-                      <strong>Cidade fora de Itatiba ({regCity.trim()}):</strong> Entrega através dos Correios — conferir valor no WhatsApp.
+                      <strong>Cidade fora de Itatiba ({regCity.trim()}):</strong> Atendemos apenas Itatiba.
                     </span>
                   )}
                 </div>
