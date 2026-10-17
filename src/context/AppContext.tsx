@@ -544,7 +544,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => window.removeEventListener('focus', onFocus);
   }, [syncCartWithStorefront]);
 
-  const cartCount = cart.reduce((acc, item) => acc + item.quantity, 0);
+  // O indicador da sacola representa produtos distintos; a quantidade continua
+  // sendo usada separadamente no subtotal e no checkout.
+  const cartCount = cart.length;
   const cartSubtotal = Number((cart.reduce((acc, item) => {
     if (item.selected === false) return acc;
     const pricing = calculatePromoLinePricing({

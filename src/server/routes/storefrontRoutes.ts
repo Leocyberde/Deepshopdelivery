@@ -13,6 +13,9 @@ import {
 import { expireOverdueUnpaidOrders } from '../services/orderExpirationService.ts';
 import { getStoreState } from '../services/storeStatusService.ts';
 import { buildFulfillmentPromises } from '../services/fulfillmentPromises.ts';
+import { savedDistance } from '../services/geoService.ts';
+import { freightRulesFromSettings } from '../services/freightConfig.ts';
+import { computeOrderFreight } from '../../services/freightService.ts';
 
 export function registerStorefrontRoutes(app: Express) {
   app.get('/api/storefront', async (req, res) => {
@@ -31,6 +34,12 @@ export function registerStorefrontRoutes(app: Express) {
 
       const allStores = await db.select().from(schema.stores);
       const store = allStores[0] || null;
+
+      const [primaryAddress] = optUser?.role === 'CUSTOMER'
+        ? await db.select().from(schema.addresses)
+            .where(and(eq(schema.addresses.userId, optUser.id), eq(schema.addresses.isPrimary, true)))
+            .limit(1)
+        : [];
 
       const activeCategories = await db
         .select()
@@ -98,12 +107,28 @@ export function registerStorefrontRoutes(app: Express) {
 
       const settingsMap = await getSettingsMap();
       const storeState = getStoreState(settingsMap);
+      const automaticFreight = primaryAddress
+        ? computeOrderFreight({
+            distanceKm: savedDistance(primaryAddress, settingsMap),
+            itemsSubtotal: 0,
+            rules: freightRulesFromSettings(settingsMap),
+          })
+        : null;
+      const automaticFreeDeliveryActive = automaticFreight?.status === 'OK'
+        && automaticFreight.finalFee === 0
+        && automaticFreight.source.startsWith('FREE_BAND_');
 
       res.json({
         store,
         categories: activeCategories,
         products: visibleProducts,
         manualFreeDeliveryActive,
+        deliveryPromotion: {
+          automaticFreeDeliveryActive,
+          manualFreeDeliveryActive,
+          distanceKm: automaticFreight?.distanceKm ?? null,
+          minimumRequired: automaticFreight?.minimumRequired ?? null,
+        },
         fulfillment: buildFulfillmentPromises(settingsMap),
         settings: {
           whatsappNumber: settingsMap.whatsapp_number || '',

@@ -19,7 +19,6 @@ export const CartPage: React.FC = () => {
   } = useApp();
   const navigate = useNavigate();
   const selectedCount = cart.filter((item) => item.selected !== false).length;
-  const selectedQuantity = cart.reduce((sum, item) => sum + (item.selected !== false ? item.quantity : 0), 0);
   const [addresses, setAddresses] = useState<any[]>([]);
   const [addressId, setAddressId] = useState<number | null>(null);
   const { quote, loading: quoteLoading, error: quoteError, refresh } = useFreightQuote(cart.filter((item) => item.selected !== false), addressId);
@@ -207,7 +206,7 @@ export const CartPage: React.FC = () => {
         </div>
 
         {/* Summary Box */}
-        <div className="hidden lg:block lg:col-span-4 bg-white border border-stone-200 rounded-xl p-6 space-y-5">
+        <div className="block lg:col-span-4 bg-white border border-stone-200 rounded-xl p-6 space-y-5">
           <h2 className="text-base font-bold text-zinc-900">Resumo do Pedido</h2>
 
           <div className="space-y-2.5 text-sm border-b border-stone-200 pb-4">
@@ -232,7 +231,7 @@ export const CartPage: React.FC = () => {
             onClick={() => navigate(user ? '/checkout' : '/login?redirect=/checkout')}
             className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 rounded-lg transition-colors whitespace-nowrap disabled:opacity-50"
           >
-            <span>{storeClosed ? 'Checkout indisponível — loja fechada' : selectedCount === 0 ? 'Selecione ao menos um item' : user ? 'Fazer pedido' : 'Entrar para Finalizar Pedido'}</span>
+            <span>{storeClosed ? 'Checkout indisponível — loja fechada' : selectedCount === 0 ? 'Selecione ao menos um item' : user ? 'Comprar agora' : 'Entrar para comprar'}</span>
             <ArrowRight className="w-4 h-4" />
           </button>
 
@@ -244,7 +243,6 @@ export const CartPage: React.FC = () => {
           </Link>
         </div>
       </div>
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-stone-200 bg-white/95 p-3 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] backdrop-blur lg:hidden"><div className="mx-auto flex max-w-[1100px] items-center justify-between gap-3"><div><div className="text-xs text-zinc-500">{selectedQuantity} unidade(s) selecionada(s)</div><div className="font-bold tabular-nums">{formatCurrency(quote?.totals.subtotal ?? cartSubtotal)}</div></div><button type="button" disabled={storeClosed || selectedCount === 0} onClick={() => navigate(user ? '/checkout' : '/login?redirect=/checkout')} className="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50">{selectedCount === 0 ? 'Selecione itens' : 'Fazer pedido'}<ArrowRight className="h-4 w-4" /></button></div></div>
     </main>
   );
 };

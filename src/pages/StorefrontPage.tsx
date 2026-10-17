@@ -68,6 +68,13 @@ interface Product {
   images?: ProductMediaItem[];
 }
 
+interface DeliveryPromotion {
+  automaticFreeDeliveryActive: boolean;
+  manualFreeDeliveryActive: boolean;
+  distanceKm: number | null;
+  minimumRequired: number | null;
+}
+
 export const StorefrontPage: React.FC = () => {
   const {
     apiFetch,
@@ -83,6 +90,7 @@ export const StorefrontPage: React.FC = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [promises, setPromises] = useState<{ deliveryPromise: string | null; preorderWindow: string } | null>(null);
+  const [deliveryPromotion, setDeliveryPromotion] = useState<DeliveryPromotion | null>(null);
   const [loading, setLoading] = useState(true);
   const [storeState, setStoreState] = useState<any>(null);
   const [selectedCategory, setSelectedCategory] = useState<number | 'ALL'>('ALL');
@@ -128,6 +136,7 @@ export const StorefrontPage: React.FC = () => {
         setCategories(Array.isArray(data?.categories) ? data.categories : []);
         setProducts(loadedProducts);
         setPromises(data?.fulfillment || null);
+        setDeliveryPromotion(data?.deliveryPromotion || null);
         setStoreState(data?.settings?.store || null);
         const validIds = new Set(loadedProducts.map((p) => p.id));
         cart.forEach((item) => {
@@ -673,6 +682,12 @@ export const StorefrontPage: React.FC = () => {
                             </span>
                           )}
                         </div>
+
+                        {(deliveryPromotion?.automaticFreeDeliveryActive || deliveryPromotion?.manualFreeDeliveryActive) && (
+                          <div className="mt-1 text-[10px] sm:text-[11px] font-semibold text-emerald-700">
+                            Frete grátis para seu endereço
+                          </div>
+                        )}
 
                         {/* Linha de Entrega Rápida e Estoque */}
                         <div className="mt-1 flex items-center justify-between gap-1 text-[10px] sm:text-[11px] text-zinc-500">
