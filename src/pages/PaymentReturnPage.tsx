@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, ArrowLeft, CheckCircle2, Clock3, LogIn, RefreshCw } from 'lucide-react';
-import { Link, useLocation, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp } from '../context/AppContext.tsx';
 
 type PaymentSummary = {
@@ -84,6 +84,7 @@ function paymentLabel(status: string | undefined) {
 export const PaymentReturnPage: React.FC = () => {
   const { user, apiFetch } = useApp();
   const location = useLocation();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const kind = kindFromPath(location.pathname);
   const config = KIND_CONFIG[kind];
@@ -93,6 +94,7 @@ export const PaymentReturnPage: React.FC = () => {
   const [confirmation, setConfirmation] = useState<PaymentConfirmation | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
+  const redirectScheduledRef = useRef(false);
 
   const verifyPayment = useCallback(async () => {
     if (!Number.isSafeInteger(orderId) || orderId <= 0) {
@@ -114,14 +116,18 @@ export const PaymentReturnPage: React.FC = () => {
       const current = await apiFetch<OrderSnapshot>(`/api/orders/${orderId}`);
       setSnapshot(current);
 
-      // O parâmetro da URL nunca é prova de pagamento. Quando há um ID, o backend
-      // consulta o Mercado Pago e valida propriedade, referência, valor e moeda.
-      if (paymentId && current.payment?.provider === 'MERCADOPAGO') {
+      // A URL pode não trazer payment_id no fluxo Orders API. O backend usa o
+      // providerOrderId salvo no pedido e valida propriedade, referência, valor e moeda.
+      if (current.payment?.provider === 'MERCADOPAGO') {
         const verified = await apiFetch<PaymentConfirmation>(`/api/orders/${orderId}/payments/confirm`, {
           method: 'POST',
-          body: JSON.stringify({ paymentId }),
+          body: JSON.stringify(paymentId ? { paymentId } : {}),
         });
         setConfirmation(verified);
+        if (!redirectScheduledRef.current && (verified.orderStatus === 'PAID' || verified.payment?.status === 'PAID')) {
+          redirectScheduledRef.current = true;
+          window.setTimeout(() => navigate(`/minha-conta/pedidos?orderId=${orderId}`, { replace: true }), 1200);
+        }
       } else {
         setConfirmation(null);
       }
@@ -130,10 +136,20 @@ export const PaymentReturnPage: React.FC = () => {
     } finally {
       setChecking(false);
     }
-  }, [apiFetch, orderId, paymentId, user]);
+  }, [apiFetch, navigate, orderId, paymentId, user]);
 
   useEffect(() => {
     void verifyPayment();
+    if (!user || !Number.isSafeInteger(orderId) || orderId <= 0) return;
+    const startedAt = Date.now();
+    const timer = window.setInterval(() => {
+      if (Date.now() - startedAt >= 60_000) {
+        window.clearInterval(timer);
+        return;
+      }
+      void verifyPayment();
+    }, 3000);
+    return () => window.clearInterval(timer);
   }, [verifyPayment]);
 
   const payment = confirmation?.payment || snapshot?.payment || null;

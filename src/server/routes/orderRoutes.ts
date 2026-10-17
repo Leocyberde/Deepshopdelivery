@@ -29,6 +29,8 @@ import { expireOverdueUnpaidOrders, PAYMENT_TIMEOUT_REASON_PREFIX, LEGACY_PAYMEN
 import { calculateFulfillmentSplit, calculatePreorderWindow, calculateOrderPartTotals } from '../../utils/fulfillmentDates.ts';
 import { buildFulfillmentPromises } from '../services/fulfillmentPromises.ts';
 
+const DELIVERY_PROMISE_MINUTES = 180;
+
 function getSafeOrderBusinessError(error: unknown): string | null {
   const message = error instanceof Error ? error.message : '';
   if (!message || message.length > 400) return null;
@@ -247,10 +249,6 @@ export function registerOrderRoutes(app: Express) {
         });
         return;
       }
-      const normalizedDeliveryMode = null;
-      const normalizedDeliveryMinutes = null;
-      const estimatedDeliveryAt = null;
-      const scheduledDeliveryAt = null;
       const deadlineHours = Math.max(
         0.1,
         parseFloat(settingsMap.payment_deadline_hours || '0.5') || 0.5
@@ -371,6 +369,12 @@ export function registerOrderRoutes(app: Express) {
         const paymentExpiresAt = paymentReleased
           ? computePaymentExpiresAt(deadlineHours)
           : null;
+        const normalizedDeliveryMode = hasDeliveryPart ? 'FAST' : null;
+        const normalizedDeliveryMinutes = hasDeliveryPart ? DELIVERY_PROMISE_MINUTES : null;
+        const estimatedDeliveryAt = hasDeliveryPart
+          ? new Date(Date.now() + DELIVERY_PROMISE_MINUTES * 60_000)
+          : null;
+        const scheduledDeliveryAt = null;
 
         const orderNumber = await getNextGlobalOrderNumber(tx);
 

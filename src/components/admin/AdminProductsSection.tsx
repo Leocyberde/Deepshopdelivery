@@ -865,6 +865,9 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
                 <span className="mt-1 block text-[10px] text-zinc-500">Custo por unidade: {formatCurrency((Number(String(prodCost || 0).replace(',', '.')) || 0) / Math.max(1, Number(prodCostLotUnits) || Number(prodStock) || 1))} (total ÷ unidades).</span>
               </label>}
               {prodCostMode === 'unit' && <span className="text-[10px] text-zinc-500">Quanto pagou por uma unidade.</span>}
+              <p className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] leading-relaxed text-sky-950">
+                Alterar este custo apenas atualiza o custo cadastrado e não adiciona unidades ao estoque. O estoque só muda quando o saldo atual for alterado e confirmado como uma nova entrada.
+              </p>
             </div>
 
             {!(!editingProd && formMode === 'KIT') && <>

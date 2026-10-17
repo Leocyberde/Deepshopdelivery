@@ -31,7 +31,7 @@ import {
 } from '../context/AppContext.tsx';
 import { buildRefundWhatsAppMessage, buildWhatsAppLink } from '../utils/whatsapp.ts';
 import { LEGAL_VERSION } from '../config/legal.ts';
-import { formatDeliveryDateTime } from '../utils/deliverySchedule.ts';
+import { formatDeliveryDateTime, formatDeliveryTime } from '../utils/deliverySchedule.ts';
 
 interface AddressItem {
   id: number;
@@ -1075,11 +1075,11 @@ export const CustomerAccountPage: React.FC = () => {
                             <div className="p-3.5 bg-white border border-stone-200 rounded-lg text-xs text-zinc-700 space-y-1">
                               <div className="font-semibold text-zinc-900">Prazo de entrega</div>
                               {order.deliveryMode === 'FAST' && order.deliveryMinutes && order.estimatedDeliveryAt ? (
-                                <div>Em até {order.deliveryMinutes} minutos — previsão até {formatDeliveryDateTime(order.estimatedDeliveryAt)}</div>
+                                <div>Seu pedido chegará até às {formatDeliveryTime(order.estimatedDeliveryAt)}</div>
                               ) : order.deliveryMode === 'SCHEDULED' && order.scheduledDeliveryAt ? (
                                 <div>Agendado para {formatDeliveryDateTime(order.scheduledDeliveryAt)}</div>
                               ) : (
-                                <div className="text-zinc-500">Prazo não informado neste pedido antigo.</div>
+                                <div className="text-zinc-500">O prazo de entrega será informado pela loja.</div>
                               )}
                             </div>
 
