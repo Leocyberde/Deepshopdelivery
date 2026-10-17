@@ -216,7 +216,7 @@ export const CartPage: React.FC = () => {
                 {formatCurrency(quote?.totals.subtotal ?? cartSubtotal)}
               </span>
             </div>
-            {user && <label className="block text-xs">Endereço para cotação<select aria-label="Endereço para cotação" value={addressId || ''} onChange={(e) => setAddressId(Number(e.target.value) || null)} className="mt-1 w-full rounded-lg border p-2"><option value="">Selecione um endereço</option>{addresses.map((address) => <option key={address.id} value={address.id}>{address.label} — {address.city}</option>)}</select></label>}
+            {user && <label className="block text-xs">Endereço para cotação<select aria-label="Endereço para cotação" value={addressId || ''} onChange={(e) => setAddressId(Number(e.target.value) || null)} className="mt-1 w-full rounded-lg border p-2"><option value="">Selecione um endereço</option>{addresses.map((address) => <option key={address.id} value={address.id}>{address.label} — {address.street}, {address.number} — {address.neighborhood}, {address.city}/{address.state}</option>)}</select></label>}
             <FreightQuoteSummary quote={quote} loading={quoteLoading} error={quoteError} onRetry={async () => { if (addressId) { try { await apiFetch(`/api/addresses/${addressId}/recalculate`, { method: 'POST' }); } catch (error: any) { toast(error.message, 'error'); } } refresh(); }} />
           </div>
 

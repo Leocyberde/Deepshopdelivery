@@ -26,12 +26,6 @@ import {
 } from '../services/storeHelpers.ts';
 import { recordInventoryMovement } from '../services/inventoryService.ts';
 import { expireOverdueUnpaidOrders, PAYMENT_TIMEOUT_REASON_PREFIX, LEGACY_PAYMENT_TIMEOUT_REASON_PREFIX } from '../services/orderExpirationService.ts';
-import {
-  getFastDeliveryEstimate,
-  isDeliveryMinutes,
-  parseScheduledDelivery,
-  type DeliveryMinutes,
-} from '../../utils/deliverySchedule.ts';
 import { calculateFulfillmentSplit, calculatePreorderWindow, calculateOrderPartTotals } from '../../utils/fulfillmentDates.ts';
 import { buildFulfillmentPromises } from '../services/fulfillmentPromises.ts';
 
@@ -47,10 +41,6 @@ function getSafeOrderBusinessError(error: unknown): string | null {
     'Estoque insuficiente para reservar "',
     'Informe um valor para troco válido.',
     'O valor para troco (R$ ',
-    'Escolha uma opção de prazo válida.',
-    'Escolha uma data e um horário válidos para o agendamento.',
-    'O agendamento deve ser feito para uma data e horário futuros.',
-    'O horário escolhido está fora da disponibilidade da loja.',
   ];
   return safePrefixes.some((prefix) => message.startsWith(prefix)) ? message : null;
 }
@@ -190,10 +180,6 @@ export function registerOrderRoutes(app: Express) {
         items,
         notes,
         paymentMethod,
-        deliveryMode,
-        deliveryMinutes,
-        scheduledDate,
-        scheduledTime,
       } = req.body;
       const rawIdempotencyKey = req.get('Idempotency-Key') ?? req.body.idempotencyKey;
       const idempotencyKey = rawIdempotencyKey === undefined || rawIdempotencyKey === null
@@ -261,33 +247,10 @@ export function registerOrderRoutes(app: Express) {
         });
         return;
       }
-      const normalizedDeliveryMode = String(deliveryMode || '').toUpperCase();
-      let normalizedDeliveryMinutes: DeliveryMinutes | null = null;
-      let estimatedDeliveryAt: Date | null = null;
-      let scheduledDeliveryAt: Date | null = null;
-      if (normalizedDeliveryMode === 'FAST') {
-        if (!isDeliveryMinutes(deliveryMinutes)) {
-          res.status(400).json({ error: 'Escolha uma opção de prazo válida.' });
-          return;
-        }
-        normalizedDeliveryMinutes = Number(deliveryMinutes) as DeliveryMinutes;
-        estimatedDeliveryAt = getFastDeliveryEstimate(
-          new Date(),
-          normalizedDeliveryMinutes,
-          storeState.hours,
-          storeState.timezone,
-        );
-      } else if (normalizedDeliveryMode === 'SCHEDULED') {
-        scheduledDeliveryAt = parseScheduledDelivery(
-          scheduledDate,
-          scheduledTime,
-          storeState.hours,
-          storeState.timezone,
-        );
-      } else {
-        res.status(400).json({ error: 'Escolha uma opção de prazo válida.' });
-        return;
-      }
+      const normalizedDeliveryMode = null;
+      const normalizedDeliveryMinutes = null;
+      const estimatedDeliveryAt = null;
+      const scheduledDeliveryAt = null;
       const deadlineHours = Math.max(
         0.1,
         parseFloat(settingsMap.payment_deadline_hours || '0.5') || 0.5

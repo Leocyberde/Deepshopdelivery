@@ -31,7 +31,6 @@ export const FreightQuoteSummary: React.FC<{ quote: FreightQuote | null; error?:
   if (error || (freight && freight.status !== 'OK')) return <div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900"><p>{error || freight?.message || 'Não conseguimos calcular o frete agora'}</p>{onRetry && freight?.status !== 'OUT_OF_DELIVERY_AREA' && <button type="button" onClick={onRetry} className="mt-2 font-semibold underline">Tentar novamente</button>}</div>;
   if (!freight) return <p className="text-xs text-zinc-500">Selecione um endereço para consultar o frete.</p>;
   return <div className="space-y-2 text-xs" data-testid="freight-summary">
-    <div className="flex justify-between"><span>Frete normal ({freight.distanceKm?.toFixed(2)} km)</span><span>{formatCurrency(freight.normalFee!)}</span></div>
     <div className="flex justify-between font-semibold"><span>{freight.source === 'MANUAL_FREE_DELIVERY_PERIOD' ? 'Frete grátis (benefício da loja)' : freight.finalFee === 0 ? 'Frete grátis' : 'Frete'}</span><span>{formatCurrency(freight.finalFee!)}</span></div>
     {!!freight.missingAmount && <p className="rounded-lg bg-emerald-50 p-2 text-emerald-900">Faltam {formatCurrency(freight.missingAmount)} para frete grátis</p>}
   </div>;

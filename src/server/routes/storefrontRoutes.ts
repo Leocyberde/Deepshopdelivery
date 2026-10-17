@@ -126,7 +126,6 @@ export function registerStorefrontRoutes(app: Express) {
         deliveryPromotion: {
           automaticFreeDeliveryActive,
           manualFreeDeliveryActive,
-          distanceKm: automaticFreight?.distanceKm ?? null,
           minimumRequired: automaticFreight?.minimumRequired ?? null,
         },
         fulfillment: buildFulfillmentPromises(settingsMap),

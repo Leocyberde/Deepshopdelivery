@@ -23,14 +23,6 @@ import {
   lookupCepAddress,
 } from '../context/AppContext.tsx';
 import { FulfillmentSummary } from '../components/FulfillmentSummary.tsx';
-import {
-  DELIVERY_MINUTE_OPTIONS,
-  DELIVERY_OPTION_LABELS,
-  formatDeliveryTime,
-  getFastDeliveryEstimate,
-  localDateString,
-  type DeliveryMinutes,
-} from '../utils/deliverySchedule.ts';
 
 interface CustomerAddress {
   id: number;
@@ -100,12 +92,6 @@ export const CheckoutPage: React.FC = () => {
   const [createdOrder, setCreatedOrder] = useState<CreatedOrderResponse | null>(null);
   const [cancellingCreatedOrder, setCancellingCreatedOrder] = useState(false);
   const [startingPayment, setStartingPayment] = useState(false);
-  const [deliveryMode, setDeliveryMode] = useState<'FAST' | 'SCHEDULED' | null>(null);
-  const [deliveryMinutes, setDeliveryMinutes] = useState<DeliveryMinutes | null>(null);
-  const [scheduledDate, setScheduledDate] = useState('');
-  const [scheduledTime, setScheduledTime] = useState('');
-  const [storeHours, setStoreHours] = useState<Record<string, { enabled: boolean; open: string; close: string }>>({});
-  const [storeTimezone, setStoreTimezone] = useState('America/Sao_Paulo');
   const [storeClosed, setStoreClosed] = useState(false);
   const [storeClosedMessage, setStoreClosedMessage] = useState('A loja está fechada no momento.');
   const { quote: freightQuote, loading: quoteLoading, error: quoteError, refresh: refreshQuote } = useFreightQuote(selectedCartItems, selectedAddressId);
@@ -164,15 +150,13 @@ export const CheckoutPage: React.FC = () => {
       .then(([addrList, storefront]) => {
         setAddresses(addrList || []);
         if (addrList && addrList.length > 0) {
-          setSelectedAddressId(addrList[0].id);
+          setSelectedAddressId(addrList.find((address) => Boolean((address as CustomerAddress & { isPrimary?: boolean }).isPrimary))?.id || addrList[0].id);
         } else {
           setShowNewAddressForm(true);
         }
         if (storefront?.settings) {
           setStoreClosed(!Boolean(storefront.settings.store?.isOpen));
           setStoreClosedMessage(storefront.settings.store?.closedMessage || 'A loja está fechada no momento.');
-          setStoreHours(storefront.settings.store?.hours || {});
-          setStoreTimezone(storefront.settings.store?.timezone || 'America/Sao_Paulo');
         }
 
       })
@@ -467,26 +451,6 @@ export const CheckoutPage: React.FC = () => {
   const selectedAddress = addresses.find((a) => a.id === selectedAddressId) || null;
   const isConfirmedFreight = freightQuote?.freight?.status === 'OK';
   const finalTotal = freightQuote?.totals.total ?? cartSubtotal;
-  const scheduleMinDate = localDateString(new Date(Date.now() + 24 * 60 * 60 * 1000), storeTimezone);
-  const scheduleDayKey = scheduledDate
-    ? ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][new Date(`${scheduledDate}T12:00:00Z`).getUTCDay()]
-    : '';
-  const selectedScheduleRule = scheduleDayKey ? storeHours[scheduleDayKey] : null;
-  const scheduleTimeOptions: string[] = [];
-  if (selectedScheduleRule?.enabled) {
-    const [openHour, openMinute] = selectedScheduleRule.open.split(':').map(Number);
-    const [closeHour, closeMinute] = selectedScheduleRule.close.split(':').map(Number);
-    for (let total = openHour * 60 + openMinute; total < closeHour * 60 + closeMinute; total += 30) {
-      scheduleTimeOptions.push(`${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`);
-    }
-  }
-  const deliverySummary =
-    deliveryMode === 'FAST' && deliveryMinutes
-      ? DELIVERY_OPTION_LABELS[deliveryMinutes]
-      : deliveryMode === 'SCHEDULED' && scheduledDate && scheduledTime
-      ? `Agendado para ${scheduledDate.split('-').reverse().join('/')} às ${scheduledTime}`
-      : 'Selecione uma opção de prazo';
-
   const handleSaveNewAddress = async (e: React.FormEvent) => {
     e.preventDefault();
     setSavingAddress(true);
@@ -543,11 +507,6 @@ export const CheckoutPage: React.FC = () => {
       toast('Selecione ou cadastre um endereço de entrega.', 'error');
       return;
     }
-    if (deliveryMode === null || (deliveryMode === 'FAST' && !deliveryMinutes) ||
-        (deliveryMode === 'SCHEDULED' && (!scheduledDate || !scheduledTime))) {
-      toast('Escolha quando você quer receber o pedido.', 'error');
-      return;
-    }
     if (quoteLoading || !isConfirmedFreight) { toast(quoteError || 'Não conseguimos calcular o frete agora', 'error'); return; }
     setOrderError(null);
     setSubmittingOrder(true);
@@ -564,10 +523,6 @@ export const CheckoutPage: React.FC = () => {
           quoteToken: freightQuote?.quoteToken,
           paymentMethod: 'MERCADOPAGO',
           notes,
-          deliveryMode,
-          deliveryMinutes: deliveryMode === 'FAST' ? deliveryMinutes : null,
-          scheduledDate: deliveryMode === 'SCHEDULED' ? scheduledDate : null,
-          scheduledTime: deliveryMode === 'SCHEDULED' ? scheduledTime : null,
           items: selectedCartItems.map((i) => ({
             productId: i.productId,
             productName: i.name,
@@ -916,49 +871,9 @@ export const CheckoutPage: React.FC = () => {
             )}
           </div>
 
-          <div className="bg-white border border-stone-200 rounded-xl p-6 space-y-5">
-            <div>
-              <h2 className="text-base font-bold text-zinc-900">2. Quando você quer receber?</h2>
-              <p className="text-xs text-zinc-500 mt-1">Escolha uma das opções disponíveis para a entrega.</p>
-            </div>
-            <div className="space-y-2.5" role="radiogroup" aria-label="Prazo de entrega">
-              {DELIVERY_MINUTE_OPTIONS.map((minutes) => (
-                <label key={minutes} className={`flex items-center gap-3 rounded-lg border p-3.5 cursor-pointer ${deliveryMode === 'FAST' && deliveryMinutes === minutes ? 'border-zinc-900 bg-stone-50' : 'border-stone-200'}`}>
-                  <input type="radio" name="delivery-option" checked={deliveryMode === 'FAST' && deliveryMinutes === minutes} onChange={() => { setDeliveryMode('FAST'); setDeliveryMinutes(minutes); setScheduledDate(''); setScheduledTime(''); }} className="h-4 w-4 accent-zinc-900" />
-                  <span className="text-sm font-medium text-zinc-900">{DELIVERY_OPTION_LABELS[minutes]}</span>
-                </label>
-              ))}
-              <label className={`flex items-center gap-3 rounded-lg border p-3.5 cursor-pointer ${deliveryMode === 'SCHEDULED' ? 'border-zinc-900 bg-stone-50' : 'border-stone-200'}`}>
-                <input type="radio" name="delivery-option" checked={deliveryMode === 'SCHEDULED'} onChange={() => { setDeliveryMode('SCHEDULED'); setDeliveryMinutes(null); }} className="h-4 w-4 accent-zinc-900" />
-                <span className="text-sm font-medium text-zinc-900">Agendar para outro dia</span>
-              </label>
-            </div>
-            {deliveryMode === 'FAST' && deliveryMinutes && (
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
-                A previsão respeitará o horário de funcionamento da loja. <strong>Previsão de entrega: até {formatDeliveryTime(getFastDeliveryEstimate(new Date(), deliveryMinutes, storeHours, storeTimezone), storeTimezone)}</strong>
-              </div>
-            )}
-            {deliveryMode === 'SCHEDULED' && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-lg border border-stone-200 bg-stone-50 p-3.5">
-                <label className="space-y-1 text-xs font-semibold text-zinc-700">
-                  <span>Escolha a data</span>
-                  <input type="date" min={scheduleMinDate} value={scheduledDate} onChange={(e) => { setScheduledDate(e.target.value); setScheduledTime(''); }} className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2.5 text-sm" />
-                </label>
-                <label className="space-y-1 text-xs font-semibold text-zinc-700">
-                  <span>Escolha o horário</span>
-                  <select value={scheduledTime} onChange={(e) => setScheduledTime(e.target.value)} disabled={!scheduledDate || scheduleTimeOptions.length === 0} className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2.5 text-sm disabled:opacity-50">
-                    <option value="">Selecione</option>
-                    {scheduleTimeOptions.map((time) => <option key={time} value={time}>{time}</option>)}
-                  </select>
-                </label>
-                {scheduledDate && scheduleTimeOptions.length === 0 && <p className="sm:col-span-2 text-xs text-amber-800">Não há horário disponível para essa data. Escolha outro dia.</p>}
-              </div>
-            )}
-          </div>
-
           {/* Notes */}
           <div className="bg-white border border-stone-200 rounded-xl p-6 space-y-3">
-            <h2 className="text-base font-bold text-zinc-900">3. Observações do Pedido</h2>
+            <h2 className="text-base font-bold text-zinc-900">2. Observações do Pedido</h2>
             <textarea
               rows={2}
               value={notes}
@@ -1049,10 +964,6 @@ export const CheckoutPage: React.FC = () => {
                   {selectedAddress.city} - {selectedAddress.state}
                 </div>
               ) : <div className="mt-1 text-amber-800">Selecione um endereço válido.</div>}
-            </div>
-            <div className="border-t border-stone-200 pt-3">
-              <div className="font-bold text-zinc-900">Entrega</div>
-              <div className="mt-1 text-zinc-700">{deliverySummary}</div>
             </div>
           </div>
 

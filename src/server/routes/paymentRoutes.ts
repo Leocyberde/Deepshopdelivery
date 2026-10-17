@@ -358,11 +358,16 @@ export function registerPaymentRoutes(app: Express) {
       }
       const totalCents = cents(order.total);
       const itemSubtotalCents = orderItems.reduce((sum, item) => {
-        const itemLineCents = cents(item.unitPrice) * Number(item.quantity);
-        if (!Number.isSafeInteger(Number(item.quantity)) || Number(item.quantity) < 1 || Number(item.quantity) > 999) {
+        const quantity = Number(item.quantity);
+        if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 999) {
           throw new Error('Quantidade inválida na composição do pedido.');
         }
-        return sum + itemLineCents;
+        const lineSubtotalCents = cents(item.subtotal);
+        const unitPriceCents = cents(item.unitPrice);
+        if (lineSubtotalCents <= 0 || unitPriceCents <= 0 || lineSubtotalCents > unitPriceCents * quantity) {
+          throw new Error('Subtotal inválido na composição do pedido.');
+        }
+        return sum + lineSubtotalCents;
       }, 0);
       if (itemSubtotalCents <= 0 || totalCents <= 0 || itemSubtotalCents !== cents(order.subtotal) || itemSubtotalCents > totalCents) {
         res.status(409).json({ error: 'A composição monetária do pedido não é válida para cobrança.' });

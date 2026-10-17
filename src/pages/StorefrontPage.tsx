@@ -71,7 +71,6 @@ interface Product {
 interface DeliveryPromotion {
   automaticFreeDeliveryActive: boolean;
   manualFreeDeliveryActive: boolean;
-  distanceKm: number | null;
   minimumRequired: number | null;
 }
 
