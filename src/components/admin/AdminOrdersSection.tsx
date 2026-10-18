@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Search, ExternalLink, Truck, ArrowUpDown } from 'lucide-react';
+import { Search, ExternalLink, Truck, ArrowUpDown, Printer } from 'lucide-react';
+import { printWithBrowser, rawbtUrl, type ReceiptOrder } from '../../utils/receiptPrinter.ts';
 import {
   formatCurrency,
   formatPaymentMethodDisplay,
@@ -41,6 +42,28 @@ interface AdminOrdersSectionProps {
   setSelectedAdminOrder: (ord: any | null) => void;
   handleChangeOrderStatus: (orderId: number, newStatus: string, reason?: string) => void | boolean | Promise<void | boolean>;
   onRefreshOrders?: () => void;
+}
+
+export function toReceiptOrder(o: any): ReceiptOrder {
+  const method = String(o.paymentMethod || '').toUpperCase();
+  const paid = method === 'MERCADOPAGO'
+    ? o.payment?.status === 'PAID' || ['PAID', 'PREPARING', 'OUT_FOR_DELIVERY', 'DELIVERED'].includes(o.status)
+    : o.status === 'DELIVERED';
+  return {
+    orderNumber: String(o.orderNumber ?? o.id),
+    createdAt: o.createdAt,
+    customerName: o.customerName,
+    customerPhone: o.customerPhone,
+    items: (o.items || []).map((i: any) => ({ quantity: i.quantity, productName: i.productName, subtotal: i.subtotal })),
+    subtotal: o.subtotal,
+    deliveryFee: o.deliveryFee,
+    total: o.total,
+    paymentMethod: o.paymentMethod,
+    changeFor: o.changeFor,
+    paid,
+    addressSnapshot: o.addressSnapshot,
+    notes: o.notes,
+  };
 }
 
 const ADMIN_ORDER_TRANSITIONS: Record<string, string[]> = {
@@ -275,6 +298,21 @@ export const AdminOrdersSection: React.FC<AdminOrdersSectionProps> = ({
                   <ExternalLink className="w-3.5 h-3.5" />
                 </a>
               )}
+              <a
+                href={rawbtUrl(toReceiptOrder(selectedAdminOrder), window.location.origin)}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-700 rounded-lg"
+                title="Abre o app RawBT e imprime na impressora Bluetooth 58mm"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Imprimir comanda</span>
+              </a>
+              <button
+                type="button"
+                onClick={() => { if (!printWithBrowser(toReceiptOrder(selectedAdminOrder), window.location.origin)) alert('Permita pop-ups para imprimir pelo navegador.'); }}
+                className="px-3 py-2 text-xs font-medium text-zinc-700 hover:text-zinc-900 bg-stone-100 rounded-lg"
+              >
+                Imprimir pelo navegador
+              </button>
               <button
                 type="button"
                 onClick={() => setSelectedAdminOrder(null)}

@@ -55,6 +55,7 @@ function resolveSectionFromPath(pathname: string): AdminSection {
 }
 
 import { ForcePasswordChange } from '../components/admin/ForcePasswordChange.tsx';
+import { AutoPrintControl } from '../components/admin/AutoPrintControl.tsx';
 
 export const AdminPanelPage: React.FC = () => {
   const { user, apiFetch, toast, logout } = useApp();
@@ -1366,6 +1367,7 @@ ${kitProd.code} - ${kitProd.name}`)) return;
 
   return (
     <div className="min-h-[calc(100vh-4rem)] max-w-[1360px] mx-auto px-4 sm:px-6 py-6 flex flex-col lg:flex-row gap-6 items-start">
+      <AutoPrintControl apiFetch={apiFetch} />
       {/* Sidebar Navigation */}
       <AdminSidebar
         section={section}

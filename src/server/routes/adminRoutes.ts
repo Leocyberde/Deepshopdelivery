@@ -12,6 +12,7 @@ import {
   or,
   sql,
   count,
+  gt,
   gte,
   lte,
   ilike,
@@ -1929,6 +1930,24 @@ export function registerAdminRoutes(app: Express) {
   });
 
   // Admin: Detalhe sob demanda, com histórico e itens apenas do pedido solicitado.
+  // Pedidos que acabaram de virar PAID (webhook do Mercado Pago ou ação manual), para impressão automática.
+  // Sem sinceId devolve só a marca atual (não reimprime histórico).
+  app.get('/api/admin/orders/paid-since', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const sinceId = Number(req.query.sinceId);
+      const [{ maxId }] = await db.select({ maxId: sql<number>`COALESCE(MAX(${schema.orderStatusHistory.id}), 0)` }).from(schema.orderStatusHistory);
+      if (!Number.isSafeInteger(sinceId) || sinceId < 0) { res.json({ maxHistoryId: Number(maxId), orders: [] }); return; }
+      const rows = await db.select({ historyId: schema.orderStatusHistory.id, orderId: schema.orderStatusHistory.orderId })
+        .from(schema.orderStatusHistory)
+        .where(and(eq(schema.orderStatusHistory.newStatus, 'PAID'), gt(schema.orderStatusHistory.id, sinceId)))
+        .orderBy(schema.orderStatusHistory.id).limit(20);
+      res.json({ maxHistoryId: Number(maxId), orders: rows });
+    } catch (error) {
+      logServerError('admin.orders.paid_since_failed', error, {});
+      res.status(500).json({ error: 'Erro ao consultar pedidos pagos.' });
+    }
+  });
+
   app.get('/api/admin/orders/:id', requireAuth, requireAdmin, async (req, res) => {
     try {
       await expireOverdueUnpaidOrders();
