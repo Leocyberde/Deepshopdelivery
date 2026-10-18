@@ -1,4 +1,4 @@
-const CACHE_NAME = 'deepshop-pwa-v7';
+const CACHE_NAME = 'deepshop-pwa-v8';
 const CACHE_PREFIX = 'deepshop-pwa-';
 const APP_SHELL = ['/', '/manifest.json', '/icon.svg', '/pwa-192x192.png', '/pwa-512x512.png', '/pwa-maskable-512x512.png'];
 

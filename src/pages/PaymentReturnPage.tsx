@@ -89,24 +89,29 @@ export const PaymentReturnPage: React.FC = () => {
   const kind = kindFromPath(location.pathname);
   const config = KIND_CONFIG[kind];
   const orderId = Number(searchParams.get('orderId'));
-  const paymentId = (searchParams.get('payment_id') || searchParams.get('collection_id') || '').trim();
   const [snapshot, setSnapshot] = useState<OrderSnapshot | null>(null);
   const [confirmation, setConfirmation] = useState<PaymentConfirmation | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
   const redirectScheduledRef = useRef(false);
+  const errorCountRef = useRef(0);
+  const stopPollingRef = useRef(false);
+
+  // Estados em que consultar de novo não muda nada. REJECTED não entra aqui como
+  // definitivo: o Mercado Pago permite nova tentativa na mesma Order, então só
+  // paramos o polling automático e deixamos a consulta manual disponível.
+  const STOP_PAYMENT = ['PAID', 'REJECTED', 'CANCELLED', 'REFUNDED', 'CHARGED_BACK'];
+  const STOP_ORDER = ['PAID', 'PREPARING', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED', 'EXPIRED'];
 
   const verifyPayment = useCallback(async () => {
     if (!Number.isSafeInteger(orderId) || orderId <= 0) {
+      stopPollingRef.current = true;
       setError('O retorno não contém um pedido válido.');
       return;
     }
     if (!user) {
-      setError('Entre na conta do comprador para consultar o pedido com segurança.');
-      return;
-    }
-    if (paymentId && !/^[A-Za-z0-9._:-]{1,128}$/.test(paymentId)) {
-      setError('O provedor retornou um identificador de pagamento inválido.');
+      stopPollingRef.current = true;
+      setError('Entre na conta do comprador para ver o pedido. Se o pagamento foi aprovado, ele será confirmado automaticamente pelo Mercado Pago.');
       return;
     }
 
@@ -116,34 +121,43 @@ export const PaymentReturnPage: React.FC = () => {
       const current = await apiFetch<OrderSnapshot>(`/api/orders/${orderId}`);
       setSnapshot(current);
 
-      // A URL pode não trazer payment_id no fluxo Orders API. O backend usa o
-      // providerOrderId salvo no pedido e valida propriedade, referência, valor e moeda.
+      // O id de pagamento da URL NÃO é enviado: o backend usa o providerOrderId salvo
+      // no pedido e valida propriedade, referência externa, valor e moeda.
       if (current.payment?.provider === 'MERCADOPAGO') {
         const verified = await apiFetch<PaymentConfirmation>(`/api/orders/${orderId}/payments/confirm`, {
           method: 'POST',
-          body: JSON.stringify(paymentId ? { paymentId } : {}),
+          body: JSON.stringify({}),
         });
         setConfirmation(verified);
-        if (!redirectScheduledRef.current && (verified.orderStatus === 'PAID' || verified.payment?.status === 'PAID')) {
+        errorCountRef.current = 0;
+        const paymentStatus = verified.payment?.status || '';
+        if (STOP_PAYMENT.includes(paymentStatus) || STOP_ORDER.includes(verified.orderStatus)) stopPollingRef.current = true;
+        if (!redirectScheduledRef.current && (verified.orderStatus === 'PAID' || paymentStatus === 'PAID')) {
           redirectScheduledRef.current = true;
           window.setTimeout(() => navigate(`/minha-conta/pedidos?orderId=${orderId}`, { replace: true }), 1200);
         }
       } else {
         setConfirmation(null);
+        if (STOP_ORDER.includes(current.status)) stopPollingRef.current = true;
       }
     } catch (err: any) {
+      errorCountRef.current += 1;
+      // Sem loop de erro: após 3 falhas seguidas o polling automático para.
+      if (errorCountRef.current >= 3) stopPollingRef.current = true;
       setError(err.message || 'Não foi possível consultar o estado real do pedido.');
     } finally {
       setChecking(false);
     }
-  }, [apiFetch, navigate, orderId, paymentId, user]);
+  }, [apiFetch, navigate, orderId, user]);
 
   useEffect(() => {
+    errorCountRef.current = 0;
+    stopPollingRef.current = false;
     void verifyPayment();
     if (!user || !Number.isSafeInteger(orderId) || orderId <= 0) return;
     const startedAt = Date.now();
     const timer = window.setInterval(() => {
-      if (Date.now() - startedAt >= 60_000) {
+      if (stopPollingRef.current || Date.now() - startedAt >= 60_000) {
         window.clearInterval(timer);
         return;
       }
@@ -209,7 +223,7 @@ export const PaymentReturnPage: React.FC = () => {
               Tentar novamente pelo pedido
             </Link>
           )}
-          <button type="button" onClick={() => void verifyPayment()} disabled={checking || !user} className="inline-flex items-center justify-center gap-2 rounded-lg border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-800 hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50">
+          <button type="button" onClick={() => { errorCountRef.current = 0; stopPollingRef.current = false; void verifyPayment(); }} disabled={checking || !user} className="inline-flex items-center justify-center gap-2 rounded-lg border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-800 hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50">
             <RefreshCw className={`h-4 w-4 ${checking ? 'animate-spin' : ''}`} /> Atualizar situação
           </button>
           <Link to="/minha-conta/pedidos" className="inline-flex items-center gap-2 rounded-lg border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-800 hover:bg-stone-50">

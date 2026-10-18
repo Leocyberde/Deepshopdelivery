@@ -14,6 +14,8 @@ export function buildNewOrderAdminMessage(order: any, itemCount: number): string
   return `🔔 Novo pedido #${order.orderNumber}. Total: R$ ${brl(order.total)}. Itens: ${itemCount}. Verifique o pedido no painel DeepShop.`;
 }
 
+const whatsappSentOrderIds = new Set<number>();
+
 export async function notifyNewOrder(orderId: number, itemCount: number): Promise<void> {
   const [order] = await db.select().from(schema.orders).where(eq(schema.orders.id, orderId));
   if (!order) return;
@@ -37,6 +39,10 @@ export async function notifyNewOrder(orderId: number, itemCount: number): Promis
     });
   }
 
+  // O aviso interno é gravado na criação do pedido, então ele não serve de trava para o WhatsApp.
+  // Esta trava em memória impede reenvio do mesmo pedido enquanto o processo estiver no ar.
+  if (whatsappSentOrderIds.has(order.id)) return;
+  whatsappSentOrderIds.add(order.id);
   const result = await sendCallMeBotMessage(buildNewOrderAdminMessage(order, itemCount));
   if (!result.sent && result.reason !== 'disabled' && result.reason !== 'not_configured') {
     logServerEvent('notification.callmebot.failed', 'warn', {

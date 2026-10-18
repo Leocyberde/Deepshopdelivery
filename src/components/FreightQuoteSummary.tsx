@@ -1,8 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { useApp, formatCurrency } from '../context/AppContext.tsx';
 import type { CartItem } from '../types/app.ts';
-import type { OrderFreightResult } from '../services/freightService.ts';
-export interface FreightQuote { freight: OrderFreightResult | null; totals: { subtotal: number; total: number; deliveryFee: number }; quoteToken?: string }
+export interface CustomerFreight {
+  status: 'OK' | 'DISTANCE_UNAVAILABLE' | 'OUT_OF_DELIVERY_AREA';
+  finalFee: number | null;
+  isFree: boolean;
+  freeBenefit: boolean;
+  minimumRequired: number | null;
+  missingAmount: number | null;
+  message?: string;
+}
+export interface FreightQuote { freight: CustomerFreight | null; totals: { subtotal: number; total: number; deliveryFee: number }; quoteToken?: string }
 export function useFreightQuote(items: CartItem[], addressId?: number | null) {
   const { apiFetch, user } = useApp();
   const [quote, setQuote] = useState<FreightQuote | null>(null);
@@ -31,7 +39,7 @@ export const FreightQuoteSummary: React.FC<{ quote: FreightQuote | null; error?:
   if (error || (freight && freight.status !== 'OK')) return <div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900"><p>{error || freight?.message || 'Não conseguimos calcular o frete agora'}</p>{onRetry && freight?.status !== 'OUT_OF_DELIVERY_AREA' && <button type="button" onClick={onRetry} className="mt-2 font-semibold underline">Tentar novamente</button>}</div>;
   if (!freight) return <p className="text-xs text-zinc-500">Selecione um endereço para consultar o frete.</p>;
   return <div className="space-y-2 text-xs" data-testid="freight-summary">
-    <div className="flex justify-between font-semibold"><span>{freight.source === 'MANUAL_FREE_DELIVERY_PERIOD' ? 'Frete grátis (benefício da loja)' : freight.finalFee === 0 ? 'Frete grátis' : 'Frete'}</span><span>{formatCurrency(freight.finalFee!)}</span></div>
+    <div className="flex justify-between font-semibold"><span>{freight.freeBenefit ? 'Frete grátis (benefício da loja)' : freight.isFree ? 'Frete grátis' : 'Frete'}</span><span>{freight.isFree ? 'Grátis' : formatCurrency(freight.finalFee!)}</span></div>
     {!!freight.missingAmount && <p className="rounded-lg bg-emerald-50 p-2 text-emerald-900">Faltam {formatCurrency(freight.missingAmount)} para frete grátis</p>}
   </div>;
 };

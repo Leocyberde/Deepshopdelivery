@@ -8,6 +8,7 @@ import { summarizeProviderError } from '../services/mercadoPagoErrorSummary.ts';
 import { AuthRequest, requireAuth } from '../middleware/auth.ts';
 import { expireOverdueUnpaidOrders } from '../services/orderExpirationService.ts';
 import { parseSiteUrl } from '../../config/siteUrl.ts';
+import { buildProviderItems, pickProviderTransaction, validateOrderComposition } from '../services/paymentComposition.ts';
 
 const PROVIDER = 'MERCADOPAGO';
 const PROVIDER_API = 'https://api.mercadopago.com';
@@ -111,7 +112,7 @@ function providerOrderStatus(status: unknown, statusDetail: unknown, transaction
   const transaction = String(transactionStatus || '').toLowerCase();
   if (order === 'processed' || transaction === 'processed' || String(statusDetail || '').toLowerCase() === 'accredited') return 'PAID';
   if (order === 'failed' || transaction === 'rejected') return 'REJECTED';
-  if (order === 'canceled' || order === 'cancelled') return 'CANCELLED';
+  if (order === 'canceled' || order === 'cancelled' || order === 'expired') return 'CANCELLED';
   if (order === 'refunded') return 'REFUNDED';
   return 'PENDING';
 }
@@ -217,7 +218,7 @@ export function registerPaymentRoutes(app: Express) {
         ? (providerOrder.transactions as Record<string, unknown>).payments
         : null;
       const transactions = Array.isArray(providerTransactions) ? providerTransactions as Array<Record<string, unknown>> : [];
-      const providerPayment = transactions[0];
+      const providerPayment = pickProviderTransaction(transactions);
       const providerPaymentId = String(providerPayment?.id || '').trim() || null;
       const nextPaymentStatus = providerOrderStatus(providerOrder.status, providerOrder.status_detail, providerPayment?.status);
       const providerStatus = String(providerOrder.status_detail || providerOrder.status || 'unknown').slice(0, 80);
@@ -246,8 +247,24 @@ export function registerPaymentRoutes(app: Express) {
             savedOrder = changedOrder;
           }
         }
-        return { duplicate: freshPayment.status === nextPaymentStatus && savedOrder.status === freshOrder.status, orderStatus: savedOrder.status, paymentStatus: savedPayment.status };
+        const paidAfterClose = nextPaymentStatus === 'PAID' && freshPayment.status !== 'PAID' && TERMINAL_ORDER_STATUSES.has(freshOrder.status);
+        return { duplicate: freshPayment.status === nextPaymentStatus && savedOrder.status === freshOrder.status, orderStatus: savedOrder.status, paymentStatus: savedPayment.status, paidAfterClose, userId: freshOrder.userId, orderNumber: freshOrder.orderNumber };
       });
+      if ((result as { paidAfterClose?: boolean }).paidAfterClose) {
+        // Pagamento aprovado para pedido cancelado/expirado: não reabre o pedido; avisa o admin uma única vez.
+        const r = result as { userId: number; orderNumber: string };
+        logServerEvent('payment.webhook.paid_after_terminal', 'warn', { status: 200, paymentId: payment.id, orderId: payment.orderId, result: 'needs_reconciliation' });
+        const [already] = await db.select({ id: schema.adminNotifications.id }).from(schema.adminNotifications)
+          .where(and(eq(schema.adminNotifications.type, 'PAYMENT_ALERT'), eq(schema.adminNotifications.orderId, payment.orderId))).limit(1);
+        if (!already) {
+          await db.insert(schema.adminNotifications).values({
+            type: 'PAYMENT_ALERT', customerId: r.userId, orderId: payment.orderId, addressId: null,
+            title: `⚠️ Pagamento aprovado em pedido encerrado #${r.orderNumber}`,
+            message: 'O Mercado Pago aprovou um pagamento para um pedido cancelado/expirado. Confira e faça o estorno ou reative o pedido manualmente.',
+            isRead: false, popupDismissed: false,
+          });
+        }
+      }
       logServerEvent('payment.webhook.processed', 'info', { status: 200, paymentId: payment.id, orderId: payment.orderId, result: result.duplicate ? 'duplicate' : 'updated' });
       res.status(200).json({ received: true, processed: !result.duplicate, duplicate: result.duplicate });
     } catch (error) {
@@ -356,24 +373,13 @@ export function registerPaymentRoutes(app: Express) {
         res.status(409).json({ error: 'O pedido não possui itens para pagamento.' });
         return;
       }
-      const totalCents = cents(order.total);
-      const itemSubtotalCents = orderItems.reduce((sum, item) => {
-        const quantity = Number(item.quantity);
-        if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 999) {
-          throw new Error('Quantidade inválida na composição do pedido.');
-        }
-        const lineSubtotalCents = cents(item.subtotal);
-        const unitPriceCents = cents(item.unitPrice);
-        if (lineSubtotalCents <= 0 || unitPriceCents <= 0 || lineSubtotalCents > unitPriceCents * quantity) {
-          throw new Error('Subtotal inválido na composição do pedido.');
-        }
-        return sum + lineSubtotalCents;
-      }, 0);
-      if (itemSubtotalCents <= 0 || totalCents <= 0 || itemSubtotalCents !== cents(order.subtotal) || itemSubtotalCents > totalCents) {
+      const composition = validateOrderComposition(orderItems, order);
+      if (!composition.ok) {
+        logServerEvent('payment.creation.invalid_composition', 'warn', { status: 409, orderId: order.id, userId: req.user!.id, result: 'invalid_composition', reason: composition.reason });
         res.status(409).json({ error: 'A composição monetária do pedido não é válida para cobrança.' });
         return;
       }
-      const shippingCents = totalCents - itemSubtotalCents;
+      const { totalCents, shippingCents } = composition;
       const token = providerToken();
       if (!token) {
         logServerEvent('payment.creation.unavailable', 'warn', { status: 503, orderId: order.id, userId: req.user!.id, result: 'unavailable', reason: 'provider_not_configured' });
@@ -408,13 +414,11 @@ export function registerPaymentRoutes(app: Express) {
         return;
       }
 
-      // O Mercado Pago deve exibir uma única venda; o frete permanece incluído no total,
-      // mas não é enviado como um segundo produto.
-      const orderItemsPayload = [{
+      // Envia os produtos reais (agrupados) e o frete como linha "Entrega". Se a soma não
+      // fechar com o total, cai para uma linha única com o total, que sempre concilia.
+      const orderItemsPayload = buildProviderItems(orderItems, totalCents, shippingCents, order.orderNumber, order.id) || [{
         external_code: `order-${order.id}`,
-        title: orderItems.length === 1
-          ? String(orderItems[0].productName).slice(0, 250)
-          : `Pedido ${order.orderNumber}`,
+        title: `Pedido ${order.orderNumber}`.slice(0, 250),
         quantity: 1,
         unit_price: currencyValue(totalCents).toFixed(2),
       }];
@@ -423,6 +427,7 @@ export function registerPaymentRoutes(app: Express) {
         processing_mode: 'manual',
         capture_mode: 'automatic_async',
         total_amount: currencyValue(totalCents).toFixed(2),
+        description: `DeepShop Delivery - Pedido ${order.orderNumber}`.slice(0, 150),
         items: orderItemsPayload,
         payer: { email: payerEmail },
         external_reference: externalReference,
@@ -526,13 +531,6 @@ export function registerPaymentRoutes(app: Express) {
         return;
       }
       const providerOrderId = payment.providerOrderId || payment.providerPreferenceId || '';
-      const [paymentWithId] = suppliedId
-        ? await db.select().from(schema.payments).where(eq(schema.payments.providerPaymentId, suppliedId))
-        : [];
-      if (paymentWithId && paymentWithId.orderId !== order.id) {
-        res.status(409).json({ error: 'Este pagamento já está associado a outro pedido.' });
-        return;
-      }
       const token = providerToken();
       if (!token) {
         logServerEvent('payment.confirmation.unavailable', 'warn', { status: 503, orderId: order.id, paymentId: payment.id, userId: req.user!.id, result: 'unavailable', reason: 'provider_not_configured' });
@@ -550,16 +548,20 @@ export function registerPaymentRoutes(app: Express) {
         ? (providerOrder.transactions as Record<string, unknown>).payments
         : null;
       const transactions = Array.isArray(providerTransactions) ? providerTransactions as Array<Record<string, unknown>> : [];
-      const matchingTransaction = suppliedId ? transactions.find((transaction) => String(transaction.id || '') === suppliedId) : transactions[0];
-      if (suppliedId && !matchingTransaction) {
-        res.status(409).json({ error: 'O pagamento informado não pertence à Order deste pedido.' });
-        return;
-      }
-      const resolvedPaymentId = String(matchingTransaction?.id || suppliedId || payment.providerPaymentId || '').trim();
+      // O id da URL é apenas auxiliar: a transação vem sempre da Order consultada.
+      const matchingTransaction = pickProviderTransaction(transactions, suppliedId);
+      const resolvedPaymentId = String(matchingTransaction?.id || payment.providerPaymentId || '').trim();
       if (providerId !== providerOrderId || providerExternalReference !== payment.externalReference ||
         providerCurrency !== payment.currency || providerAmountCents !== cents(payment.amount)) {
         res.status(409).json({ error: 'Os dados da transação não correspondem ao pedido e ao valor registrado.' });
         return;
+      }
+      if (resolvedPaymentId) {
+        const [paymentWithId] = await db.select().from(schema.payments).where(eq(schema.payments.providerPaymentId, resolvedPaymentId));
+        if (paymentWithId && paymentWithId.orderId !== order.id) {
+          res.status(409).json({ error: 'Este pagamento já está associado a outro pedido.' });
+          return;
+        }
       }
 
       const nextPaymentStatus = providerOrderStatus(providerOrder.status, providerOrder.status_detail, matchingTransaction?.status);
@@ -578,6 +580,10 @@ export function registerPaymentRoutes(app: Express) {
           throw new Error('O pedido não está em um estado que aceite confirmação do pagamento.');
         }
 
+        if (freshPayment.status === 'PAID' && nextPaymentStatus !== 'PAID') {
+          // Já aprovado: apenas devolve o estado atual, sem rebaixar nem duplicar histórico.
+          return { payment: freshPayment, order: freshOrder };
+        }
         const [savedPayment] = await tx.update(schema.payments).set({
           providerPaymentId: resolvedPaymentId || null,
           status: nextPaymentStatus,

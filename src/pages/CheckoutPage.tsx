@@ -35,18 +35,7 @@ interface CustomerAddress {
   city: string;
   state: string;
   reference: string | null;
-  deliveryDistanceKm: string | null;
-  deliveryFee: string | null;
-  deliveryFeeStatus: 'PENDING' | 'CONFIRMED';
-  freight: {
-    status: 'PENDING' | 'CONFIRMED';
-    distanceKm: number | null;
-    fee: number | null;
-    isItatiba?: boolean;
-    deliveryMode?: 'DELIVERY' | 'UNAVAILABLE';
-    deliveryModeMessage?: string;
-    customerMessage: string;
-  };
+  served?: boolean;
 }
 
 interface CreatedOrderResponse {
@@ -56,7 +45,6 @@ interface CreatedOrderResponse {
   deliveryFee: string | null;
   deliveryFeeSource?: string;
   paymentMethod?: string;
-  deliveryDistanceKm: string | null;
   total: string;
   status: string;
   items?: Array<{
@@ -595,7 +583,7 @@ export const CheckoutPage: React.FC = () => {
               <div>
                 <h2 className="text-base font-bold text-zinc-900">1. Endereço de Entrega</h2>
                 <p className="text-xs text-zinc-500">
-                  O valor do frete é lido diretamente do seu endereço cadastrado.
+                  O frete é calculado e exibido no resumo do pedido.
                 </p>
               </div>
               {!showNewAddressForm && (
@@ -616,7 +604,6 @@ export const CheckoutPage: React.FC = () => {
               <div className="space-y-3">
                 {addresses.map((addr) => {
                   const selected = addr.id === selectedAddressId;
-                  const confirmed = addr.freight.status === 'CONFIRMED';
                   return (
                     <div
                       key={addr.id}
@@ -654,17 +641,6 @@ export const CheckoutPage: React.FC = () => {
                                 <span>Atendemos apenas Itatiba</span>
                               </div>
                             )}
-                            <div>
-                              {confirmed ? (
-                                <span className="text-xs font-semibold text-emerald-800 tabular-nums">
-                                  Frete confirmado: {formatCurrency(addr.freight.fee)}
-                                </span>
-                              ) : isItatibaCity(addr.city) ? (
-                                <span className="text-xs font-medium text-amber-800">
-                                  Não conseguimos calcular o frete agora
-                                </span>
-                              ) : null}
-                            </div>
                           </div>
                         </div>
                         <div

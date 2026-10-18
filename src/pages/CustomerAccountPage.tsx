@@ -45,18 +45,7 @@ interface AddressItem {
   state: string;
   reference: string | null;
   isPrimary?: boolean;
-  deliveryDistanceKm: string | null;
-  deliveryFee: string | null;
-  deliveryFeeStatus: 'PENDING' | 'CONFIRMED';
-  freight: {
-    status: 'PENDING' | 'CONFIRMED';
-    distanceKm: number | null;
-    fee: number | null;
-    isItatiba?: boolean;
-    deliveryMode?: 'DELIVERY' | 'UNAVAILABLE';
-    deliveryModeMessage?: string;
-    customerMessage: string;
-  };
+  served?: boolean;
 }
 
 interface OrderFulfillmentPart {
@@ -120,7 +109,6 @@ interface CustomerOrder {
   orderNumber: string;
   subtotal: string;
   deliveryFee: string | null;
-  deliveryDistanceKm: string | null;
   deliveryFeeSource: string;
   total: string;
   status: string;
@@ -1342,7 +1330,6 @@ export const CustomerAccountPage: React.FC = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {addresses.map((addr) => {
-              const confirmed = addr.freight.status === 'CONFIRMED';
               return (
                 <div
                   key={addr.id}
@@ -1373,15 +1360,6 @@ export const CustomerAccountPage: React.FC = () => {
                           <span>Atendemos apenas Itatiba</span>
                         </div>
                       )}
-                      {confirmed ? (
-                        <div className="text-xs font-semibold text-emerald-800 tabular-nums">
-                          Frete confirmado: {formatCurrency(addr.freight.fee)}
-                        </div>
-                      ) : isItatibaCity(addr.city) ? (
-                        <div className="text-xs font-medium text-amber-800">
-                          Não conseguimos calcular o frete agora
-                        </div>
-                      ) : null}
                     </div>
                   </div>
                   <div className="border-t border-stone-100 pt-3 flex items-center justify-end gap-3">

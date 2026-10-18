@@ -77,6 +77,7 @@ function toCustomerOrderItem(item: InferSelectModel<typeof schema.orderItems>, i
     imageUrl,
   };
 }
+import { toCustomerFreight } from '../services/customerAddress.ts';
 import { getCurrentStoreState } from '../services/storeStatusService.ts';
 import { notifyNewOrder } from '../services/orderNotificationService.ts';
 
@@ -151,7 +152,7 @@ export function registerOrderRoutes(app: Express) {
         freight = freightForSavedAddress(address, settings, Number((deliverySubtotal + preorderSubtotal).toFixed(2)), customer?.until);
       }
       const totals = calculateOrderPartTotals(deliverySubtotal, preorderSubtotal, freight?.finalFee || 0);
-      res.json({ lines, totals, freight, quoteToken: freight?.status === 'OK' ? quoteToken(req.user!.id, Number(req.body.addressId), req.body.items, totals.subtotal, freight) : null, promises: buildFulfillmentPromises(settings), quotedAt: new Date().toISOString(), maxQtyPerItem: maxQty });
+      res.json({ lines, totals, freight: toCustomerFreight(freight), quoteToken: freight?.status === 'OK' ? quoteToken(req.user!.id, Number(req.body.addressId), req.body.items, totals.subtotal, freight) : null, promises: buildFulfillmentPromises(settings), quotedAt: new Date().toISOString(), maxQtyPerItem: maxQty });
     } catch (error) {
       if (error instanceof FreightError) { res.status(error.status).json({ error: error.message, code: error.code }); return; }
       logServerError('cart.quote.failed', error);
@@ -187,8 +188,8 @@ export function registerOrderRoutes(app: Express) {
       const idempotencyKey = rawIdempotencyKey === undefined || rawIdempotencyKey === null
         ? null
         : String(rawIdempotencyKey).trim();
-      if (idempotencyKey !== null && (!idempotencyKey || idempotencyKey.length > 128)) {
-        res.status(400).json({ error: 'Chave de idempotência inválida.' });
+      if (idempotencyKey === null || !idempotencyKey || idempotencyKey.length > 128) {
+        res.status(400).json({ error: 'Chave de idempotência obrigatória e válida.' });
         return;
       }
 
@@ -352,7 +353,7 @@ export function registerOrderRoutes(app: Express) {
         const [currentAddress] = await tx.select().from(schema.addresses).where(and(eq(schema.addresses.id, address.id), eq(schema.addresses.userId, req.user!.id))).for('share');
         if (!currentAddress) throw new FreightError('NOT_FOUND', 404, 'Endereço não encontrado.');
         const freight = requireAvailableFreight(freightForSavedAddress(currentAddress, settingsMap, subtotalNum, customerPromotion?.freeDeliveryUntil));
-        if (req.body.quoteToken !== undefined && req.body.quoteToken !== quoteToken(req.user!.id, address.id, items, subtotalNum, freight)) throw new FreightError('QUOTE_CHANGED', 409, 'A cotação mudou. Atualize o resumo e confirme novamente.');
+        if (typeof req.body.quoteToken !== 'string' || req.body.quoteToken !== quoteToken(req.user!.id, address.id, items, subtotalNum, freight)) throw new FreightError('QUOTE_CHANGED', 409, 'A cotação mudou. Atualize o resumo e confirme novamente.');
         const deliveryDistanceStr = freight.distanceKm!.toFixed(2);
         const deliveryFeeStr = freight.finalFee!.toFixed(2);
         const deliveryFeeSource = freight.source;
@@ -503,13 +504,13 @@ export function registerOrderRoutes(app: Express) {
         items: createdOrderResult.items,
         subtotal: createdOrderResult.order.subtotal,
         deliveryFee: createdOrderResult.order.deliveryFee,
-        deliveryDistanceKm: createdOrderResult.order.deliveryDistanceKm,
         total: createdOrderResult.order.total,
         paymentMethod: createdOrderResult.order.paymentMethod,
         changeFor: createdOrderResult.order.changeFor,
         addressSnapshot: createdOrderResult.order.addressSnapshot,
         notes: createdOrderResult.order.notes,
         deliveryFeeSource: createdOrderResult.order.deliveryFeeSource,
+        deliveryDistanceKm: createdOrderResult.order.deliveryDistanceKm,
       });
       const whatsappUrl = buildWhatsAppLink(whatsappNumber, whatsappMessage);
 
@@ -534,8 +535,9 @@ export function registerOrderRoutes(app: Express) {
         createdOrderResult.order.deliveryFee !== undefined &&
         createdOrderResult.order.deliveryFee !== '';
 
+      const { deliveryDistanceKm: _customerDeliveryDistanceKm, ...customerOrder } = createdOrderResult.order;
       res.status(201).json({
-        ...createdOrderResult.order,
+        ...customerOrder,
         paymentReleased,
         paymentDeadlineHours: deadlineHours,
         canCustomerCancel: true,
@@ -630,13 +632,13 @@ export function registerOrderRoutes(app: Express) {
           items,
           subtotal: o.subtotal,
           deliveryFee: o.deliveryFee,
-          deliveryDistanceKm: o.deliveryDistanceKm,
           total: o.total,
           paymentMethod: o.paymentMethod,
           changeFor: o.changeFor,
           addressSnapshot: o.addressSnapshot,
           notes: o.notes,
           deliveryFeeSource: o.deliveryFeeSource,
+          deliveryDistanceKm: o.deliveryDistanceKm,
         });
 
         const canCustomerCancel = CUSTOMER_CANCELLABLE_STATUSES.includes(o.status);
@@ -659,8 +661,9 @@ export function registerOrderRoutes(app: Express) {
         });
         const refundWhatsappUrl = buildWhatsAppLink(whatsappNumber, refundWhatsappMessage);
 
+        const { deliveryDistanceKm: _customerDeliveryDistanceKm, ...customerOrder } = o;
         return {
-          ...o,
+          ...customerOrder,
           payment: toPaymentSummary(paymentsByOrder.get(o.id)),
           isFreeDelivery,
           paymentReleased,
@@ -741,13 +744,13 @@ export function registerOrderRoutes(app: Express) {
         items,
         subtotal: order.subtotal,
         deliveryFee: order.deliveryFee,
-        deliveryDistanceKm: order.deliveryDistanceKm,
         total: order.total,
         paymentMethod: order.paymentMethod,
         changeFor: order.changeFor,
         addressSnapshot: order.addressSnapshot,
         notes: order.notes,
         deliveryFeeSource: order.deliveryFeeSource,
+        deliveryDistanceKm: order.deliveryDistanceKm,
       });
 
       const canCustomerCancel = CUSTOMER_CANCELLABLE_STATUSES.includes(order.status);
@@ -771,8 +774,12 @@ export function registerOrderRoutes(app: Express) {
       });
       const refundWhatsappUrl = buildWhatsAppLink(whatsappNumber, refundWhatsappMessage);
 
+      const orderResponse = isAdminRole(req.user!.role) ? order : (() => {
+        const { deliveryDistanceKm: _customerDeliveryDistanceKm, ...customerOrder } = order;
+        return customerOrder;
+      })();
       res.json({
-        ...order,
+        ...orderResponse,
         payment: toPaymentSummary(payment),
         isFreeDelivery,
         paymentReleased,

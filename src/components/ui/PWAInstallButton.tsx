@@ -10,8 +10,9 @@ const POPUP_DISMISSED_KEY = 'achadinhos_pwa_popup_dismissed_v5';
 export const PWAInstallButton: React.FC = () => {
   const { isInstallable, isInstalled, isInIframe, install } = usePWAInstall();
   const location = useLocation();
+  const isIOS = typeof navigator !== 'undefined' && /iphone|ipad|ipod/i.test(navigator.userAgent);
   const [showPopup, setShowPopup] = useState(false);
-  const [status, setStatus] = useState<'idle' | 'installing' | 'installed' | 'already_installed_hint'>('idle');
+  const [status, setStatus] = useState<'idle' | 'installing' | 'installed' | 'manual_instructions'>('idle');
 
   const isAutoInstallTab =
     typeof window !== 'undefined' &&
@@ -98,7 +99,7 @@ export const PWAInstallButton: React.FC = () => {
       return;
     }
 
-    setStatus('already_installed_hint');
+    setStatus('manual_instructions');
   };
 
   const autoInstallUrl =
@@ -197,11 +198,12 @@ export const PWAInstallButton: React.FC = () => {
                 </div>
               )}
 
-              {status === 'already_installed_hint' && (
+              {status === 'manual_instructions' && (
                 <div className="space-y-2">
                   <p className="text-[11px] text-zinc-700 bg-sky-50 border border-sky-200 rounded-xl p-2 leading-snug">
-                    O aplicativo <strong>DeepShop</strong> já está instalado no seu celular! Se
-                    quiser reinstalar do zero, remova o ícone antigo da tela inicial e toque abaixo:
+                    {isIOS
+                      ? <>Neste aparelho a instalação é manual: toque em <strong>Compartilhar</strong> e depois em <strong>Adicionar à Tela de Início</strong>.</>
+                      : <>Seu navegador não ofereceu a instalação automática agora. Abra o menu do navegador e escolha <strong>Instalar app</strong> ou <strong>Adicionar à tela inicial</strong>. Se a opção não aparecer, tente abrir o site no Chrome.</>}
                   </p>
                   <button
                     type="button"

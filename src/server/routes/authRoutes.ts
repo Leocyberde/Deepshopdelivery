@@ -8,7 +8,7 @@ import jwt from 'jsonwebtoken';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '../../db/index.ts';
 import * as schema from '../../db/schema.ts';
-import { resolveAddressFreight } from '../../services/freightService.ts';
+import { toCustomerAddress } from '../services/customerAddress.ts';
 import {
   JWT_SECRET,
   AuthUserPayload,
@@ -313,10 +313,7 @@ export function registerAuthRoutes(app: Express) {
           status: newUser.status,
         },
         address: createdAddress
-          ? {
-              ...createdAddress,
-              freight: resolveAddressFreight(createdAddress),
-            }
+          ? toCustomerAddress(createdAddress)
           : null,
         adminNotificationId: createdAdminNotification.id,
       });

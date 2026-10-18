@@ -29,7 +29,13 @@ const address = (number = '1', extra: any = {}) => ({ label:'Casa', zipCode:'132
 async function create(number = '1', extra: any = {}, token = userToken) { return api('/api/addresses', address(number, extra), token); }
 async function setSetting(key: string, value: string) { await pool.query('INSERT INTO settings(key,value) VALUES($1,$2) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value', [key,value]); }
 async function order(addrId: number, quantity = 1, extra: any = {}, token = userToken) {
-  return api('/api/orders', { addressId:addrId, items:[{ productId,quantity }], paymentMethod:'MERCADOPAGO', deliveryMode:'FAST', deliveryMinutes:60, ...extra }, token);
+  // quoteToken agora é obrigatório: obtém a cotação do servidor, como o front faz.
+  let quoteToken = extra.quoteToken;
+  if (quoteToken === undefined) {
+    const quote = await api('/api/cart/quote', { addressId: addrId, items: extra.items || [{ productId, quantity }] }, token);
+    quoteToken = quote.data?.quoteToken ?? undefined;
+  }
+  return api('/api/orders', { addressId:addrId, items:[{ productId,quantity }], paymentMethod:'MERCADOPAGO', deliveryMode:'FAST', deliveryMinutes:60, idempotencyKey:`test-${Date.now()}-${Math.random().toString(36).slice(2)}`, ...extra, ...(quoteToken !== undefined ? { quoteToken } : {}) }, token);
 }
 async function seedLegacy(number: string, city = 'Itatiba', status = 'NEW', distance: string | null = null, stockDeducted = false) {
   const store = (await pool.query('SELECT id FROM stores ORDER BY id LIMIT 1')).rows[0].id;
@@ -89,8 +95,8 @@ after(async () => {
 });
 
 test('F01 cadastro automático, cache CEP+número entre clientes e variações de rua, campos manipulados ignorados',async()=>{
-  const a=await create('101',{deliveryFee:0,deliveryDistanceKm:0,distanceKm:0,freight:0,latitude:0,longitude:0});assert.equal(a.status,201,JSON.stringify(a.data));assert.equal(a.data.deliveryDistanceKm,'3.10');assert.equal(a.data.deliveryFeeSource,'GOOGLE');assert.equal(a.data.deliveryFee,'7.50');
-  const b=await create('101',{street:'R. Cliente',zipCode:'13250000'},secondToken);assert.equal(b.status,201);assert.equal(b.data.deliveryFeeSource,'GOOGLE_CACHE');assert.equal(calls,1);
+  const a=await create('101',{deliveryFee:0,deliveryDistanceKm:0,distanceKm:0,freight:0,latitude:0,longitude:0});assert.equal(a.status,201,JSON.stringify(a.data));assert.equal(a.data.deliveryDistanceKm,undefined);assert.equal(a.data.deliveryFeeSource,undefined);assert.equal(a.data.deliveryFee,undefined);
+  const b=await create('101',{street:'R. Cliente',zipCode:'13250000'},secondToken);assert.equal(b.status,201);assert.equal(b.data.deliveryFeeSource,undefined);assert.equal(calls,1);
   assert.equal((await pool.query('SELECT hit_count FROM geo_distance_cache')).rows[0].hit_count,1);
   assert.equal(requestBodies[0].body.travelMode,'DRIVE');assert.equal(requestBodies[0].body.regionCode,'BR');assert.equal(requestBodies[0].headers.mask,'routes.distanceMeters,routes.duration');assert.ok(requestBodies[0].headers.keyPresent);
   assert.ok(!JSON.stringify(a.data).includes(fakeKey));
@@ -111,8 +117,8 @@ test('F04 consistência quote/pedido, preço promocional e todos itens/preorder 
   await setSetting('freight_free_band2_enabled','true');await pool.query("UPDATE products SET promo_active=true,promo_price='20',promo_max_units=2 WHERE id=$1",[productId]);
   const a=await create('401');
   const items=[{productId,quantity:4,receiveAllAsPreorder:true}];
-  const q=await api('/api/cart/quote',{addressId:a.data.id,items});assert.equal(q.status,200);assert.equal(q.data.totals.subtotal,100);assert.equal(q.data.freight.source,'FREE_BAND_2');
-  const o=await order(a.data.id,4,{items,quoteToken:q.data.quoteToken,deliveryFee:999,deliveryDistanceKm:999,distanceKm:999,freight:999});assert.equal(o.status,201,JSON.stringify(o.data));assert.equal(o.data.subtotal,'100.00');assert.equal(o.data.deliveryFee,'0.00');assert.equal(o.data.deliveryDistanceKm,'3.10');assert.equal(o.data.deliveryFeeSource,q.data.freight.source);assert.equal(Number(o.data.total),q.data.totals.total);assert.ok(o.data.paymentExpiresAt);assert.ok(o.data.items.every((item:any)=>item.fulfillmentType==='PREORDER'));assert.equal(calls,1);
+  const q=await api('/api/cart/quote',{addressId:a.data.id,items});assert.equal(q.status,200);assert.equal(q.data.totals.subtotal,100);assert.equal(q.data.freight.isFree,true);assert.equal(q.data.freight.source,undefined);assert.equal(q.data.freight.distanceKm,undefined);
+  const o=await order(a.data.id,4,{items,quoteToken:q.data.quoteToken,deliveryFee:999,deliveryDistanceKm:999,distanceKm:999,freight:999});assert.equal(o.status,201,JSON.stringify(o.data));assert.equal(o.data.subtotal,'100.00');assert.equal(o.data.deliveryFee,'0.00');assert.equal(o.data.deliveryDistanceKm,undefined);assert.equal(o.data.deliveryFeeSource,'FREE_BAND_2');assert.equal(Number(o.data.total),q.data.totals.total);assert.ok(o.data.paymentExpiresAt);assert.ok(o.data.items.every((item:any)=>item.fulfillmentType==='PREORDER'));assert.equal(calls,1);
   await setSetting('freight_free_band2_enabled','false');
   const q2=await api('/api/cart/quote',{addressId:a.data.id,items});const o2=await order(a.data.id,4,{items,quoteToken:q2.data.quoteToken});assert.equal(o2.data.deliveryFee,'7.50');assert.equal(Number(o2.data.total),q2.data.totals.total);
   const q3=await api('/api/cart/quote',{addressId:a.data.id,items});await setSetting('freight_base_fee','8');assert.equal((await order(a.data.id,4,{items,quoteToken:q3.data.quoteToken})).data.code,'QUOTE_CHANGED');await setSetting('freight_base_fee','7.50');
@@ -120,17 +126,17 @@ test('F04 consistência quote/pedido, preço promocional e todos itens/preorder 
 test('F05 Itatiba apenas, fora da área salvo com distância; >20 bloqueia mesmo com benefício; 15-20 normal',async()=>{
   const before=calls;assert.equal((await create('501',{city:'Jundiaí'})).status,422);assert.equal(calls,before);
   const signup=await api('/api/auth/register',{name:'Fora',email:`outside-${Date.now()}@test.local`,phone:'11911111111',password:'FakeTest123!',lgpdAccepted:true,address:address('1',{city:'Jundiaí'})},'');assert.equal(signup.status,422,JSON.stringify(signup.data));assert.equal(calls,before);
-  meters=20010;const a=await create('502');assert.equal(a.status,422);assert.equal(a.data.error,'Não entregamos nessa região. Entre em contato através do WhatsApp: 11910509385');assert.equal(a.data.deliveryDistanceKm,'20.01');assert.equal(a.data.deliveryInArea,false);assert.ok((await pool.query('SELECT id FROM addresses WHERE id=$1',[a.data.id])).rowCount);
+  meters=20010;const a=await create('502');assert.equal(a.status,422);assert.equal(a.data.error,'Não entregamos nessa região. Entre em contato através do WhatsApp: 11910509385');assert.equal(a.data.deliveryDistanceKm,undefined);assert.equal(a.data.served,true);assert.ok((await pool.query('SELECT id FROM addresses WHERE id=$1',[a.data.id])).rowCount);
   await pool.query("UPDATE users SET free_delivery_until=NOW()+INTERVAL '1 day' WHERE id=$1",[userId]);const o=await order(a.data.id);assert.equal(o.status,422);assert.equal(o.data.code,'OUT_OF_DELIVERY_AREA');
   meters=20000;const b=await create('503');assert.equal(b.status,201);await pool.query('UPDATE users SET free_delivery_until=null WHERE id=$1',[userId]);assert.equal((await order(b.data.id)).data.deliveryFee,'31.50');
 });
 test('F06 limite de 15 cache misses por 24h; 16º salva endereço sem distância e retorna 429',async()=>{
   for(let i=0;i<15;i++){const a=await create(String(600+i));assert.equal(a.status,201);}
-  const last=await create('616');assert.equal(last.status,429);assert.equal(last.data.deliveryDistanceKm,null);assert.equal(calls,15);
+  const last=await create('616');assert.equal(last.status,429);assert.equal(last.data.deliveryDistanceKm,undefined);assert.equal(calls,15);
   const cache=await create('600');assert.equal(cache.status,201);assert.equal(calls,15);
 });
 test('F07 cota atômica inclusive falhas e avisos únicos por mês no limiar configurado',async()=>{
-  await setSetting('geo_monthly_limit','2');await setSetting('geo_warn_at','1');mode='forbidden';await create('701');mode='ok';await create('702');const third=await create('703');assert.equal(third.data.deliveryDistanceKm,null);assert.equal(third.data.code,'MONTHLY_LIMIT');assert.equal(calls,2);await create('704');
+  await setSetting('geo_monthly_limit','2');await setSetting('geo_warn_at','1');mode='forbidden';await create('701');mode='ok';await create('702');const third=await create('703');assert.equal(third.data.deliveryDistanceKm,undefined);assert.equal(third.data.code,'MONTHLY_LIMIT');assert.equal(calls,2);await create('704');
   assert.equal((await pool.query('SELECT calls FROM geo_api_usage')).rows[0].calls,2);assert.equal((await pool.query("SELECT count(*)::int AS n FROM admin_event_keys WHERE event_key LIKE 'geo:%'")).rows[0].n,2);assert.equal((await pool.query("SELECT count(*)::int AS n FROM admin_notifications WHERE type='GEO_QUOTA'")).rows[0].n,2);
 });
 test('F08 single-flight: cinco cadastros simultâneos do mesmo destino usam uma chamada',async()=>{
@@ -139,9 +145,9 @@ test('F08 single-flight: cinco cadastros simultâneos do mesmo destino usam uma 
 test('F09 Google 403/429/ZERO_RESULTS/JSON inválido/timeout: sem distância/sem gratuidade; retry funciona',async()=>{
   let last:any;
   for(const [i,state] of ['forbidden','rate','zero','invalid','timeout'].entries()){
-    mode=state;const a=await create(String(900+i));assert.equal(a.status,201,JSON.stringify(a.data));assert.equal(a.data.deliveryDistanceKm,null);assert.equal(a.data.code,['PROVIDER_FORBIDDEN','PROVIDER_RATE_LIMIT','ZERO_RESULTS','PROVIDER_ERROR','TIMEOUT'][i]);assert.equal((await order(a.data.id)).data.code,'DISTANCE_UNAVAILABLE');last=a;
+    mode=state;const a=await create(String(900+i));assert.equal(a.status,201,JSON.stringify(a.data));assert.equal(a.data.deliveryDistanceKm,undefined);assert.equal(a.data.code,['PROVIDER_FORBIDDEN','PROVIDER_RATE_LIMIT','ZERO_RESULTS','PROVIDER_ERROR','TIMEOUT'][i]);assert.equal((await order(a.data.id)).data.code,'DISTANCE_UNAVAILABLE');last=a;
   }
-  mode='ok';assert.equal((await api(`/api/addresses/${last.data.id}/recalculate`,{})).data.deliveryDistanceKm,'3.10');assert.equal(calls,6);assert.ok(!output.includes(fakeKey));
+  mode='ok';assert.equal((await api(`/api/addresses/${last.data.id}/recalculate`,{})).data.deliveryDistanceKm,undefined);assert.equal(calls,6);assert.ok(!output.includes(fakeKey));
 });
 test('F10 permissões, propriedade, configurações validadas/persistentes/auditadas e rotas antigas 410',async()=>{
   assert.equal((await api('/api/admin/geo/status',undefined,userToken)).status,403);
