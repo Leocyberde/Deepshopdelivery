@@ -1546,6 +1546,7 @@ ${kitProd.code} - ${kitProd.name}`)) return;
             {/* 2. PRODUTOS & KITS E ABA DE PRODUTOS INATIVOS */}
             {(section === 'PRODUCTS' || section === 'INACTIVE_PRODUCTS' || section === 'PREORDER_STOCKOUT') && (
               <AdminProductsSection
+                apiFetch={apiFetch}
                 section={section}
                 goToSection={goToSection}
                 products={products}

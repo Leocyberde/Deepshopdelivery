@@ -343,6 +343,19 @@ export function registerAdminPhase2Routes(app: Express) {
     }
   });
 
+  app.get('/api/admin/products/codes', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const prefix = typeof req.query.prefix === 'string' ? req.query.prefix.trim().toUpperCase() : '';
+      if (!/^[A-Z]$/.test(prefix)) { res.status(400).json({ error: 'Informe uma letra válida.' }); return; }
+      const rows = await db.select({ code: schema.products.code, name: schema.products.name, status: schema.products.status })
+        .from(schema.products).where(ilike(schema.products.code, `${prefix}%`)).orderBy(asc(schema.products.code)).limit(1000);
+      res.json({ prefix, products: rows });
+    } catch (error) {
+      logServerError('admin_product_codes_failed', error);
+      res.status(500).json({ error: 'Não foi possível consultar os códigos.' });
+    }
+  });
+
   app.post('/api/admin/products', requireAuth, requireAdmin, async (req: AuthRequest, res) => {
     try {
       const input = productData(req.body);

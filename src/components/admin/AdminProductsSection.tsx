@@ -51,6 +51,7 @@ function variationSignature(options: Record<string, string>) {
 }
 
 interface AdminProductsSectionProps {
+  apiFetch: <T = any>(url: string, options?: RequestInit) => Promise<T>;
   section: 'PRODUCTS' | 'INACTIVE_PRODUCTS' | 'PREORDER_STOCKOUT';
   goToSection: (target: AdminSection) => void;
   products: any[];
@@ -159,6 +160,7 @@ interface AdminProductsSectionProps {
 }
 
 export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
+  apiFetch,
   section,
   goToSection,
   products,
@@ -246,6 +248,8 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
   handleActivateProductStock,
 }) => {
   const [searchDraft, setSearchDraft] = useState(productSearch);
+  const [codeSuggestions, setCodeSuggestions] = useState<Array<{ code: string; name: string; status: string }>>([]);
+  const [codeSuggestionsOpen, setCodeSuggestionsOpen] = useState(false);
   const [variationTypes, setVariationTypes] = useState<string[]>([]);
   const [variationValues, setVariationValues] = useState<Record<string, string>>({});
   const [variationRows, setVariationRows] = useState<VariationRow[]>([]);
@@ -297,6 +301,28 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
       updateVariationRows(variationRows.map((row) => ({ ...row, price: prodPrice || '0' })));
     }
   };
+
+  useEffect(() => {
+    if (editingProd || formMode !== 'PRODUCT') { setCodeSuggestions([]); return; }
+    const prefix = prodCode.trim().toUpperCase().match(/^[A-Z]/)?.[0];
+    if (!prefix) { setCodeSuggestions([]); return; }
+    const timer = setTimeout(() => {
+      apiFetch<{ products: Array<{ code: string; name: string; status: string }> }>(`/api/admin/products/codes?prefix=${prefix}`)
+        .then((data) => { setCodeSuggestions(data.products || []); setCodeSuggestionsOpen(true); })
+        .catch(() => setCodeSuggestions([]));
+    }, 180);
+    return () => clearTimeout(timer);
+  }, [apiFetch, editingProd, formMode, prodCode]);
+
+  const nextCodeSuggestion = (() => {
+    const prefix = prodCode.trim().toUpperCase().match(/^[A-Z]/)?.[0];
+    if (!prefix) return '';
+    const highest = codeSuggestions.reduce((max, product) => {
+      const match = product.code.match(/^[A-Z](\d{1,3})$/i);
+      return match ? Math.max(max, Number(match[1])) : max;
+    }, 0);
+    return `${prefix}${String(highest + 1).padStart(3, '0')}`;
+  })();
 
   useEffect(() => setSearchDraft(productSearch), [productSearch]);
   useEffect(() => {
@@ -461,10 +487,13 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
                 required
                 maxLength={4}
                 value={prodCode}
-                onChange={(e) => setProdCode(e.target.value.toUpperCase())}
+                onChange={(e) => { setProdCode(e.target.value.toUpperCase()); setCodeSuggestionsOpen(true); }}
+                onFocus={() => setCodeSuggestionsOpen(true)}
+                onBlur={() => setTimeout(() => setCodeSuggestionsOpen(false), 180)}
                 placeholder="Ex: A001"
                 className="w-full px-3 py-2 text-sm bg-white border border-stone-300 rounded-lg font-mono font-bold uppercase"
               />
+              {codeSuggestionsOpen && nextCodeSuggestion && !editingProd && <div className="relative z-30"><div className="absolute left-0 right-0 mt-1 max-h-64 overflow-y-auto rounded-lg border border-blue-200 bg-white p-2 shadow-xl"><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { setProdCode(nextCodeSuggestion); setCodeSuggestionsOpen(false); }} className="mb-2 w-full rounded-md bg-blue-50 px-3 py-2 text-left text-xs font-bold text-blue-900 hover:bg-blue-100">Próximo sugerido: <span className="font-mono">{nextCodeSuggestion}</span> — usar este código</button>{codeSuggestions.length > 0 ? <div className="space-y-1 border-t border-stone-100 pt-2"><p className="px-2 text-[10px] font-bold uppercase tracking-wide text-zinc-500">Já cadastrados com a letra {prodCode.trim().charAt(0).toUpperCase()}</p>{codeSuggestions.map((product) => <div key={product.code} className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-stone-50"><span><strong className="font-mono">{product.code}</strong> — {product.name}</span><span className="text-[10px] text-zinc-400">{product.status === 'ACTIVE' ? 'Ativo' : 'Inativo'}</span></div>)}</div> : <p className="border-t border-stone-100 pt-2 text-[11px] text-zinc-500">Nenhum produto com essa letra ainda. O próximo será {nextCodeSuggestion}.</p>}</div></div>}
               <span className="block text-[11px] text-zinc-500">
                 Ex: E001, S010, K001 (aparece na vitrine e WhatsApp)
               </span>
