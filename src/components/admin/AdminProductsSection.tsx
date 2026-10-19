@@ -249,10 +249,12 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
   const [variationTypes, setVariationTypes] = useState<string[]>([]);
   const [variationValues, setVariationValues] = useState<Record<string, string>>({});
   const [variationRows, setVariationRows] = useState<VariationRow[]>([]);
+  const [variationHasCustomPrice, setVariationHasCustomPrice] = useState(false);
 
   useEffect(() => {
     const rows = parseVariationRows(prodVariantsJson);
     setVariationRows(rows);
+    setVariationHasCustomPrice(new Set(rows.map((row) => String(row.price))).size > 1);
     const keys = [...new Set(rows.flatMap((row) => Object.keys(row.options || {})))];
     setVariationTypes(keys);
     setVariationValues(Object.fromEntries(keys.map((key) => [key, [...new Set(rows.map((row) => row.options?.[key]).filter(Boolean))].join(', ')])));
@@ -273,16 +275,27 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
     if (!lists.length || lists.some((item) => item.values.length === 0)) return;
     const combinations = lists.reduce<Record<string, string>[]>((result, item) => result.flatMap((base) => item.values.map((value) => ({ ...base, [item.type]: value }))), [{}]);
     const previous = new Map(variationRows.map((row) => [variationSignature(row.options), row]));
-    updateVariationRows(combinations.map((options, index) => previous.get(variationSignature(options)) || ({
-      sku: `${prodCode || 'VAR'}-${index + 1}`,
-      options,
-      price: prodPrice || '0',
-      promoPrice: null,
-      cost: prodCost || '0',
-      stock: prodStock || '0',
-      stockMinimum: 0,
-      allowPreorder: prodAllowPreorder,
-    })));
+    updateVariationRows(combinations.map((options, index) => {
+      const existing = previous.get(variationSignature(options));
+      if (existing) return variationHasCustomPrice ? existing : { ...existing, price: prodPrice || '0' };
+      return {
+        sku: `${prodCode || 'VAR'}-${index + 1}`,
+        options,
+        price: prodPrice || '0',
+        promoPrice: null,
+        cost: prodCost || '0',
+        stock: prodStock || '0',
+        stockMinimum: 0,
+        allowPreorder: prodAllowPreorder,
+      };
+    }));
+  };
+
+  const toggleCustomVariationPrice = (enabled: boolean) => {
+    setVariationHasCustomPrice(enabled);
+    if (!enabled && variationRows.length > 0) {
+      updateVariationRows(variationRows.map((row) => ({ ...row, price: prodPrice || '0' })));
+    }
   };
 
   useEffect(() => setSearchDraft(productSearch), [productSearch]);
@@ -522,6 +535,11 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
                   </label>
                 ))}
               </div>
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-950">
+                <input type="checkbox" checked={variationHasCustomPrice} onChange={(event) => toggleCustomVariationPrice(event.target.checked)} className="h-4 w-4 accent-indigo-700" />
+                Preço diferente por variação
+              </label>
+              <p className="text-[11px] text-indigo-800">Desmarcado: todas as opções usam o valor normal do produto. Marcado: você pode informar um preço diferente para cada tamanho, cor, voltagem ou combinação.</p>
               {variationTypes.length > 0 && <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {variationTypes.map((type) => (
                   <label key={type} className="space-y-1 text-[11px] font-semibold text-indigo-950">
@@ -534,7 +552,7 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
                 <button type="button" disabled={!variationTypes.length || variationTypes.some((type) => !(variationValues[type] || '').trim())} onClick={generateVariationRows} className="rounded-lg bg-indigo-700 px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">Gerar combinações</button>
                 {variationRows.length > 0 && <button type="button" onClick={() => updateVariationRows([])} className="rounded-lg border border-indigo-300 bg-white px-3 py-2 text-xs font-semibold text-indigo-900">Remover variações</button>}
               </div>
-              {variationRows.length > 0 ? <div className="overflow-x-auto rounded-lg border border-indigo-200 bg-white"><table className="min-w-full text-left text-[11px]"><thead className="bg-indigo-50 text-indigo-950"><tr><th className="px-2 py-2">Opção</th><th className="px-2 py-2">SKU</th><th className="px-2 py-2">Preço</th><th className="px-2 py-2">Custo</th><th className="px-2 py-2">Estoque</th></tr></thead><tbody className="divide-y divide-indigo-100">{variationRows.map((row, index) => <tr key={`${variationSignature(row.options)}-${index}`}><td className="whitespace-nowrap px-2 py-2 font-semibold text-indigo-950">{Object.entries(row.options).map(([key, value]) => `${key}: ${value}`).join(' · ')}</td><td className="px-2 py-2"><input value={row.sku || ''} onChange={(event) => updateVariationRows(variationRows.map((item, rowIndex) => rowIndex === index ? { ...item, sku: event.target.value } : item))} className="w-28 rounded border px-2 py-1" /></td><td className="px-2 py-2"><input type="number" min="0" step="0.01" value={row.price} onChange={(event) => updateVariationRows(variationRows.map((item, rowIndex) => rowIndex === index ? { ...item, price: event.target.value } : item))} className="w-24 rounded border px-2 py-1" /></td><td className="px-2 py-2"><input type="number" min="0" step="0.000001" value={row.cost} onChange={(event) => updateVariationRows(variationRows.map((item, rowIndex) => rowIndex === index ? { ...item, cost: event.target.value } : item))} className="w-24 rounded border px-2 py-1" /></td><td className="px-2 py-2"><input type="number" min="0" step="1" value={row.stock} onChange={(event) => updateVariationRows(variationRows.map((item, rowIndex) => rowIndex === index ? { ...item, stock: event.target.value } : item))} className="w-20 rounded border px-2 py-1" /></td></tr>)}</tbody></table></div> : <p className="text-[11px] text-indigo-800">Nenhuma variação cadastrada. Se o produto não tiver cor, tamanho ou outra opção, deixe todas as caixinhas desmarcadas.</p>}
+              {variationRows.length > 0 ? <div className="overflow-x-auto rounded-lg border border-indigo-200 bg-white"><table className="min-w-full text-left text-[11px]"><thead className="bg-indigo-50 text-indigo-950"><tr><th className="px-2 py-2">Opção</th><th className="px-2 py-2">SKU</th><th className="px-2 py-2">Preço</th><th className="px-2 py-2">Custo</th><th className="px-2 py-2">Estoque</th></tr></thead><tbody className="divide-y divide-indigo-100">{variationRows.map((row, index) => <tr key={`${variationSignature(row.options)}-${index}`}><td className="whitespace-nowrap px-2 py-2 font-semibold text-indigo-950">{Object.entries(row.options).map(([key, value]) => `${key}: ${value}`).join(' · ')}</td><td className="px-2 py-2"><input value={row.sku || ''} onChange={(event) => updateVariationRows(variationRows.map((item, rowIndex) => rowIndex === index ? { ...item, sku: event.target.value } : item))} className="w-28 rounded border px-2 py-1" /></td><td className="px-2 py-2"><input type="number" min="0" step="0.01" value={row.price} disabled={!variationHasCustomPrice} onChange={(event) => updateVariationRows(variationRows.map((item, rowIndex) => rowIndex === index ? { ...item, price: event.target.value } : item))} className="w-24 rounded border px-2 py-1 disabled:bg-stone-100 disabled:text-stone-500" /></td><td className="px-2 py-2"><input type="number" min="0" step="0.000001" value={row.cost} onChange={(event) => updateVariationRows(variationRows.map((item, rowIndex) => rowIndex === index ? { ...item, cost: event.target.value } : item))} className="w-24 rounded border px-2 py-1" /></td><td className="px-2 py-2"><input type="number" min="0" step="1" value={row.stock} onChange={(event) => updateVariationRows(variationRows.map((item, rowIndex) => rowIndex === index ? { ...item, stock: event.target.value } : item))} className="w-20 rounded border px-2 py-1" /></td></tr>)}</tbody></table></div> : <p className="text-[11px] text-indigo-800">Nenhuma variação cadastrada. Se o produto não tiver cor, tamanho ou outra opção, deixe todas as caixinhas desmarcadas.</p>}
             </div>
           )}
 
