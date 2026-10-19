@@ -19,7 +19,7 @@ export const ShoppingBagFaceBadge: React.FC<{
 );
 
 // Ícone oficial do aplicativo: somente o símbolo da sacola da logo DeepShop Delivery.
-export const AchadinhosAppIconSVG: React.FC<{ className?: string }> = ({
+export const DeepShopDeliveryAppIconSVG: React.FC<{ className?: string }> = ({
   className = 'w-16 h-16',
 }) => (
   <img
@@ -30,7 +30,7 @@ export const AchadinhosAppIconSVG: React.FC<{ className?: string }> = ({
 );
 
 // Logo oficial horizontal fornecida pelo proprietário do projeto.
-export const AchadinhosDeliveryLogo: React.FC<{
+export const DeepShopDeliveryDeliveryLogo: React.FC<{
   size?: 'sm' | 'lg';
   theme?: 'light' | 'dark';
   className?: string;

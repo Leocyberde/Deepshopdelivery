@@ -27,7 +27,7 @@ import {
   ProductMediaItem,
   ExpandableDescription,
   PromoCountdown,
-  AchadinhosDeliveryLogo,
+  DeepShopDeliveryDeliveryLogo,
 } from '../context/AppContext.tsx';
 
 interface Category {
@@ -752,7 +752,7 @@ export const StorefrontPage: React.FC = () => {
         <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center border-t border-stone-200 pt-12">
           <div className="lg:col-span-6 space-y-5">
             <div className="inline-flex flex-wrap items-center gap-3 p-3 rounded-2xl bg-white border border-stone-200 shadow-2xs">
-              <AchadinhosDeliveryLogo size="lg" />
+              <DeepShopDeliveryDeliveryLogo size="lg" />
               <span className="px-2.5 py-1 rounded-md bg-emerald-50 border border-emerald-200 text-[11px] font-bold text-emerald-800 inline-flex items-center gap-1">
                 <MapPin className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
                 <span>Região de Itatiba</span>
@@ -810,7 +810,7 @@ export const StorefrontPage: React.FC = () => {
       <footer className="border-t border-stone-200 bg-white mt-16">
         <div className="max-w-[1200px] mx-auto px-4 sm:px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-zinc-500">
           <div className="flex items-center gap-3">
-            <AchadinhosDeliveryLogo size="sm" />
+            <DeepShopDeliveryDeliveryLogo size="sm" />
             <span>— Produtos de utilidades e acessórios na palma da mão em poucas horas (Região de Itatiba)</span>
           </div>
           <div className="flex items-center gap-4">

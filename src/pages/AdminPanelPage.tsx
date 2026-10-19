@@ -192,7 +192,7 @@ export const AdminPanelPage: React.FC = () => {
   // Alerta Sonoro de Novos Pedidos e Novos Clientes (Item 3.3)
   const [soundAlertsEnabled, setSoundAlertsEnabled] = useState<boolean>(() => {
     try {
-      const saved = localStorage.getItem('achadinhos_admin_sound_enabled_v1');
+      const saved = localStorage.getItem('deepshopdelivery_admin_sound_enabled_v1');
       return saved === null ? true : saved === 'true';
     } catch {
       return true;
@@ -210,7 +210,7 @@ export const AdminPanelPage: React.FC = () => {
     setSoundAlertsEnabled((prev) => {
       const next = !prev;
       try {
-        localStorage.setItem('achadinhos_admin_sound_enabled_v1', String(next));
+        localStorage.setItem('deepshopdelivery_admin_sound_enabled_v1', String(next));
       } catch {
         // ignore
       }

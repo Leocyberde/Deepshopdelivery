@@ -3,7 +3,7 @@ let memoryVisitorId: string | null = null;
 
 export function getOrCreateVisitorId(): string {
   try {
-    const stored = typeof localStorage !== 'undefined' ? localStorage.getItem('achadinhos_visitor_id_v1') : null;
+    const stored = typeof localStorage !== 'undefined' ? localStorage.getItem('deepshopdelivery_visitor_id_v1') : null;
     if (stored && stored.length > 10) {
       return stored;
     }
@@ -11,7 +11,7 @@ export function getOrCreateVisitorId(): string {
     const timePart = Date.now().toString(36);
     const newId = `vis_${randomPart}_${timePart}`;
     if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('achadinhos_visitor_id_v1', newId);
+      localStorage.setItem('deepshopdelivery_visitor_id_v1', newId);
     }
     return newId;
   } catch (_e) {

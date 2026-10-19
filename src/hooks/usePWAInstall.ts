@@ -18,7 +18,7 @@ export function usePWAInstall() {
   const [isInstalled, setIsInstalled] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     // Remove old simulated flag if present
-    localStorage.removeItem('achadinhos_pwa_installed_v1');
+    localStorage.removeItem('deepshopdelivery_pwa_installed_v1');
     return (
       window.matchMedia('(display-mode: standalone)').matches ||
       (window.navigator as unknown as { standalone?: boolean }).standalone === true

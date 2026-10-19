@@ -145,7 +145,7 @@ interface CustomerOrder {
   whatsappUrl: string;
 }
 
-const LAST_VIEWED_ORDER_KEY_PREFIX = 'achadinhos_customer_last_viewed_order_v1:';
+const LAST_VIEWED_ORDER_KEY_PREFIX = 'deepshopdelivery_customer_last_viewed_order_v1:';
 
 export const CustomerAccountPage: React.FC = () => {
   const {

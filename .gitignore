@@ -10,7 +10,7 @@ coverage/
 # Dados de clientes e backups nunca vão para o repositório
 .pgdata/
 backups/
-achadinhos-backups/
+deepshopdelivery-backups/
 *.sql
 !drizzle/*.sql
 *.sql.gz

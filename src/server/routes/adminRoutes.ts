@@ -2569,7 +2569,7 @@ export function registerAdminRoutes(app: Express) {
       res.setHeader('Content-Type', 'application/sql; charset=utf-8');
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="achadinhos-postgresql-vps-${new Date().toISOString().slice(0, 10)}.sql"`
+        `attachment; filename="deepshopdelivery-postgresql-vps-${new Date().toISOString().slice(0, 10)}.sql"`
       );
       res.send(sqlDump);
     } catch (error: any) {
@@ -2588,7 +2588,7 @@ export function registerAdminRoutes(app: Express) {
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="achadinhos-backup-${new Date().toISOString().slice(0, 10)}.json"`
+        `attachment; filename="deepshopdelivery-backup-${new Date().toISOString().slice(0, 10)}.json"`
       );
       res.send(JSON.stringify(jsonBackup, null, 2));
     } catch (error: any) {

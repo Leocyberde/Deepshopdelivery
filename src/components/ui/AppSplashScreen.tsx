@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingBagFaceBadge } from './AchadinhosLogo.tsx';
+import { ShoppingBagFaceBadge } from './DeepShopDeliveryLogo.tsx';
 
 // Tela de Carregamento Azul (#087BFF) que já cai direto na animação da cestinha + logo com a Bolsa de Compras e Carinha dentro
 export const AppSplashScreen: React.FC<{
@@ -11,7 +11,7 @@ export const AppSplashScreen: React.FC<{
     if (typeof window === 'undefined') return false;
     const params = new URLSearchParams(window.location.search);
     if (params.get('auto_install') === '1') return false;
-    const seen = sessionStorage.getItem('achadinhos_splash_seen_v3');
+    const seen = sessionStorage.getItem('deepshopdelivery_splash_seen_v3');
     return seen !== 'true';
   });
 
@@ -22,7 +22,7 @@ export const AppSplashScreen: React.FC<{
 
     const t1 = window.setTimeout(() => setStep('logo'), 1300);
     const t2 = window.setTimeout(() => {
-      sessionStorage.setItem('achadinhos_splash_seen_v3', 'true');
+      sessionStorage.setItem('deepshopdelivery_splash_seen_v3', 'true');
       setVisible(false);
       onClose?.();
     }, 2000);
@@ -40,7 +40,7 @@ export const AppSplashScreen: React.FC<{
       role="dialog"
       aria-label="Carregando DeepShop Delivery"
       onClick={() => {
-        sessionStorage.setItem('achadinhos_splash_seen_v3', 'true');
+        sessionStorage.setItem('deepshopdelivery_splash_seen_v3', 'true');
         setVisible(false);
         onClose?.();
       }}

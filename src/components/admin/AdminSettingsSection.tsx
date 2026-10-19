@@ -162,7 +162,7 @@ export const AdminSettingsSection: React.FC<AdminSettingsSectionProps> = ({
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `achadinhos-postgresql-vps-${new Date().toISOString().slice(0, 10)}.sql`;
+      a.download = `deepshopdelivery-postgresql-vps-${new Date().toISOString().slice(0, 10)}.sql`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -187,7 +187,7 @@ export const AdminSettingsSection: React.FC<AdminSettingsSectionProps> = ({
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `achadinhos-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      a.download = `deepshopdelivery-backup-${new Date().toISOString().slice(0, 10)}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -391,12 +391,12 @@ export const AdminSettingsSection: React.FC<AdminSettingsSectionProps> = ({
             <li>
               Na sua VPS com PostgreSQL instalado, crie o banco e importe o arquivo:
               <pre className="mt-1 p-2 rounded bg-zinc-900 text-sky-200 font-mono text-[11px] overflow-x-auto">
-{`createdb -U postgres achadinhos
-psql -U postgres -d achadinhos -f achadinhos-postgresql-vps.sql`}
+{`createdb -U postgres deepshopdelivery
+psql -U postgres -d deepshopdelivery -f deepshopdelivery-postgresql-vps.sql`}
               </pre>
             </li>
             <li>
-              No arquivo <code className="font-mono bg-stone-200 px-1 rounded">.env</code> da VPS, defina <code className="font-mono bg-stone-200 px-1 rounded">PGHOST=localhost</code>, <code className="font-mono bg-stone-200 px-1 rounded">PGPORT=5432</code>, <code className="font-mono bg-stone-200 px-1 rounded">PGUSER=postgres</code>, <code className="font-mono bg-stone-200 px-1 rounded">PGPASSWORD=sua_senha</code> e <code className="font-mono bg-stone-200 px-1 rounded">PGDATABASE=achadinhos</code> — o servidor detecta e usa o PostgreSQL da VPS automaticamente!
+              No arquivo <code className="font-mono bg-stone-200 px-1 rounded">.env</code> da VPS, defina <code className="font-mono bg-stone-200 px-1 rounded">PGHOST=localhost</code>, <code className="font-mono bg-stone-200 px-1 rounded">PGPORT=5432</code>, <code className="font-mono bg-stone-200 px-1 rounded">PGUSER=postgres</code>, <code className="font-mono bg-stone-200 px-1 rounded">PGPASSWORD=sua_senha</code> e <code className="font-mono bg-stone-200 px-1 rounded">PGDATABASE=deepshopdelivery</code> — o servidor detecta e usa o PostgreSQL da VPS automaticamente!
             </li>
           </ol>
         </div>

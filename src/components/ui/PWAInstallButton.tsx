@@ -3,9 +3,9 @@ import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
 import { Download, X, CheckCircle2 } from 'lucide-react';
 import { usePWAInstall } from '../../hooks/usePWAInstall.ts';
-import { AchadinhosAppIconSVG } from './AchadinhosLogo.tsx';
+import { DeepShopDeliveryAppIconSVG } from './DeepShopDeliveryLogo.tsx';
 
-const POPUP_DISMISSED_KEY = 'achadinhos_pwa_popup_dismissed_v5';
+const POPUP_DISMISSED_KEY = 'deepshopdelivery_pwa_popup_dismissed_v5';
 
 export const PWAInstallButton: React.FC = () => {
   const { isInstallable, isInstalled, isInIframe, install } = usePWAInstall();
@@ -152,7 +152,7 @@ export const PWAInstallButton: React.FC = () => {
             </button>
 
             <div className="flex items-center gap-3 pr-5">
-              <AchadinhosAppIconSVG className="w-11 h-11 rounded-xl shrink-0 shadow-xs" />
+              <DeepShopDeliveryAppIconSVG className="w-11 h-11 rounded-xl shrink-0 shadow-xs" />
               <div className="min-w-0">
                 <h4 className="text-xs font-bold text-zinc-900 leading-tight truncate">
                   App DeepShop Delivery

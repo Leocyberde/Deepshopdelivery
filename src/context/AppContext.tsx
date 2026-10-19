@@ -20,7 +20,7 @@ import {
 export * from '../types/app.ts';
 export * from '../utils/formatters.ts';
 export * from '../utils/validators.ts';
-export * from '../components/ui/AchadinhosLogo.tsx';
+export * from '../components/ui/DeepShopDeliveryLogo.tsx';
 export * from '../components/ui/ProductMedia.tsx';
 export * from '../components/ui/PaymentTimerBadge.tsx';
 
@@ -61,9 +61,9 @@ export interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-const TOKEN_STORAGE_KEY = 'achadinhos_auth_token_v1';
-const USER_STORAGE_KEY = 'achadinhos_auth_user_v1';
-const CART_STORAGE_KEY = 'achadinhos_cart_v1';
+const TOKEN_STORAGE_KEY = 'deepshopdelivery_auth_token_v1';
+const USER_STORAGE_KEY = 'deepshopdelivery_auth_user_v1';
+const CART_STORAGE_KEY = 'deepshopdelivery_cart_v1';
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [token, setToken] = useState<string | null>(() => {
@@ -72,7 +72,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (savedUserRaw) {
         const parsed = JSON.parse(savedUserRaw);
         if (
-          parsed?.email === 'cliente@achadinhos.com.br' ||
+          parsed?.email === 'cliente@deepshopdelivery.com.br' ||
           parsed?.email === 'carlos@exemplo.com.br'
         ) {
           localStorage.removeItem(TOKEN_STORAGE_KEY);
@@ -93,7 +93,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (!saved) return null;
       const parsed = JSON.parse(saved);
       if (
-        parsed?.email === 'cliente@achadinhos.com.br' ||
+        parsed?.email === 'cliente@deepshopdelivery.com.br' ||
         parsed?.email === 'carlos@exemplo.com.br'
       ) {
         return null;
@@ -151,7 +151,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       localStorage.removeItem(TOKEN_STORAGE_KEY);
       localStorage.removeItem(USER_STORAGE_KEY);
-      const lastViewedOrderPrefix = 'achadinhos_customer_last_viewed_order_v1:';
+      const lastViewedOrderPrefix = 'deepshopdelivery_customer_last_viewed_order_v1:';
       for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
         const key = sessionStorage.key(index);
         if (key?.startsWith(lastViewedOrderPrefix)) sessionStorage.removeItem(key);
@@ -288,7 +288,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         // Dispara notificação nativa no celular (Android / PWA / Navegador) para novidades não lidas
         try {
-          const pushedRaw = localStorage.getItem('achadinhos_pushed_notif_ids');
+          const pushedRaw = localStorage.getItem('deepshopdelivery_pushed_notif_ids');
           const pushedIds: number[] = pushedRaw ? JSON.parse(pushedRaw) : [];
           const newUnread = res.notifications.filter(
             (n) => !n.isRead && !pushedIds.includes(n.id)
@@ -306,7 +306,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               pushedIds.push(notif.id);
             }
             localStorage.setItem(
-              'achadinhos_pushed_notif_ids',
+              'deepshopdelivery_pushed_notif_ids',
               JSON.stringify(pushedIds.slice(-100))
             );
           }

@@ -9,7 +9,7 @@ import * as schema from './schema.ts';
 import { BACKUP_DIR, SNAPSHOT_DIR, DAILY_DIR } from '../config/paths.ts';
 
 // Cópia mais recente do snapshot (usada na subida, se o banco estiver vazio, e no status do painel).
-export const SNAPSHOT_FILE_PATH = path.join(SNAPSHOT_DIR, 'achadinhos_snapshot_latest.json');
+export const SNAPSHOT_FILE_PATH = path.join(SNAPSHOT_DIR, 'deepshopdelivery_snapshot_latest.json');
 const SNAPSHOT_DEBOUNCE_MS = Number(process.env.BACKUP_DEBOUNCE_MS) || 60_000;
 const SNAPSHOT_KEEP = 5;
 const DAILY_KEEP_DAYS = 14;
@@ -221,7 +221,7 @@ export async function runDailyBackupIfNeeded() {
     ensurePrivateDirectory(BACKUP_DIR);
     ensurePrivateDirectory(DAILY_DIR);
     const today = new Date().toISOString().slice(0, 10);
-    const target = path.join(DAILY_DIR, `achadinhos-${today}.sql`);
+    const target = path.join(DAILY_DIR, `deepshopdelivery-${today}.sql`);
     if (!fs.existsSync(target)) {
       const dump = await exportFullPostgresSqlDump();
       writePrivateFile(target, dump);
@@ -230,7 +230,7 @@ export async function runDailyBackupIfNeeded() {
     const limit = Date.now() - DAILY_KEEP_DAYS * 24 * 60 * 60 * 1000;
     for (const f of fs.readdirSync(DAILY_DIR)) {
       const full = path.join(DAILY_DIR, f);
-      if (f.startsWith('achadinhos-') && f.endsWith('.sql') && fs.statSync(full).mtimeMs < limit) {
+      if (f.startsWith('deepshopdelivery-') && f.endsWith('.sql') && fs.statSync(full).mtimeMs < limit) {
         fs.unlinkSync(full);
       }
     }
@@ -259,7 +259,7 @@ function sqlVal(val: any): string {
 
 export async function exportFullPostgresSqlDump(): Promise<string> {
   const data = await exportFullBackupJson();
-  const migrationPath = path.join(process.cwd(), 'drizzle', '0000_achadinhos_production_schema.sql');
+  const migrationPath = path.join(process.cwd(), 'drizzle', '0000_deepshopdelivery_production_schema.sql');
   const ddl = fs.existsSync(migrationPath)
     ? fs.readFileSync(migrationPath, 'utf-8')
     : '';
@@ -269,8 +269,8 @@ export async function exportFullPostgresSqlDump(): Promise<string> {
   lines.push(`-- DEEPSHOP DELIVERY — DUMP COMPLETO POSTGRESQL (MIGRAÇÃO + DADOS REAIS)`);
   lines.push(`-- Gerado em: ${data.exportedAt}`);
   lines.push('-- Como restaurar na sua VPS com PostgreSQL instalado:');
-  lines.push('--   1. Crie o banco: createdb -U postgres achadinhos');
-  lines.push('--   2. Importe este arquivo: psql -U postgres -d achadinhos -f achadinhos-postgresql-vps.sql');
+  lines.push('--   1. Crie o banco: createdb -U postgres deepshopdelivery');
+  lines.push('--   2. Importe este arquivo: psql -U postgres -d deepshopdelivery -f deepshopdelivery-postgresql-vps.sql');
   lines.push('-- ============================================================================');
   lines.push('');
   lines.push('BEGIN;');

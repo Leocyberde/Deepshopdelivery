@@ -16,7 +16,7 @@ export const pgClient = new Pool(databaseUrl
   : {
       host: process.env.PGHOST || process.env.SQL_HOST || '127.0.0.1',
       port: Number(process.env.PGPORT || 5432),
-      database: process.env.PGDATABASE || process.env.SQL_DB_NAME || 'achadinhos',
+      database: process.env.PGDATABASE || process.env.SQL_DB_NAME || 'deepshopdelivery',
       user: process.env.PGUSER || process.env.SQL_USER || 'postgres',
       password: process.env.PGPASSWORD || process.env.SQL_PASSWORD || '',
       max: Number(process.env.PGPOOL_MAX) || 10,

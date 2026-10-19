@@ -49,7 +49,7 @@ export async function sendNativeNotification(
           badge: badgeUrl,
           vibrate: [200, 100, 200, 100, 300],
           data: { url: targetUrl },
-          tag: options.tag || `achadinhos-${Date.now()}`,
+          tag: options.tag || `deepshopdelivery-${Date.now()}`,
           requireInteraction: false,
         } as NotificationOptions);
         return true;
@@ -65,7 +65,7 @@ export async function sendNativeNotification(
       body: options.body,
       icon: iconUrl,
       badge: badgeUrl,
-      tag: options.tag || `achadinhos-${Date.now()}`,
+      tag: options.tag || `deepshopdelivery-${Date.now()}`,
     });
 
     notif.onclick = () => {

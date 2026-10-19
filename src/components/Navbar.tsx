@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Bell, ShoppingBag, Search, X, User, LogIn } from 'lucide-react';
-import { useApp, isAdminRole, AchadinhosDeliveryLogo } from '../context/AppContext.tsx';
+import { useApp, isAdminRole, DeepShopDeliveryDeliveryLogo } from '../context/AppContext.tsx';
 import { PWAInstallButton } from './ui/PWAInstallButton.tsx';
 
 export const Navbar: React.FC = () => {
@@ -46,7 +46,7 @@ export const Navbar: React.FC = () => {
               className="shrink-0 flex items-center pr-1"
               title="DeepShop Delivery — Região de Itatiba"
             >
-              <AchadinhosDeliveryLogo size="sm" />
+              <DeepShopDeliveryDeliveryLogo size="sm" />
             </Link>
           )}
         </div>

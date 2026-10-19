@@ -1,5 +1,5 @@
 import React from 'react';
-import { AchadinhosDeliveryLogo } from './AchadinhosLogo.tsx';
+import { DeepShopDeliveryDeliveryLogo } from './DeepShopDeliveryLogo.tsx';
 
 // Desenho ilustrativo passo a passo completo:
 // 1. Vitrine -> 2. Sacola -> 3. Pedido -> 4. Aprovação do ADM -> 5. Pagamento pelo WhatsApp direto com ADM -> 6. Entrega ao Cliente Feliz
@@ -210,7 +210,7 @@ export const LogisticsFlowIllustration: React.FC = () => {
 
       {/* Rodapé da Ilustração com a Logo DeepShop Delivery */}
       <div className="bg-white border border-stone-200 rounded-xl px-3.5 py-2.5 shadow-2xs flex flex-wrap items-center justify-between gap-3">
-        <AchadinhosDeliveryLogo size="sm" />
+        <DeepShopDeliveryDeliveryLogo size="sm" />
         <div className="text-[11px] leading-tight text-right">
           <div className="font-bold text-zinc-900">Na palma da mão em poucas horas</div>
           <div className="text-[#087BFF] font-semibold">

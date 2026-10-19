@@ -1,8 +1,8 @@
 -- ============================================================================
--- ACHADINHOS DELIVERY — MIGRAÇÃO OFICIAL POSTGRESQL (V1 PRODUÇÃO / VPS)
+-- DEEPSHOPDELIVERY DELIVERY — MIGRAÇÃO OFICIAL POSTGRESQL (V1 PRODUÇÃO / VPS)
 -- Compatível com PostgreSQL 14, 15, 16+ (VPS Ubuntu/Debian, Docker, Cloud SQL)
 -- Como aplicar em uma VPS com PostgreSQL:
---   psql -U postgres -d achadinhos -f drizzle/0000_achadinhos_production_schema.sql
+--   psql -U postgres -d deepshopdelivery -f drizzle/0000_deepshopdelivery_production_schema.sql
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS stores (
