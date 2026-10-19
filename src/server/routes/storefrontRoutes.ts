@@ -53,6 +53,9 @@ export function registerStorefrontRoutes(app: Express) {
 
       const allImages = await db.select().from(schema.productImages);
       const allKitItems = await db.select().from(schema.productKitItems);
+      const allVariants = await db.select().from(schema.productVariants);
+      const variantsByProduct = new Map<number, any[]>();
+      for (const variant of allVariants) variantsByProduct.set(variant.productId, [...(variantsByProduct.get(variant.productId) || []), variant]);
 
       const categoryMap = new Map(activeCategories.map((c) => [c.id, c.name]));
       const prodMap = new Map(allProducts.map((p) => [p.id, p]));
@@ -92,6 +95,14 @@ export function registerStorefrontRoutes(app: Express) {
             isKit: p.isKit, weight: p.weight, status: p.status, allowPreorder: p.allowPreorder,
             createdAt: p.createdAt, updatedAt: p.updatedAt,
           };
+          const publicVariants = (variantsByProduct.get(p.id) || [])
+            .filter((variant) => variant.stock > 0 || variant.allowPreorder)
+            .map((variant) => ({
+              id: variant.id, sku: variant.sku, options: variant.options,
+              price: variant.price, promoPrice: variant.promoPrice,
+              allowPreorder: variant.allowPreorder,
+              availabilityMode: variant.stock > 0 ? 'DELIVERY' : 'PREORDER',
+            }));
           return {
             ...publicProduct,
             availabilityMode: p.stock > 0 ? 'DELIVERY' : 'PREORDER',
@@ -99,6 +110,8 @@ export function registerStorefrontRoutes(app: Express) {
             effectivePrice,
             discountPercent,
             kitComponents,
+            variants: publicVariants,
+            hasVariants: publicVariants.length > 0,
             categoryName: categoryMap.get(p.categoryId) || 'Geral',
             imageUrl: primaryImg ? primaryImg.imageUrl : null,
             images: prodImgs,
@@ -208,6 +221,7 @@ export function registerStorefrontRoutes(app: Express) {
         hasPromo
       );
 
+      const variants = await db.select().from(schema.productVariants).where(eq(schema.productVariants.productId, product.id));
       let kitComponents: any[] = [];
       if (product.isKit) {
         const kitRows = await db
@@ -239,6 +253,14 @@ export function registerStorefrontRoutes(app: Express) {
         isKit: product.isKit, weight: product.weight, status: product.status, allowPreorder: product.allowPreorder,
         createdAt: product.createdAt, updatedAt: product.updatedAt,
       };
+      const publicVariants = variants
+        .filter((variant) => variant.stock > 0 || variant.allowPreorder)
+        .map((variant) => ({
+          id: variant.id, sku: variant.sku, options: variant.options,
+          price: variant.price, promoPrice: variant.promoPrice,
+          allowPreorder: variant.allowPreorder,
+          availabilityMode: variant.stock > 0 ? 'DELIVERY' : 'PREORDER',
+        }));
       res.json({
         ...publicProduct,
         viewsCount: product.viewsCount || 0,
@@ -246,6 +268,8 @@ export function registerStorefrontRoutes(app: Express) {
         effectivePrice,
         discountPercent,
         kitComponents,
+        variants: publicVariants,
+        hasVariants: publicVariants.length > 0,
         categoryName: category ? category.name : 'Geral',
         imageUrl: primaryImg ? primaryImg.imageUrl : null,
         images,

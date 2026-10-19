@@ -100,6 +100,8 @@ interface AdminProductsSectionProps {
   setProdFulfillmentType: (val: 'DELIVERY' | 'PREORDER') => void;
   prodAllowPreorder: boolean;
   setProdAllowPreorder: (val: boolean) => void;
+  prodVariantsJson: string;
+  setProdVariantsJson: (val: string) => void;
   prodImageUrl: string;
   setProdImageUrl: (val: string) => void;
   prodMediaItems: ProductMediaItem[];
@@ -187,7 +189,7 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
   prodStatus,
   setProdStatus,
   prodSupplierId, setProdSupplierId, prodSupplierUrl, setProdSupplierUrl,
-  prodFulfillmentType, setProdFulfillmentType, prodAllowPreorder, setProdAllowPreorder,
+  prodFulfillmentType, setProdFulfillmentType, prodAllowPreorder, setProdAllowPreorder, prodVariantsJson, setProdVariantsJson,
   prodImageUrl,
   setProdImageUrl,
   prodMediaItems,
@@ -441,6 +443,14 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
               <div className="space-y-1 sm:col-span-4"><label className="block text-xs font-semibold text-zinc-700">Tipo inicial</label><select value={prodFulfillmentType} onChange={(e) => setProdFulfillmentType(e.target.value as 'DELIVERY' | 'PREORDER')} className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm"><option value="DELIVERY">Delivery</option><option value="PREORDER">Encomenda</option></select></div>
               <label className="inline-flex items-center gap-2 text-xs font-semibold text-zinc-700 sm:col-span-12"><input type="checkbox" checked={prodAllowPreorder} onChange={(e) => setProdAllowPreorder(e.target.checked)} className="h-4 w-4 accent-zinc-900" />Permitir encomenda quando acabar</label>
               <p className="text-[11px] text-zinc-500 sm:col-span-12">O saldo decide a modalidade na vitrine. A opção controla apenas se o produto pode continuar ativo quando o saldo chegar a zero.</p>
+            </div>
+          )}
+
+          {formMode === 'PRODUCT' && (
+            <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-4 space-y-3">
+              <div><h3 className="text-sm font-bold text-indigo-950">Variações (opcional)</h3><p className="text-[11px] text-indigo-900">Use para tamanho, cor ou combinações. Cada linha pode ter opções como Tamanho=M e Cor=Preto; preço e estoque são independentes. Deixe [] para produto simples.</p></div>
+              <textarea name="variantsJson" value={prodVariantsJson} onChange={(e) => setProdVariantsJson(e.target.value)} rows={5} spellCheck={false} className="w-full rounded-lg border border-indigo-300 bg-white px-3 py-2 font-mono text-xs" placeholder='[{"sku":"CAM-M","options":{"Tamanho":"M"},"price":59.90,"stock":10,"cost":20}]' />
+              <p className="text-[11px] text-indigo-800">Dica: você pode cadastrar todas as combinações de tamanho/cor; produtos atuais continuam funcionando sem nenhuma alteração.</p>
             </div>
           )}
 

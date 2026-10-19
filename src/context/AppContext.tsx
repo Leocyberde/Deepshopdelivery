@@ -33,11 +33,11 @@ export interface AppContextType {
   refreshUser: () => Promise<void>;
   cart: CartItem[];
   addToCart: (item: Omit<CartItem, 'quantity'>, quantity?: number) => void;
-  updateCartQuantity: (productId: number, quantity: number) => void;
-  toggleCartItemSelected: (productId: number, selected: boolean) => void;
-  setCartItemPreorder: (productId: number, receiveAllAsPreorder: boolean) => void;
+  updateCartQuantity: (productId: number, quantity: number, variantId?: number) => void;
+  toggleCartItemSelected: (productId: number, selected: boolean, variantId?: number) => void;
+  setCartItemPreorder: (productId: number, receiveAllAsPreorder: boolean, variantId?: number) => void;
   removePurchasedCartItems: () => void;
-  removeFromCart: (productId: number) => void;
+  removeFromCart: (productId: number, variantId?: number) => void;
   clearCart: () => void;
   syncCartWithStorefront: (silent?: boolean) => Promise<void>;
   cartSyncing: boolean;
@@ -60,6 +60,7 @@ export interface AppContextType {
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
+const sameCartLine = (a: CartItem, productId: number, variantId?: number) => a.productId === productId && (a.variantId ?? null) === (variantId ?? null);
 
 const TOKEN_STORAGE_KEY = 'deepshopdelivery_auth_token_v1';
 const USER_STORAGE_KEY = 'deepshopdelivery_auth_user_v1';
@@ -385,7 +386,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addToCart = useCallback(
     (item: Omit<CartItem, 'quantity'>, quantity = 1) => {
       setCart((prev) => {
-        const existingIndex = prev.findIndex((i) => i.productId === item.productId);
+        const existingIndex = prev.findIndex((i) => sameCartLine(i, item.productId, item.variantId));
         if (existingIndex > -1) {
           const current = prev[existingIndex];
           const nextQty = Math.min(20, current.quantity + quantity);
@@ -401,33 +402,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [toast]
   );
 
-  const updateCartQuantity = useCallback((productId: number, quantity: number) => {
+  const updateCartQuantity = useCallback((productId: number, quantity: number, variantId?: number) => {
     setCart((prev) => {
       if (quantity <= 0) {
-        return prev.filter((i) => i.productId !== productId);
+        return prev.filter((i) => !sameCartLine(i, productId, variantId));
       }
       return prev.map((i) =>
-        i.productId === productId
+        sameCartLine(i, productId, variantId)
           ? { ...i, quantity: Math.min(Math.max(1, quantity), 20) }
           : i
       );
     });
   }, []);
 
-  const toggleCartItemSelected = useCallback((productId: number, selected: boolean) => {
-    setCart((prev) => prev.map((item) => item.productId === productId ? { ...item, selected } : item));
+  const toggleCartItemSelected = useCallback((productId: number, selected: boolean, variantId?: number) => {
+    setCart((prev) => prev.map((item) => sameCartLine(item, productId, variantId) ? { ...item, selected } : item));
   }, []);
 
-  const setCartItemPreorder = useCallback((productId: number, receiveAllAsPreorder: boolean) => {
-    setCart((prev) => prev.map((item) => item.productId === productId ? { ...item, receiveAllAsPreorder } : item));
+  const setCartItemPreorder = useCallback((productId: number, receiveAllAsPreorder: boolean, variantId?: number) => {
+    setCart((prev) => prev.map((item) => sameCartLine(item, productId, variantId) ? { ...item, receiveAllAsPreorder } : item));
   }, []);
 
   const removePurchasedCartItems = useCallback(() => {
     setCart((prev) => prev.filter((item) => item.selected === false));
   }, []);
 
-  const removeFromCart = useCallback((productId: number) => {
-    setCart((prev) => prev.filter((i) => i.productId !== productId));
+  const removeFromCart = useCallback((productId: number, variantId?: number) => {
+    setCart((prev) => prev.filter((i) => !sameCartLine(i, productId, variantId)));
   }, []);
 
   const clearCart = useCallback(() => {

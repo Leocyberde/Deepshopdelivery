@@ -69,6 +69,8 @@ function toCustomerOrderItem(item: InferSelectModel<typeof schema.orderItems>, i
   return {
     id: item.id,
     productId: item.productId,
+    variantId: item.variantId,
+    variantOptions: item.variantOptions,
     productName: item.productName,
     quantity: item.quantity,
     unitPrice: item.unitPrice,
@@ -108,25 +110,31 @@ export function registerOrderRoutes(app: Express) {
         ? await db.select().from(schema.products).where(inArray(schema.products.id, productIds))
         : [];
       const byId = new Map(products.map((p) => [p.id, p]));
-      const quoteItems = new Map<number, any>();
+      const variants = productIds.length ? await db.select().from(schema.productVariants).where(inArray(schema.productVariants.productId, productIds)) : [];
+      const variantById = new Map(variants.map((v) => [v.id, v]));
+      const quoteItems = new Map<string, any>();
       for (const raw of req.body.items) {
-        const productId = Number(raw?.productId), quantity = Number(raw?.quantity);
+        const productId = Number(raw?.productId), variantId = raw?.variantId == null ? null : Number(raw.variantId), quantity = Number(raw?.quantity);
         if (!Number.isSafeInteger(productId) || !Number.isSafeInteger(quantity) || quantity < 1) { res.status(400).json({ error: 'Item inválido.' }); return; }
-        const existing = quoteItems.get(productId);
+        if (variantId !== null && (!Number.isSafeInteger(variantId) || !variantById.has(variantId) || variantById.get(variantId)!.productId !== productId)) { res.status(400).json({ error: 'Variação inválida.' }); return; }
+        const key = `${productId}:${variantId ?? 'base'}`;
+        const existing = quoteItems.get(key);
         if (existing) existing.quantity += quantity;
-        else quoteItems.set(productId, { ...raw, productId, quantity });
+        else quoteItems.set(key, { ...raw, productId, variantId, quantity });
       }
       const lines: Array<Record<string, unknown>> = [];
       let deliverySubtotal = 0;
       let preorderSubtotal = 0;
       for (const raw of quoteItems.values()) {
         const productId = Number(raw?.productId);
+        const variant = raw.variantId == null ? null : variantById.get(Number(raw.variantId));
         const quantity = Number(raw?.quantity);
         if (!Number.isSafeInteger(productId) || !Number.isSafeInteger(quantity) || quantity < 1 || quantity > maxQty) {
           res.status(400).json({ error: `A quantidade máxima por item é ${maxQty}.` });
           return;
         }
-        const product = byId.get(productId);
+        const baseProduct = byId.get(productId);
+        const product = variant ? { ...baseProduct, price: variant.price, promoPrice: variant.promoPrice, stock: variant.stock, allowPreorder: variant.allowPreorder } : baseProduct;
         if (!product || product.status !== 'ACTIVE' || ((product.stock < quantity || raw.receiveAllAsPreorder) && !product.allowPreorder)) {
           res.status(409).json({ error: 'Um produto da cotação não está mais disponível.' });
           return;
@@ -140,7 +148,7 @@ export function registerOrderRoutes(app: Express) {
         const totalLineQty = split.deliveryQty + split.preorderQty;
         const blendedUnitPrice = totalLineQty ? Number(((deliveryLine + preorderLine) / totalLineQty).toFixed(2)) : pricing.normalUnitPrice;
         deliverySubtotal += deliveryLine; preorderSubtotal += preorderLine;
-        lines.push({ productId, quantity, deliveryQty: split.deliveryQty, preorderQty: split.preorderQty, deliveryPromoQty, preorderPromoQty, deliverySubtotal: deliveryLine.toFixed(2), preorderSubtotal: preorderLine.toFixed(2), unitPrice: blendedUnitPrice.toFixed(2), receiveAllAsPreorder: Boolean(raw.receiveAllAsPreorder) });
+        lines.push({ productId, variantId: raw.variantId ?? null, variantOptions: variant?.options || null, quantity, deliveryQty: split.deliveryQty, preorderQty: split.preorderQty, deliveryPromoQty, preorderPromoQty, deliverySubtotal: deliveryLine.toFixed(2), preorderSubtotal: preorderLine.toFixed(2), unitPrice: blendedUnitPrice.toFixed(2), receiveAllAsPreorder: Boolean(raw.receiveAllAsPreorder) });
       }
       let freight = null;
       if (req.body.addressId !== undefined && req.body.addressId !== null) {
@@ -259,6 +267,8 @@ export function registerOrderRoutes(app: Express) {
         let subtotalNum = 0;
         const preparedItems: Array<{
           productId: number;
+          variantId: number | null;
+          variantOptions: Record<string, string> | null;
           productName: string;
           quantity: number;
           unitPrice: string;
@@ -272,23 +282,26 @@ export function registerOrderRoutes(app: Express) {
         const preorderWindow = calculatePreorderWindow(new Date(), Number(settingsMap.preorder_start_offset_days || 1), Number(settingsMap.preorder_window_days || 7));
 
         // Agrupa itens com o mesmo productId para garantir que o limite da promoção seja respeitado por produto
-        const mergedItemsMap = new Map<number, { productId: number; quantity: number; productName?: string; receiveAllAsPreorder?: boolean }>();
+        const mergedItemsMap = new Map<string, { productId: number; variantId: number | null; quantity: number; productName?: string; receiveAllAsPreorder?: boolean }>();
         for (const rawItem of items) {
           if (!rawItem || typeof rawItem !== 'object' || Array.isArray(rawItem)) {
             throw new Error('Produto inválido na sacola.');
           }
           const prodId = Number(rawItem.productId);
+          const variantId = rawItem.variantId == null ? null : Number(rawItem.variantId);
           const qty = Number(rawItem.quantity);
           if (!Number.isSafeInteger(prodId) || prodId <= 0 || !Number.isSafeInteger(qty) || qty <= 0 || qty > 99) {
             throw new Error('Quantidade inválida na sacola.');
           }
-          const existing = mergedItemsMap.get(prodId);
+          const key = `${prodId}:${variantId ?? 'base'}`;
+          const existing = mergedItemsMap.get(key);
           if (existing) {
             existing.quantity += qty;
             if (existing.quantity > 99) throw new Error('A quantidade máxima por produto é 99 unidades.');
           } else {
-            mergedItemsMap.set(prodId, {
+            mergedItemsMap.set(key, {
               productId: prodId,
+              variantId,
               quantity: qty,
               productName: rawItem.productName,
               receiveAllAsPreorder: Boolean(rawItem.receiveAllAsPreorder),
@@ -306,6 +319,12 @@ export function registerOrderRoutes(app: Express) {
             .from(schema.products)
             .where(eq(schema.products.id, prodId));
 
+          let variant: any = null;
+          if (rawItem.variantId != null) {
+            [variant] = await tx.select().from(schema.productVariants).where(and(eq(schema.productVariants.id, Number(rawItem.variantId)), eq(schema.productVariants.productId, prodId))).limit(1);
+            if (!variant) throw new Error('A variação escolhida não está mais disponível.');
+          }
+          const effectiveProd = variant ? { ...prod, price: variant.price, promoPrice: variant.promoPrice, cost: variant.cost, costUnitPrecise: variant.cost, stock: variant.stock, allowPreorder: variant.allowPreorder } : prod;
           if (!prod || prod.status !== 'ACTIVE') {
             throw new Error(
               `O produto "${rawItem.productName || '#' + prodId}" não está mais disponível.`
@@ -313,36 +332,36 @@ export function registerOrderRoutes(app: Express) {
           }
 
           const receiveAllAsPreorder = Boolean(rawItem.receiveAllAsPreorder);
-          const split = calculateFulfillmentSplit(qty, prod.stock, receiveAllAsPreorder);
-          if (split.preorderQty > 0 && !prod.allowPreorder) {
+          const split = calculateFulfillmentSplit(qty, effectiveProd.stock, receiveAllAsPreorder);
+          if (split.preorderQty > 0 && !effectiveProd.allowPreorder) {
             throw new Error(`O produto "${prod.code} - ${prod.name}" não aceita encomenda.`);
           }
           const deliveryQty = split.deliveryQty;
           if (deliveryQty > 0) {
-            const nextProdStock = prod.stock - deliveryQty;
+            const nextProdStock = effectiveProd.stock - deliveryQty;
             const reservedRows = await tx
-              .update(schema.products)
-              .set({ stock: sql`${schema.products.stock} - ${deliveryQty}`, updatedAt: new Date() })
-              .where(and(eq(schema.products.id, prod.id), sql`${schema.products.stock} >= ${deliveryQty}`))
+              .update(variant ? schema.productVariants : schema.products)
+              .set({ stock: variant ? sql`${schema.productVariants.stock} - ${deliveryQty}` : sql`${schema.products.stock} - ${deliveryQty}`, updatedAt: new Date() })
+              .where(variant ? and(eq(schema.productVariants.id, variant.id), sql`${schema.productVariants.stock} >= ${deliveryQty}`) : and(eq(schema.products.id, prod.id), sql`${schema.products.stock} >= ${deliveryQty}`))
               .returning();
             if (reservedRows.length === 0) {
               throw new Error(`Estoque alterado para "${prod.code} - ${prod.name}". Refaça a cotação antes de confirmar.`);
             }
-            reservations.push({ productId: prod.id, quantity: deliveryQty, beforeStock: prod.stock, afterStock: nextProdStock });
+            reservations.push({ productId: prod.id, quantity: deliveryQty, beforeStock: effectiveProd.stock, afterStock: nextProdStock });
             hasDeliveryPart = true;
           }
           if (split.preorderQty > 0) hasPreorderPart = true;
-          const hasPromo = isPromoCurrentlyActive(prod);
-          const pricing = calculatePromoLinePricing({ normalPrice: prod.price, promoPrice: prod.promoPrice, hasPromo, promoMaxUnits: prod.promoMaxUnits, quantity: qty });
+          const hasPromo = isPromoCurrentlyActive(effectiveProd);
+          const pricing = calculatePromoLinePricing({ normalPrice: effectiveProd.price, promoPrice: effectiveProd.promoPrice, hasPromo, promoMaxUnits: effectiveProd.promoMaxUnits, quantity: qty });
           subtotalNum = Number((subtotalNum + pricing.subtotal).toFixed(2));
           const displayProductName = prod.code ? `${prod.code} - ${prod.name}` : prod.name;
-          const preciseCost = prod.costUnitPrecise !== null && prod.costUnitPrecise !== undefined ? prod.costUnitPrecise : prod.cost;
+          const preciseCost = effectiveProd.costUnitPrecise !== null && effectiveProd.costUnitPrecise !== undefined ? effectiveProd.costUnitPrecise : effectiveProd.cost;
           const currentUnitCost = preciseCost !== null && preciseCost !== undefined ? String(preciseCost) : null;
           const pushPart = (partQty: number, type: 'DELIVERY' | 'PREORDER', promoQty: number) => {
             if (partQty <= 0) return;
             const partSubtotal = Number((promoQty * pricing.promoUnitPrice + (partQty - promoQty) * pricing.normalUnitPrice).toFixed(2));
             const partUnitPrice = partQty ? Number((partSubtotal / partQty).toFixed(2)) : pricing.normalUnitPrice;
-            preparedItems.push({ productId: prod.id, productName: displayProductName, quantity: partQty, unitPrice: partUnitPrice.toFixed(2), subtotal: partSubtotal.toFixed(2), unitCost: currentUnitCost, fulfillmentType: type });
+            preparedItems.push({ productId: prod.id, variantId: variant?.id ?? null, variantOptions: variant?.options ?? null, productName: displayProductName, quantity: partQty, unitPrice: partUnitPrice.toFixed(2), subtotal: partSubtotal.toFixed(2), unitCost: currentUnitCost, fulfillmentType: type });
           };
           const deliveryPromoQty = Math.min(deliveryQty, pricing.promoQty);
           const preorderPromoQty = Math.min(split.preorderQty, Math.max(0, pricing.promoQty - deliveryPromoQty));
@@ -444,6 +463,8 @@ export function registerOrderRoutes(app: Express) {
           await tx.insert(schema.orderItems).values({
             orderId: newOrder.id,
             productId: item.productId,
+            variantId: item.variantId,
+            variantOptions: item.variantOptions,
             productName: item.productName,
             quantity: item.quantity,
             unitPrice: item.unitPrice,

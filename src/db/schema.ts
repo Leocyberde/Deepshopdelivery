@@ -96,6 +96,21 @@ export const products = pgTable('products', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
+export const productVariants = pgTable('product_variants', {
+  id: serial('id').primaryKey(),
+  productId: integer('product_id').notNull().references(() => products.id, { onDelete: 'cascade' }),
+  sku: text('sku'),
+  options: jsonb('options').$type<Record<string, string>>().notNull().default({}),
+  price: numeric('price', { precision: 10, scale: 2 }).notNull(),
+  promoPrice: numeric('promo_price', { precision: 10, scale: 2 }),
+  cost: numeric('cost', { precision: 14, scale: 6 }).notNull().default('0'),
+  stock: integer('stock').notNull().default(0),
+  stockMinimum: integer('stock_minimum').notNull().default(0),
+  allowPreorder: boolean('allow_preorder').notNull().default(true),
+  status: text('status').notNull().default('ACTIVE'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({ productIdx: index('idx_product_variants_product').on(table.productId) }));
 export const productKitItems = pgTable('product_kit_items', {
   id: serial('id').primaryKey(),
   kitProductId: integer('kit_product_id')
@@ -312,6 +327,8 @@ export const orderItems = pgTable('order_items', {
   productId: integer('product_id')
     .notNull()
     .references(() => products.id),
+  variantId: integer('variant_id').references(() => productVariants.id, { onDelete: 'set null' }),
+  variantOptions: jsonb('variant_options').$type<Record<string, string>>(),
   productName: text('product_name').notNull(),
   quantity: integer('quantity').notNull(),
   unitPrice: numeric('unit_price', { precision: 10, scale: 2 }).notNull(),

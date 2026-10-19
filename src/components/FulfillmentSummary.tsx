@@ -5,6 +5,7 @@ import type { CartItem } from '../types/app.ts';
 
 interface QuoteLine {
   productId: number;
+  variantId?: number | null;
   quantity: number;
   deliveryQty: number;
   preorderQty: number;
@@ -38,6 +39,7 @@ export const FulfillmentSummary: React.FC<{ items: CartItem[] }> = ({ items }) =
           body: JSON.stringify({
             items: items.map((i) => ({
               productId: i.productId,
+              variantId: i.variantId,
               quantity: i.quantity,
               receiveAllAsPreorder: Boolean(i.receiveAllAsPreorder),
             })),
@@ -101,7 +103,7 @@ export const FulfillmentSummary: React.FC<{ items: CartItem[] }> = ({ items }) =
               type="checkbox"
               className="mt-0.5"
               checked={checked}
-              onChange={(e) => setCartItemPreorder(l.productId, e.target.checked)}
+              onChange={(e) => setCartItemPreorder(l.productId, e.target.checked, l.variantId ?? undefined)}
             />
             <span>Receber tudo como encomenda: {nameOf(l.productId)}</span>
           </label>

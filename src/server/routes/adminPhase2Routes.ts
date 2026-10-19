@@ -131,6 +131,34 @@ function productData(body: any, existing?: any) {
   };
 }
 
+function normalizeVariants(raw: unknown): Array<{ sku: string | null; options: Record<string, string>; price: string; promoPrice: string | null; cost: string; stock: number; stockMinimum: number; allowPreorder: boolean }> {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw) || raw.length > 200) throw new Error('Informe no máximo 200 variações.');
+  const seen = new Set<string>();
+  return raw.map((item: any) => {
+    const options = item?.options && typeof item.options === 'object' && !Array.isArray(item.options)
+      ? Object.fromEntries(Object.entries(item.options).map(([k, v]) => [String(k).trim().slice(0, 40), String(v).trim().slice(0, 80)]).filter(([k, v]) => k && v))
+      : {};
+    const signature = JSON.stringify(options);
+    if (!Object.keys(options).length) throw new Error('Cada variação precisa ter pelo menos uma opção.');
+    if (seen.has(signature)) throw new Error('Existem variações repetidas.');
+    seen.add(signature);
+    const price = normMoney(item?.price);
+    const promo = item?.promoPrice === null || item?.promoPrice === undefined || item?.promoPrice === '' ? null : normMoney(item.promoPrice);
+    const cost = normMoney(item?.cost ?? 0);
+    const stock = Number(item?.stock ?? 0), stockMinimum = Number(item?.stockMinimum ?? 0);
+    if (!Number.isFinite(price) || price < 0 || !Number.isFinite(cost) || cost < 0 || !Number.isSafeInteger(stock) || stock < 0 || !Number.isSafeInteger(stockMinimum) || stockMinimum < 0) throw new Error('Preço, custo ou estoque de variação inválido.');
+    if (promo !== null && (!Number.isFinite(promo) || promo < 0 || promo > price)) throw new Error('Preço promocional de variação inválido.');
+    const sku = item?.sku ? String(item.sku).trim().slice(0, 80) : null;
+    return { sku, options, price: price.toFixed(2), promoPrice: promo === null ? null : promo.toFixed(2), cost: cost.toFixed(6), stock, stockMinimum, allowPreorder: item?.allowPreorder !== false };
+  });
+}
+async function replaceProductVariants(tx: any, productId: number, raw: unknown) {
+  const variants = normalizeVariants(raw);
+  await tx.delete(schema.productVariants).where(eq(schema.productVariants.productId, productId));
+  for (const variant of variants) await tx.insert(schema.productVariants).values({ productId, ...variant });
+  return variants;
+}
 function summarizeFingerprint(parts: unknown[]): string {
   return JSON.stringify(parts);
 }
@@ -274,6 +302,9 @@ export function registerAdminPhase2Routes(app: Express) {
       const categories = ids.length ? await db.select().from(schema.categories).where(inArray(schema.categories.id, [...new Set(rows.map((row) => row.categoryId))])) : [];
       const images = ids.length ? await db.select().from(schema.productImages).where(inArray(schema.productImages.productId, ids)) : [];
       const kitItems = ids.length ? await db.select().from(schema.productKitItems).where(inArray(schema.productKitItems.kitProductId, ids)) : [];
+      const variants = ids.length ? await db.select().from(schema.productVariants).where(inArray(schema.productVariants.productId, ids)) : [];
+      const variantsByProduct = new Map<number, any[]>();
+      for (const variant of variants) variantsByProduct.set(variant.productId, [...(variantsByProduct.get(variant.productId) || []), variant]);
       const componentIds = [...new Set(kitItems.map((item) => item.componentProductId))];
       const components = componentIds.length ? await db.select().from(schema.products).where(inArray(schema.products.id, componentIds)) : [];
       const categoryNames = new Map(categories.map((cat) => [cat.id, cat.name]));
@@ -298,6 +329,8 @@ export function registerAdminPhase2Routes(app: Express) {
           imageUrl: primary?.imageUrl || null,
           images: productImages,
           kitComponents: componentRows,
+          variants: variantsByProduct.get(product.id) || [],
+          hasVariants: (variantsByProduct.get(product.id) || []).length > 0,
           maxBuildableKits: product.isKit ? maxBuildable : 0,
           estimatedComponentCost: product.isKit ? estimatedCost.toFixed(2) : null,
           grossMarginEstimate: product.isKit ? (Number(product.price) - estimatedCost).toFixed(2) : null,
@@ -324,6 +357,7 @@ export function registerAdminPhase2Routes(app: Express) {
       const storeId = await getPrimaryStoreId();
       const created = await db.transaction(async (tx) => {
         await validateProductSupplier(tx, input.supplierId);
+        const effectiveFulfillmentType = initialStock > 0 ? 'DELIVERY' : 'PREORDER';
         const [product] = await tx.insert(schema.products).values({
           storeId, categoryId: input.categoryId, code: input.code, name: input.name, description: input.description,
           price: input.price, promoPrice: input.promoPrice, promoActive: input.promoActive, promoEndsAt: input.promoEndsAt,
@@ -331,7 +365,7 @@ export function registerAdminPhase2Routes(app: Express) {
           costUnitPrecise: input.costUnitPrecise, costLotTotal: input.costLotTotal, costLotUnits: input.costLotUnits,
           stock: initialStock, stockMinimum: input.stockMinimum, weight: input.weight,
           supplierId: input.supplierId, supplierProductUrl: input.supplierProductUrl,
-          fulfillmentType: input.fulfillmentType, allowPreorder: input.allowPreorder,
+          fulfillmentType: effectiveFulfillmentType, allowPreorder: input.allowPreorder,
           status: req.body?.status === 'INACTIVE' ? 'INACTIVE' : (initialStock > 0 || input.allowPreorder ? 'ACTIVE' : 'INACTIVE'),
         }).returning();
         if (initialStock > 0) {
@@ -342,6 +376,7 @@ export function registerAdminPhase2Routes(app: Express) {
           await recordInitialSupplierPurchase(tx, product, initialStock, movement, req.user!.id, Number(product.costUnitPrecise ?? product.cost ?? 0));
         }
         if (media) for (const item of media) await tx.insert(schema.productImages).values({ productId: product.id, ...item });
+        if (req.body?.variants !== undefined) await replaceProductVariants(tx, product.id, req.body.variants);
         return product;
       });
       await audit(req, 'PRODUCT_CREATE', 'PRODUCT', created.id, { supplierId: created.supplierId, allowPreorder: created.allowPreorder, initialStock });
@@ -379,6 +414,7 @@ export function registerAdminPhase2Routes(app: Express) {
         }
       }
       const input = productData(req.body, existing);
+      const effectiveFulfillmentType = requestedStock > 0 ? 'DELIVERY' : 'PREORDER';
       const [category] = await db.select().from(schema.categories).where(eq(schema.categories.id, input.categoryId)).limit(1);
       if (!category) { res.status(400).json({ error: 'Categoria inválida.' }); return; }
       const media = parseAndValidateMediaItems(req.body);
@@ -427,7 +463,7 @@ export function registerAdminPhase2Routes(app: Express) {
           };
           costReason = `Entrada pelo formulário (custo ${purchaseCostMode === 'lot' ? `total do lote R$ ${purchaseCost.toFixed(2)}` : `unitário R$ ${purchaseCost.toFixed(2)}`}; médio atualizado para ${weightedUnitCost.toFixed(6)}/un.)`;
         }
-        const [row] = await tx.update(schema.products).set({ ...input, ...costFields, stock: requestedStock, status: targetStatus, updatedAt: new Date() })
+        const [row] = await tx.update(schema.products).set({ ...input, fulfillmentType: effectiveFulfillmentType, ...costFields, stock: requestedStock, status: targetStatus, updatedAt: new Date() })
           .where(and(eq(schema.products.id, id), eq(schema.products.stock, locked.stock))).returning();
         if (!row) throw new Error('O saldo foi alterado por outra operação. Atualize os dados e tente novamente.');
         if (delta !== 0) {
@@ -452,6 +488,7 @@ export function registerAdminPhase2Routes(app: Express) {
             }).onConflictDoNothing({ target: schema.supplierPurchases.inventoryMovementId });
           }
         }
+        if (req.body?.variants !== undefined) await replaceProductVariants(tx, id, req.body.variants);
         if (media !== null) {
           await tx.delete(schema.productImages).where(eq(schema.productImages.productId, id));
           for (const item of media) await tx.insert(schema.productImages).values({ productId: id, ...item });
@@ -467,6 +504,23 @@ export function registerAdminPhase2Routes(app: Express) {
     }
   });
 
+  app.get('/api/admin/products/:id/variants', requireAuth, requireAdmin, async (req, res) => {
+    const productId = Number(req.params.id);
+    if (!Number.isSafeInteger(productId) || productId <= 0) { res.status(400).json({ error: 'Produto inválido.' }); return; }
+    const variants = await db.select().from(schema.productVariants).where(eq(schema.productVariants.productId, productId));
+    res.json({ variants });
+  });
+  app.put('/api/admin/products/:id/variants', requireAuth, requireAdmin, async (req: AuthRequest, res) => {
+    try {
+      const productId = Number(req.params.id);
+      if (!Number.isSafeInteger(productId) || productId <= 0) { res.status(400).json({ error: 'Produto inválido.' }); return; }
+      const [product] = await db.select({ id: schema.products.id, isKit: schema.products.isKit }).from(schema.products).where(eq(schema.products.id, productId)).limit(1);
+      if (!product || product.isKit) { res.status(404).json({ error: 'Produto comum não encontrado.' }); return; }
+      const variants = await db.transaction((tx) => replaceProductVariants(tx, productId, req.body?.variants));
+      await audit(req, 'PRODUCT_VARIANTS_UPDATE', 'PRODUCT', productId, { count: variants.length });
+      res.json({ variants });
+    } catch (error: any) { logServerError('admin_product_variants_failed', error); res.status(400).json({ error: error?.message || 'Não foi possível salvar as variações.' }); }
+  });
   app.put('/api/admin/products/:id/status', requireAuth, requireAdmin, async (req: AuthRequest, res) => {
     try {
       const id = Number(req.params.id);
@@ -897,6 +951,7 @@ export function registerAdminPhase2Routes(app: Express) {
         if (!row) throw new Error('O kit foi alterado por outra operação.');
         await tx.delete(schema.productKitItems).where(eq(schema.productKitItems.kitProductId, id));
         for (const item of nextComponents) await tx.insert(schema.productKitItems).values({ kitProductId: id, componentProductId: item.productId, quantityPerKit: item.quantityPerKit });
+        if (req.body?.variants !== undefined) await replaceProductVariants(tx, id, req.body.variants);
         if (media !== null) {
           await tx.delete(schema.productImages).where(eq(schema.productImages.productId, id));
           for (const item of media) await tx.insert(schema.productImages).values({ productId: id, ...item });

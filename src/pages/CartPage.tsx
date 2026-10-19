@@ -123,11 +123,11 @@ export const CartPage: React.FC = () => {
               });
               return (
             <div
-              key={item.productId}
+              key={`${item.productId}-${item.variantId ?? 'base'}`}
               className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
             >
               <div className="flex items-center gap-3">
-                <input type="checkbox" aria-label={`Selecionar ${item.name}`} checked={item.selected !== false} onChange={(e) => toggleCartItemSelected(item.productId, e.target.checked)} className="h-4 w-4 accent-zinc-900" />
+                <input type="checkbox" aria-label={`Selecionar ${item.name}`} checked={item.selected !== false} onChange={(e) => toggleCartItemSelected(item.productId, e.target.checked, item.variantId)} className="h-4 w-4 accent-zinc-900" />
                 <Link
                   to={`/produto/${item.productId}`}
                   className="w-20 h-16 rounded-lg overflow-hidden bg-[#F9F9F8] border border-stone-200 shrink-0"
@@ -151,7 +151,7 @@ export const CartPage: React.FC = () => {
                 <div className="inline-flex items-center border border-stone-300 rounded-lg bg-stone-50">
                   <button
                     type="button"
-                    onClick={() => updateCartQuantity(item.productId, item.quantity - 1)}
+                    onClick={() => updateCartQuantity(item.productId, item.quantity - 1, item.variantId)}
                     className="p-1.5 text-zinc-700 hover:text-zinc-900"
                     aria-label="Diminuir"
                   >
@@ -166,7 +166,7 @@ export const CartPage: React.FC = () => {
                       if (pricing.hasLimit && item.promoMaxUnits && item.quantity === item.promoMaxUnits) {
                         toast(`Atenção: a oferta vale só para ${item.promoMaxUnits} un. A partir da unidade ${item.promoMaxUnits + 1}, o valor é normal (${formatCurrency(pricing.normalUnitPrice)}).`, 'info');
                       }
-                      updateCartQuantity(item.productId, item.quantity + 1);
+                      updateCartQuantity(item.productId, item.quantity + 1, item.variantId);
                     }}
                     disabled={item.quantity >= 20}
                     className="p-1.5 text-zinc-700 hover:text-zinc-900 disabled:opacity-40"
@@ -189,7 +189,7 @@ export const CartPage: React.FC = () => {
 
                 <button
                   type="button"
-                  onClick={() => removeFromCart(item.productId)}
+                  onClick={() => removeFromCart(item.productId, item.variantId)}
                   className="p-1.5 text-zinc-400 hover:text-red-600 transition-colors"
                   aria-label="Remover item"
                 >

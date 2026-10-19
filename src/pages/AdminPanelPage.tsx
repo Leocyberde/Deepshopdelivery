@@ -261,6 +261,7 @@ export const AdminPanelPage: React.FC = () => {
   const [prodSupplierUrl, setProdSupplierUrl] = useState('');
   const [prodFulfillmentType, setProdFulfillmentType] = useState<'DELIVERY' | 'PREORDER'>('DELIVERY');
   const [prodAllowPreorder, setProdAllowPreorder] = useState(true);
+  const [prodVariantsJson, setProdVariantsJson] = useState('[]');
   const [prodImageUrl, setProdImageUrl] = useState('');
   const [prodMediaItems, setProdMediaItems] = useState<ProductMediaItem[]>([]);
   const [newMediaType, setNewMediaType] = useState<'IMAGE' | 'VIDEO'>('IMAGE');
@@ -641,6 +642,7 @@ export const AdminPanelPage: React.FC = () => {
     setProdSupplierUrl('');
     setProdFulfillmentType('DELIVERY');
     setProdAllowPreorder(true);
+    setProdVariantsJson('[]');
     setProdCategoryId(categories[0]?.id || '');
     setProdCode(suggestNextCode('P'));
     setProdName('');
@@ -711,6 +713,7 @@ export const AdminPanelPage: React.FC = () => {
     setProdSupplierUrl(prod.supplierProductUrl || '');
     setProdFulfillmentType(prod.fulfillmentType === 'PREORDER' ? 'PREORDER' : 'DELIVERY');
     setProdAllowPreorder(prod.allowPreorder !== false);
+    setProdVariantsJson(JSON.stringify(Array.isArray(prod.variants) ? prod.variants.map((v: any) => ({ sku: v.sku || '', options: v.options || {}, price: v.price, promoPrice: v.promoPrice, cost: v.cost, stock: v.stock, stockMinimum: v.stockMinimum, allowPreorder: v.allowPreorder !== false })) : [], null, 2));
     setSelectedKitItems(Object.fromEntries((prod.kitComponents || []).map((item: any) => [Number(item.componentProductId), Number(item.quantityPerKit)])));
     setProdCategoryId(prod.categoryId);
     setProdCode(prod.code || 'A001');
@@ -1061,6 +1064,12 @@ export const AdminPanelPage: React.FC = () => {
       return;
     }
 
+    let variantsPayload: any[] = [];
+    try {
+      variantsPayload = JSON.parse(prodVariantsJson || '[]');
+      if (!Array.isArray(variantsPayload)) throw new Error('As variações precisam ser uma lista.');
+    } catch (error: any) { toast(error?.message || 'JSON de variações inválido.', 'error'); return; }
+
     try {
       if (!editingProd && formMode === 'KIT') {
         const componentsArray = Object.entries(selectedKitItems).map(([pid, qty]) => ({
@@ -1133,6 +1142,7 @@ export const AdminPanelPage: React.FC = () => {
           status: prodStatus,
           imageUrl: primaryImageUrl,
           mediaItems: finalMediaItems,
+          variants: variantsPayload,
         };
         if (editingProd?.isKit) {
           const componentsArray = Object.entries(selectedKitItems).map(([pid, qty]) => ({ productId: Number(pid), quantityPerKit: Number(qty) }));
@@ -1611,6 +1621,8 @@ ${kitProd.code} - ${kitProd.name}`)) return;
                 setProdFulfillmentType={setProdFulfillmentType}
                 prodAllowPreorder={prodAllowPreorder}
                 setProdAllowPreorder={setProdAllowPreorder}
+                prodVariantsJson={prodVariantsJson}
+                setProdVariantsJson={setProdVariantsJson}
                 prodImageUrl={prodImageUrl}
                 setProdImageUrl={setProdImageUrl}
                 prodMediaItems={prodMediaItems}

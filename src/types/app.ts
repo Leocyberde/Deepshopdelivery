@@ -21,6 +21,9 @@ export interface UserProfile {
 
 export interface CartItem {
   productId: number;
+  variantId?: number;
+  variantOptions?: Record<string, string>;
+  variantSku?: string | null;
   receiveAllAsPreorder?: boolean;
   name: string;
   price: number;

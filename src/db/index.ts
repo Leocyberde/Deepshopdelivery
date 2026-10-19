@@ -159,6 +159,24 @@ export async function initializeDatabase() {
     ALTER TABLE products ADD COLUMN IF NOT EXISTS shares_count INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE products ADD COLUMN IF NOT EXISTS stock_minimum INTEGER NOT NULL DEFAULT 5;
 
+    CREATE TABLE IF NOT EXISTS product_variants (
+      id SERIAL PRIMARY KEY,
+      product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      sku TEXT,
+      options JSONB NOT NULL DEFAULT '{}'::jsonb,
+      price NUMERIC(10,2) NOT NULL,
+      promo_price NUMERIC(10,2),
+      cost NUMERIC(14,6) NOT NULL DEFAULT 0,
+      stock INTEGER NOT NULL DEFAULT 0,
+      stock_minimum INTEGER NOT NULL DEFAULT 0,
+      allow_preorder BOOLEAN NOT NULL DEFAULT TRUE,
+      status TEXT NOT NULL DEFAULT 'ACTIVE',
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_product_variants_product ON product_variants(product_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_product_variants_product_sku ON product_variants(product_id, sku) WHERE sku IS NOT NULL;
+
     CREATE TABLE IF NOT EXISTS product_kit_items (
       id SERIAL PRIMARY KEY,
       kit_product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
@@ -347,6 +365,8 @@ export async function initializeDatabase() {
       id SERIAL PRIMARY KEY,
       order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
       product_id INTEGER NOT NULL REFERENCES products(id),
+      variant_id INTEGER REFERENCES product_variants(id) ON DELETE SET NULL,
+      variant_options JSONB,
       product_name TEXT NOT NULL,
       quantity INTEGER NOT NULL,
       unit_price NUMERIC(10, 2) NOT NULL,
@@ -355,6 +375,8 @@ export async function initializeDatabase() {
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
 
+    ALTER TABLE order_items ADD COLUMN IF NOT EXISTS variant_id INTEGER REFERENCES product_variants(id) ON DELETE SET NULL;
+    ALTER TABLE order_items ADD COLUMN IF NOT EXISTS variant_options JSONB;
     ALTER TABLE order_items ADD COLUMN IF NOT EXISTS unit_cost NUMERIC(14, 6);
     ALTER TABLE order_items ALTER COLUMN unit_cost TYPE NUMERIC(14, 6);
 
