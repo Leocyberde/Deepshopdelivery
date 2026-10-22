@@ -189,7 +189,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           typeof data === 'object' && data !== null && 'error' in data
             ? (data as any).error
             : 'Ocorreu um erro na requisição.';
-        throw new Error(errorMsg);
+        const failure: Error & { problems?: string[] } = new Error(errorMsg);
+        if (typeof data === 'object' && data !== null && Array.isArray((data as any).problems)) failure.problems = (data as any).problems;
+        throw failure;
       }
 
       if (url.startsWith('/api/') && !isJson) {

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Search, ExternalLink, Truck, ArrowUpDown, Printer } from 'lucide-react';
+import { OrderNfeBox } from './OrderNfeBox.tsx';
 import { printWithBrowser, rawbtUrl, type ReceiptOrder } from '../../utils/receiptPrinter.ts';
 import {
   formatCurrency,
@@ -42,6 +43,8 @@ interface AdminOrdersSectionProps {
   setSelectedAdminOrder: (ord: any | null) => void;
   handleChangeOrderStatus: (orderId: number, newStatus: string, reason?: string) => void | boolean | Promise<void | boolean>;
   onRefreshOrders?: () => void;
+  apiFetch?: <T = any>(url: string, options?: RequestInit) => Promise<T>;
+  toast?: (text: string, type?: 'success' | 'error' | 'info') => void;
 }
 
 export function toReceiptOrder(o: any): ReceiptOrder {
@@ -77,6 +80,8 @@ const ADMIN_ORDER_TRANSITIONS: Record<string, string[]> = {
 };
 
 export const AdminOrdersSection: React.FC<AdminOrdersSectionProps> = ({
+  apiFetch,
+  toast,
   ordersData,
   orderSearch,
   setOrderSearch,
@@ -432,6 +437,9 @@ export const AdminOrdersSection: React.FC<AdminOrdersSectionProps> = ({
 
             {/* Right: Status Control, Snapshot & History */}
             <div className="lg:col-span-5 space-y-5">
+              {apiFetch && toast && ['PAID', 'PREPARING', 'OUT_FOR_DELIVERY', 'DELIVERED'].includes(selectedAdminOrder.status) && (
+                <OrderNfeBox key={selectedAdminOrder.id} orderId={selectedAdminOrder.id} apiFetch={apiFetch} toast={toast} />
+              )}
               <div className="space-y-2">
                 <h3 className="text-xs font-bold text-zinc-900">Alterar Status do Pedido</h3>
                 <div className="grid grid-cols-2 gap-1.5">

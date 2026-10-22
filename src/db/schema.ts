@@ -85,6 +85,12 @@ export const products = pgTable('products', {
   stockMinimum: integer('stock_minimum').notNull().default(5),
   supplierId: integer('supplier_id').references(() => suppliers.id, { onDelete: 'set null' }),
   supplierProductUrl: text('supplier_product_url'),
+  // Dados fiscais (NF-e): NCM 8 dígitos, CFOP 4 dígitos, origem 0-8, CSOSN (Simples/MEI) e unidade comercial.
+  fiscalNcm: text('fiscal_ncm'),
+  fiscalCfop: text('fiscal_cfop').notNull().default('5102'),
+  fiscalOrigem: text('fiscal_origem').notNull().default('0'),
+  fiscalCsosn: text('fiscal_csosn').notNull().default('102'),
+  fiscalUnidade: text('fiscal_unidade').notNull().default('UN'),
   fulfillmentType: text('fulfillment_type').notNull().default('DELIVERY'),
   allowPreorder: boolean('allow_preorder').notNull().default(true),
   weight: numeric('weight', { precision: 10, scale: 3 }).default('0.000'), // kg

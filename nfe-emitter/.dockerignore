@@ -1,0 +1,6 @@
+vendor
+.env
+*.pfx
+*.p12
+storage
+tests

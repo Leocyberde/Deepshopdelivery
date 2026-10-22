@@ -123,6 +123,8 @@ interface AdminProductsSectionProps {
   setProdSupplierId: (val: number | '') => void;
   prodSupplierUrl: string;
   setProdSupplierUrl: (val: string) => void;
+  prodFiscal: { ncm: string; cfop: string; origem: string; csosn: string; unidade: string };
+  setProdFiscal: (val: { ncm: string; cfop: string; origem: string; csosn: string; unidade: string }) => void;
   prodFulfillmentType: 'DELIVERY' | 'PREORDER';
   setProdFulfillmentType: (val: 'DELIVERY' | 'PREORDER') => void;
   prodAllowPreorder: boolean;
@@ -216,7 +218,7 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
   setProdWeight,
   prodStatus,
   setProdStatus,
-  prodSupplierId, setProdSupplierId, prodSupplierUrl, setProdSupplierUrl,
+  prodSupplierId, setProdSupplierId, prodSupplierUrl, setProdSupplierUrl, prodFiscal, setProdFiscal,
   prodFulfillmentType, setProdFulfillmentType, prodAllowPreorder, setProdAllowPreorder, prodVariantsJson, setProdVariantsJson,
   prodImageUrl,
   setProdImageUrl,
@@ -548,6 +550,17 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
               <div className="space-y-1 sm:col-span-4"><label className="block text-xs font-semibold text-zinc-700">Fornecedor</label><select value={prodSupplierId} onChange={(e) => setProdSupplierId(e.target.value ? Number(e.target.value) : '')} className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm"><option value="">Sem fornecedor</option>{supplierOptions.filter((supplier) => supplier.status !== 'INACTIVE').map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></div>
               <div className="space-y-1 sm:col-span-4"><label className="block text-xs font-semibold text-zinc-700">Link no fornecedor</label><input type="url" placeholder="https://..." value={prodSupplierUrl} onChange={(e) => setProdSupplierUrl(e.target.value)} className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm" /></div>
               <div className="space-y-1 sm:col-span-4"><label className="block text-xs font-semibold text-zinc-700">Tipo inicial</label><select value={prodFulfillmentType} onChange={(e) => setProdFulfillmentType(e.target.value as 'DELIVERY' | 'PREORDER')} className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm"><option value="DELIVERY">Delivery</option><option value="PREORDER">Encomenda</option></select></div>
+              <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3 sm:col-span-12">
+                <p className="text-xs font-bold text-zinc-800">Dados fiscais (NF-e)</p>
+                <p className="text-[11px] text-zinc-600">Copie da nota de compra do fornecedor. Na DANFE, a coluna CSOSN mostra origem + CSOSN juntos (ex.: <strong>0102</strong> = origem 0 + CSOSN 102).</p>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+                  <div className="space-y-1"><label className="block text-xs font-semibold text-zinc-700">NCM (8 dígitos)</label><input inputMode="numeric" maxLength={8} placeholder="82121010" value={prodFiscal.ncm} onChange={(e) => setProdFiscal({ ...prodFiscal, ncm: e.target.value.replace(/\D/g, '').slice(0, 8) })} className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm" /></div>
+                  <div className="space-y-1"><label className="block text-xs font-semibold text-zinc-700">CFOP</label><input inputMode="numeric" maxLength={4} placeholder="5102" value={prodFiscal.cfop} onChange={(e) => setProdFiscal({ ...prodFiscal, cfop: e.target.value.replace(/\D/g, '').slice(0, 4) })} className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm" /></div>
+                  <div className="space-y-1"><label className="block text-xs font-semibold text-zinc-700">Origem</label><select value={prodFiscal.origem} onChange={(e) => setProdFiscal({ ...prodFiscal, origem: e.target.value })} className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm"><option value="0">0 - Nacional</option><option value="1">1 - Estrangeira (importação direta)</option><option value="2">2 - Estrangeira (mercado interno)</option><option value="3">3 - Nacional, conteúdo importado &gt; 40%</option><option value="4">4 - Nacional (processos básicos)</option><option value="5">5 - Nacional, conteúdo importado ≤ 40%</option><option value="6">6 - Estrangeira (sem similar, importação direta)</option><option value="7">7 - Estrangeira (sem similar, mercado interno)</option><option value="8">8 - Nacional, conteúdo importado &gt; 70%</option></select></div>
+                  <div className="space-y-1"><label className="block text-xs font-semibold text-zinc-700">CSOSN</label><input inputMode="numeric" maxLength={3} placeholder="102" value={prodFiscal.csosn} onChange={(e) => setProdFiscal({ ...prodFiscal, csosn: e.target.value.replace(/\D/g, '').slice(0, 3) })} className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm" /></div>
+                  <div className="space-y-1"><label className="block text-xs font-semibold text-zinc-700">Unidade</label><input maxLength={6} placeholder="UN" value={prodFiscal.unidade} onChange={(e) => setProdFiscal({ ...prodFiscal, unidade: e.target.value.toUpperCase().slice(0, 6) })} className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm" /></div>
+                </div>
+              </div>
               <label className="inline-flex items-center gap-2 text-xs font-semibold text-zinc-700 sm:col-span-12"><input type="checkbox" checked={prodAllowPreorder} onChange={(e) => setProdAllowPreorder(e.target.checked)} className="h-4 w-4 accent-zinc-900" />Permitir encomenda quando acabar</label>
               <p className="text-[11px] text-zinc-500 sm:col-span-12">O saldo decide a modalidade na vitrine. A opção controla apenas se o produto pode continuar ativo quando o saldo chegar a zero.</p>
             </div>

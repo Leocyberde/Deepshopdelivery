@@ -1,0 +1,19 @@
+{
+  "name": "deepshop/nfe-emitter",
+  "description": "Serviço emissor de NF-e (Sefaz-SP) com certificado A1 para o DeepShop Delivery",
+  "type": "project",
+  "require": {
+    "php": ">=8.1",
+    "ext-curl": "*",
+    "ext-dom": "*",
+    "ext-gd": "*",
+    "ext-mbstring": "*",
+    "ext-openssl": "*",
+    "ext-soap": "*",
+    "ext-zlib": "*",
+    "nfephp-org/sped-nfe": "^5.2",
+    "nfephp-org/sped-da": "^1.1"
+  },
+  "autoload": { "psr-4": { "DeepShop\\Emitter\\": "src/" } },
+  "config": { "optimize-autoloader": true, "sort-packages": true }
+}

@@ -89,6 +89,17 @@ function productData(body: any, existing?: any) {
   const supplierId = optionalSupplierId(body?.supplierId, existing?.supplierId ?? null);
   const supplierProductUrl = optionalHttpUrl(body?.supplierProductUrl, existing?.supplierProductUrl ?? null);
   const fulfillmentType = body?.fulfillmentType ?? existing?.fulfillmentType ?? 'DELIVERY';
+  const fiscalText = (value: unknown, fallback: string | null) => (value === undefined ? fallback : String(value ?? '').trim());
+  const fiscalNcmRaw = fiscalText(body?.fiscalNcm, existing?.fiscalNcm ?? null)?.replace(/\D/g, '') || null;
+  const fiscalCfop = fiscalText(body?.fiscalCfop, existing?.fiscalCfop ?? '5102') || '5102';
+  const fiscalOrigem = fiscalText(body?.fiscalOrigem, existing?.fiscalOrigem ?? '0') || '0';
+  const fiscalCsosn = fiscalText(body?.fiscalCsosn, existing?.fiscalCsosn ?? '102') || '102';
+  const fiscalUnidade = (fiscalText(body?.fiscalUnidade, existing?.fiscalUnidade ?? 'UN') || 'UN').toUpperCase();
+  if (fiscalNcmRaw !== null && !/^\d{8}$/.test(fiscalNcmRaw)) throw new Error('NCM inválido: informe 8 dígitos.');
+  if (!/^[1-7]\d{3}$/.test(fiscalCfop)) throw new Error('CFOP inválido: informe 4 dígitos (ex.: 5102).');
+  if (!/^[0-8]$/.test(fiscalOrigem)) throw new Error('Origem da mercadoria inválida: use um dígito de 0 a 8.');
+  if (!/^\d{3}$/.test(fiscalCsosn)) throw new Error('CSOSN inválido: informe 3 dígitos (ex.: 102).');
+  if (!/^[A-Z]{1,6}$/.test(fiscalUnidade)) throw new Error('Unidade comercial inválida (ex.: UN).');
   const allowPreorder = optionalBoolean(body?.allowPreorder, existing?.allowPreorder ?? true);
   if (!name || name.length > 120 || (body?.description != null && (typeof body.description !== 'string' || body.description.length > 5000))) {
     throw new Error('Nome ou descrição inválidos.');
@@ -126,6 +137,11 @@ function productData(body: any, existing?: any) {
     stockMinimum,
     supplierId,
     supplierProductUrl,
+    fiscalNcm: fiscalNcmRaw,
+    fiscalCfop,
+    fiscalOrigem,
+    fiscalCsosn,
+    fiscalUnidade,
     fulfillmentType,
     allowPreorder,
   };
@@ -378,6 +394,7 @@ export function registerAdminPhase2Routes(app: Express) {
           costUnitPrecise: input.costUnitPrecise, costLotTotal: input.costLotTotal, costLotUnits: input.costLotUnits,
           stock: initialStock, stockMinimum: input.stockMinimum, weight: input.weight,
           supplierId: input.supplierId, supplierProductUrl: input.supplierProductUrl,
+          fiscalNcm: input.fiscalNcm, fiscalCfop: input.fiscalCfop, fiscalOrigem: input.fiscalOrigem, fiscalCsosn: input.fiscalCsosn, fiscalUnidade: input.fiscalUnidade,
           fulfillmentType: effectiveFulfillmentType, allowPreorder: input.allowPreorder,
           status: req.body?.status === 'INACTIVE' ? 'INACTIVE' : (initialStock > 0 || input.allowPreorder ? 'ACTIVE' : 'INACTIVE'),
         }).returning();
@@ -874,6 +891,7 @@ export function registerAdminPhase2Routes(app: Express) {
           storeId, categoryId: input.categoryId, code: input.code, name: input.name, description: input.description,
           price: input.price, promoPrice: input.promoPrice, promoActive: input.promoActive, promoEndsAt: input.promoEndsAt,
           promoDurationHours: input.promoDurationHours, promoMaxUnits: input.promoMaxUnits, isKit: true, cost: suppliedCost.toFixed(2),
+          fiscalNcm: input.fiscalNcm, fiscalCfop: input.fiscalCfop, fiscalOrigem: input.fiscalOrigem, fiscalCsosn: input.fiscalCsosn, fiscalUnidade: input.fiscalUnidade,
           stock: kitsCount, stockMinimum: input.stockMinimum, weight: input.weight, status: 'ACTIVE',
         }).returning();
         for (const item of components) await tx.insert(schema.productKitItems).values({ kitProductId: kit.id, componentProductId: item.productId, quantityPerKit: item.quantityPerKit });

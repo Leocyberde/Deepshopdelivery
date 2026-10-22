@@ -21,7 +21,9 @@ import { registerAdminPhase3Routes } from './src/server/routes/adminPhase3Routes
 import { registerFulfillmentRoutes } from './src/server/routes/fulfillmentRoutes.ts';
 import { registerDeliveryOrdersRoutes } from './src/server/routes/deliveryOrdersRoutes.ts';
 import { registerAdminRefundRoutes } from './src/server/routes/adminRefundRoutes.ts';
+import { registerAdminNfeRoutes } from './src/server/routes/adminNfeRoutes.ts';
 import { startOrderExpirationWatcher } from './src/server/services/orderExpirationService.ts';
+import { startNfeCertificateWatcher } from './src/server/services/nfeService.ts';
 import { startOrderNotificationWatcher } from './src/server/services/orderNotificationService.ts';
 import { startSupportLifecycleWatcher } from './src/server/services/supportLifecycleService.ts';
 import { logServerError, logServerEvent, runWithRequestLogContext } from './src/server/logger.ts';
@@ -57,6 +59,7 @@ async function startServer() {
     throw error;
   }
   startOrderExpirationWatcher();
+  startNfeCertificateWatcher();
   startOrderNotificationWatcher();
   startSupportLifecycleWatcher();
   startDailyBackup();
@@ -199,6 +202,7 @@ async function startServer() {
   registerAdminPhase3Routes(app);
   registerDeliveryOrdersRoutes(app);
   registerAdminRefundRoutes(app);
+  registerAdminNfeRoutes(app);
   registerFulfillmentRoutes(app);
   registerAuthRoutes(app);
   registerStorefrontRoutes(app);

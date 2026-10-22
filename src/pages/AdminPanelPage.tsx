@@ -259,6 +259,7 @@ export const AdminPanelPage: React.FC = () => {
   const [prodStatus, setProdStatus] = useState<'ACTIVE' | 'INACTIVE'>('ACTIVE');
   const [prodSupplierId, setProdSupplierId] = useState<number | ''>('');
   const [prodSupplierUrl, setProdSupplierUrl] = useState('');
+  const [prodFiscal, setProdFiscal] = useState({ ncm: '', cfop: '5102', origem: '0', csosn: '102', unidade: 'UN' });
   const [prodFulfillmentType, setProdFulfillmentType] = useState<'DELIVERY' | 'PREORDER'>('DELIVERY');
   const [prodAllowPreorder, setProdAllowPreorder] = useState(true);
   const [prodVariantsJson, setProdVariantsJson] = useState('[]');
@@ -640,6 +641,7 @@ export const AdminPanelPage: React.FC = () => {
     setFormMode('PRODUCT');
     setProdSupplierId('');
     setProdSupplierUrl('');
+    setProdFiscal({ ncm: '', cfop: '5102', origem: '0', csosn: '102', unidade: 'UN' });
     setProdFulfillmentType('DELIVERY');
     setProdAllowPreorder(true);
     setProdVariantsJson('[]');
@@ -711,6 +713,7 @@ export const AdminPanelPage: React.FC = () => {
     setFormMode(prod.isKit ? 'KIT' : 'PRODUCT');
     setProdSupplierId(prod.supplierId ?? '');
     setProdSupplierUrl(prod.supplierProductUrl || '');
+    setProdFiscal({ ncm: prod.fiscalNcm || '', cfop: prod.fiscalCfop || '5102', origem: prod.fiscalOrigem || '0', csosn: prod.fiscalCsosn || '102', unidade: prod.fiscalUnidade || 'UN' });
     setProdFulfillmentType(prod.fulfillmentType === 'PREORDER' ? 'PREORDER' : 'DELIVERY');
     setProdAllowPreorder(prod.allowPreorder !== false);
     setProdVariantsJson(JSON.stringify(Array.isArray(prod.variants) ? prod.variants.map((v: any) => ({ sku: v.sku || '', options: v.options || {}, price: v.price, promoPrice: v.promoPrice, cost: v.cost, stock: v.stock, stockMinimum: v.stockMinimum, allowPreorder: v.allowPreorder !== false })) : [], null, 2));
@@ -1136,6 +1139,11 @@ export const AdminPanelPage: React.FC = () => {
           stockMinimum: Number(prodStockMinimum),
           supplierId: prodSupplierId === '' ? null : Number(prodSupplierId),
           supplierProductUrl: prodSupplierUrl.trim() || null,
+          fiscalNcm: prodFiscal.ncm.replace(/\D/g, '') || null,
+          fiscalCfop: prodFiscal.cfop.trim(),
+          fiscalOrigem: prodFiscal.origem,
+          fiscalCsosn: prodFiscal.csosn.trim(),
+          fiscalUnidade: prodFiscal.unidade.trim().toUpperCase(),
           fulfillmentType: prodFulfillmentType,
           allowPreorder: prodAllowPreorder,
           weight: prodWeight,
@@ -1618,6 +1626,8 @@ ${kitProd.code} - ${kitProd.name}`)) return;
                 setProdSupplierId={setProdSupplierId}
                 prodSupplierUrl={prodSupplierUrl}
                 setProdSupplierUrl={setProdSupplierUrl}
+                prodFiscal={prodFiscal}
+                setProdFiscal={setProdFiscal}
                 prodFulfillmentType={prodFulfillmentType}
                 setProdFulfillmentType={setProdFulfillmentType}
                 prodAllowPreorder={prodAllowPreorder}
@@ -1686,6 +1696,8 @@ ${kitProd.code} - ${kitProd.name}`)) return;
             {/* 4. PEDIDOS */}
             {section === 'ORDERS' && (
               <AdminOrdersSection
+                apiFetch={apiFetch}
+                toast={toast}
                 ordersData={ordersData}
                 orderSearch={orderSearch}
                 setOrderSearch={(value) => {

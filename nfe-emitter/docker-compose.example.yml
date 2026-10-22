@@ -1,0 +1,17 @@
+# Exemplo: o emissor escuta SOMENTE em 127.0.0.1 (o app Node fala com ele localmente; nunca exponha na internet).
+services:
+  nfe-emitter:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8081:80"
+    environment:
+      EMITTER_TOKEN: ${EMITTER_TOKEN}
+      NFE_CERT_PATH: /run/secrets/certificado.pfx
+      NFE_CERT_PASSWORD: ${NFE_CERT_PASSWORD}
+      NFE_STORAGE_DIR: /var/lib/deepshop-nfe
+      NFE_SCHEMA: PL_009_V4
+      NFE_VER_PROC: "DeepShop 1.0"
+    volumes:
+      - ./certificado.pfx:/run/secrets/certificado.pfx:ro      # seu A1 (fora do git!)
+      - /var/lib/deepshop-nfe:/var/lib/deepshop-nfe             # XMLs autorizados + DANFE: faça backup diário

@@ -1,0 +1,7 @@
+vendor/
+.env
+*.pfx
+*.p12
+storage/pending/
+storage/locks/
+tests/fixtures/test.pfx

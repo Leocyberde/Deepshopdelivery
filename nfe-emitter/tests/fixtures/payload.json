@@ -1,0 +1,12 @@
+{"ambiente":"2","serie":1,"numero":1,"naturezaOperacao":"Venda de mercadoria",
+ "emitente":{"cnpj":"11222333000181","ie":"153843059113","razaoSocial":"EMPRESA TESTE LTDA","nomeFantasia":"DeepShop","crt":"1","fone":"11999998888",
+  "endereco":{"logradouro":"Rua Florencio de Abreu","numero":"562","complemento":"","bairro":"Centro","cep":"01030000","codMunicipio":"3550308","municipio":"Sao Paulo","uf":"SP"}},
+ "destinatario":{"cpf":"40954571800","nome":"LEONARDO SILVA SANTOS DO VALE","email":"cliente@example.com","fone":"11988887777",
+  "endereco":{"logradouro":"Travessa Francisco Dantas de Paiva","numero":"52","complemento":"","bairro":"Parque Sao Francisco","cep":"13254252","codMunicipio":"3523404","municipio":"Itatiba","uf":"SP"}},
+ "operacao":{"idDest":"1","indFinal":"1","indPres":"2"},
+ "itens":[{"numero":1,"codigo":"A001","descricao":"Kit com 3 lâminas sobrancelha e rosto","ncm":"82121010","cfop":"5102","origem":"0","csosn":"102","unidade":"UN","quantidade":2,"valorUnitario":"10.50","valorTotal":"21.00"},
+          {"numero":2,"codigo":"A002","descricao":"Produto B","ncm":"82121010","cfop":"5102","origem":"0","csosn":"102","unidade":"UN","quantidade":1,"valorUnitario":"5.00","valorTotal":"5.00"}],
+ "valores":{"produtos":"26.00","frete":"7.00","total":"33.00"},
+ "pagamento":{"tPag":"17","valor":"33.00"},
+ "informacoesComplementares":"Documento emitido por ME ou EPP optante pelo Simples Nacional. Nao gera direito a credito fiscal de ICMS, de ISS e de IPI. Pedido #000123.",
+ "pedido":{"id":1,"numero":"#000123"}}

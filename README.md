@@ -56,3 +56,12 @@ A migration `drizzle/0001_encomendas_fulfillments.sql` adiciona fornecedores, co
 O backend expõe `POST /api/cart/quote` para recalcular o split no servidor e rotas administrativas autenticadas em `/api/admin/suppliers`, `/api/admin/suppliers/:id/purchases`, `/api/admin/fulfillments` e `/api/admin/fulfillments/:id/status`. Os cálculos de janela de encomenda e totais estão em `src/utils/fulfillmentDates.ts`.
 
 Para validar localmente: `npm run lint`, `npm run build` e `npm test`. O banco de testes deve usar nome contendo `test`; não configure Mercado Pago ou CallMeBot reais durante os testes.
+
+## NF-e sob demanda (Sefaz-SP, certificado A1)
+
+Cada pedido pago ganha o botão **Emitir NF-e** (modal do pedido, no painel). Nada é enviado à Sefaz automaticamente: útil para encomendas, em que a nota só sai depois que o produto chegou. Depois de autorizada, baixe o **DANFE (PDF)** e o **XML** e envie ao cliente pelo botão "E-mail do cliente".
+
+- Dados fiscais por produto (NCM, CFOP, origem, CSOSN, unidade): formulário de produto no admin. Migrations `0004` e `0005`.
+- O app monta os dados e controla numeração/estado (`fiscal_documents`); a **assinatura com o A1 e a transmissão** ficam no serviço `nfe-emitter/` (PHP + sped-nfe). Veja `nfe-emitter/README.md`.
+- Variáveis `NFE_*` no `.env` (modelo em `.env.example`). Comece com `NFE_AMBIENTE=2` (homologação) e só mude para `1` depois de validar.
+- O painel avisa 30 dias antes do certificado vencer.

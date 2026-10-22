@@ -507,6 +507,20 @@ export async function initializeDatabase() {
     CREATE UNIQUE INDEX idx_supplier_purchases_inventory_movement ON supplier_purchases(inventory_movement_id);
     ALTER TABLE products ADD COLUMN IF NOT EXISTS supplier_id INTEGER REFERENCES suppliers(id) ON DELETE SET NULL;
     ALTER TABLE products ADD COLUMN IF NOT EXISTS supplier_product_url TEXT;
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS fiscal_ncm TEXT;
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS fiscal_cfop TEXT NOT NULL DEFAULT '5102';
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS fiscal_origem TEXT NOT NULL DEFAULT '0';
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS fiscal_csosn TEXT NOT NULL DEFAULT '102';
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS fiscal_unidade TEXT NOT NULL DEFAULT 'UN';
+    CREATE TABLE IF NOT EXISTS fiscal_documents (
+      id SERIAL PRIMARY KEY, order_id INTEGER NOT NULL UNIQUE REFERENCES orders(id) ON DELETE CASCADE,
+      status TEXT NOT NULL DEFAULT 'PROCESSING', environment TEXT NOT NULL, serie INTEGER NOT NULL, numero INTEGER NOT NULL,
+      access_key TEXT, protocol TEXT, rejection_code TEXT, rejection_message TEXT, payload JSONB, xml_authorized TEXT, danfe_pdf_base64 TEXT,
+      requested_by INTEGER REFERENCES users(id) ON DELETE SET NULL, authorized_at TIMESTAMP,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(), updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+    CREATE SEQUENCE IF NOT EXISTS nfe_numero_homologacao_seq START 1;
+    CREATE SEQUENCE IF NOT EXISTS nfe_numero_producao_seq START 1;
     ALTER TABLE products ADD COLUMN IF NOT EXISTS fulfillment_type TEXT NOT NULL DEFAULT 'DELIVERY';
     ALTER TABLE products ADD COLUMN IF NOT EXISTS allow_preorder BOOLEAN NOT NULL DEFAULT TRUE;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_eta_at TIMESTAMP;
