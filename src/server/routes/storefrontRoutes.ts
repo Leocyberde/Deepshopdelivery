@@ -251,6 +251,7 @@ export function registerStorefrontRoutes(app: Express) {
         promoPrice: product.promoPrice, promoActive: product.promoActive, promoEndsAt: product.promoEndsAt,
         promoDurationHours: product.promoDurationHours, promoMaxUnits: product.promoMaxUnits,
         isKit: product.isKit, weight: product.weight, status: product.status, allowPreorder: product.allowPreorder,
+        availabilityMode: product.stock > 0 ? 'DELIVERY' : 'PREORDER',
         createdAt: product.createdAt, updatedAt: product.updatedAt,
       };
       const publicVariants = variants

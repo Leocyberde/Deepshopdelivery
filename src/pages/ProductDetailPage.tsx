@@ -39,6 +39,8 @@ interface ProductDetail {
   effectivePrice: string;
   discountPercent?: number;
   isKit: boolean;
+  allowPreorder: boolean;
+  availabilityMode: 'DELIVERY' | 'PREORDER';
   kitComponents?: KitComponentInfo[];
   weight: string;
   status: string;
@@ -240,7 +242,11 @@ export const ProductDetailPage: React.FC = () => {
               <span>{product.categoryName}</span>
               <span aria-hidden="true">·</span>
               <span className="tabular-nums">
-                Entrega Delivery ou Encomenda
+                {product.availabilityMode === 'PREORDER'
+                  ? 'Encomenda'
+                  : product.allowPreorder
+                  ? 'Delivery ou Encomenda'
+                  : 'Delivery'}
               </span>
               {parseFloat(product.weight || '0') > 0 && (
                 <>
