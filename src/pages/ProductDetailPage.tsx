@@ -466,10 +466,6 @@ export const ProductDetailPage: React.FC = () => {
               </button>
             </div>
 
-            <div className="text-xs text-zinc-500 space-y-1.5">
-              <p>• Pagamento via Pix, Cartão ou Dinheiro na entrega.</p>
-              <p>• Frete conforme endereço cadastrado ou combinado pelo WhatsApp da loja.</p>
-            </div>
           </div>
         </div>
       </div>
