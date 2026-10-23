@@ -142,7 +142,7 @@ export const PaymentTimerBadge: React.FC<PaymentTimerBadgeProps> = ({
         <div className="opacity-90">
           {remainingSec <= 0
             ? 'Como o pagamento não foi confirmado em 1 hora, o pedido é cancelado automaticamente e os produtos retornam para a vitrine.'
-            : 'Realize o pagamento via PIX e envie o comprovante no WhatsApp dentro de 1 hora. Caso não seja pago nesse prazo, o pedido é cancelado e o saldo volta automaticamente para a vitrine.'}
+            : 'Conclua o pagamento online dentro de 1 hora. Caso não seja confirmado nesse prazo, o pedido é cancelado e o saldo volta automaticamente para a vitrine.'}
         </div>
       </div>
     </div>

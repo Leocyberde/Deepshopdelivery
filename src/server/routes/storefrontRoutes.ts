@@ -143,9 +143,6 @@ export function registerStorefrontRoutes(app: Express) {
         },
         fulfillment: buildFulfillmentPromises(settingsMap),
         settings: {
-          whatsappNumber: settingsMap.whatsapp_number || '',
-          pixKey: settingsMap.pix_key || '',
-          pixInstructions: settingsMap.pix_instructions || '',
           paymentDeadlineHours: Number(settingsMap.payment_deadline_hours || 0.5),
           store: storeState,
         },
@@ -166,7 +163,6 @@ export function registerStorefrontRoutes(app: Express) {
           cnpj: settings.company_cnpj || '',
           address: settings.company_address || '',
           email: settings.company_email || '',
-          phone: settings.company_phone || '',
         },
         privacy: settings.privacy_content || 'Política de Privacidade ainda não configurada.',
         terms: settings.terms_content || 'Termos de Uso ainda não configurados.',

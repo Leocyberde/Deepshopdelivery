@@ -9,7 +9,7 @@ import type { HelmetOptions } from 'helmet';
  * - data:/blob: prévia local de imagens/vídeos no painel (AdminPanelPage.tsx);
  * - style-src-attr unsafe-inline: estilos inline via props React em componentes (ex.: ProductMedia.tsx).
  *
- * Chamadas a BrasilAPI, Mercado Pago e CallMeBot são server-side; URLs wa.me são navegação,
+ * Chamadas a BrasilAPI, Mercado Pago são server-side; URLs wa.me são navegação,
  * não chamadas fetch do documento. Nenhum iframe, worker de terceiros, analytics ou WebSocket
  * é carregado pelo frontend. Não há necessidade de unsafe-eval.
  */

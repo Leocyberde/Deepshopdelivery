@@ -487,12 +487,9 @@ export async function initializeDatabase() {
       ('company_cnpj', ''),
       ('company_address', ''),
       ('company_email', ''),
-      ('company_phone', ''),
       ('privacy_content', 'Esta Política de Privacidade explica como a DeepShop Delivery coleta e utiliza dados necessários para cadastro, atendimento, pedidos, entrega e suporte.'),
       ('terms_content', 'Estes Termos de Uso estabelecem as regras para cadastro, compra, pagamento, entrega, cancelamento e utilização da loja DeepShop Delivery.'),
-      ('exchange_content', 'Trocas e devoluções serão tratadas conforme a legislação aplicável e as condições informadas pela loja no momento da compra.'),
-      ('callmebot_enabled', 'false'),
-      ('callmebot_last_sent_at', '')
+      ('exchange_content', 'Trocas e devoluções serão tratadas conforme a legislação aplicável e as condições informadas pela loja no momento da compra.')
     ON CONFLICT (key) DO NOTHING;
   `);
 
@@ -567,13 +564,6 @@ export async function initializeDatabase() {
 
     // 3. Default Settings
     const defaultSettings = [
-      { key: 'whatsapp_number', value: '' },
-      { key: 'pix_key', value: '' },
-      {
-        key: 'pix_instructions',
-        value:
-          'Faça o Pix usando a chave acima e envie o comprovante pelo WhatsApp informando o número do seu pedido.',
-      },
       { key: 'freight_base_km', value: '4.0' },
       { key: 'freight_base_fee', value: '7.50' },
       { key: 'freight_extra_km_fee', value: '1.50' },

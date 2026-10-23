@@ -67,7 +67,7 @@ function redactOperationalMessage(value: unknown): string {
     .replace(/\b(?:postgres(?:ql)?|https?):\/\/[^\s"'<>]+/gi, '[URL redacted]')
     .replace(/\bBearer\s+[A-Za-z0-9._~+\/-]+=*/gi, 'Bearer [redacted]')
     .replace(/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9._-]+(?:\.[A-Za-z0-9._-]+)?\b/g, '[token redacted]')
-    .replace(/(["']?)(?:authorization|cookie|password|senha|jwt|token|secret|api[_ -]?key|access[_ -]?token|refresh[_ -]?token|database_url|mp_access_token|callmebot[_ -]?apikey|mercadopago[_ -]?test[_ -]?access[_ -]?token)\1\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;}]+)/gi, '[sensitive field redacted]')
+    .replace(/(["']?)(?:authorization|cookie|password|senha|jwt|token|secret|api[_ -]?key|access[_ -]?token|refresh[_ -]?token|database_url|mp_access_token|mercadopago[_ -]?test[_ -]?access[_ -]?token)\1\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;}]+)/gi, '[sensitive field redacted]')
     .replace(/\b(?:user|username|database|host)\s+["'][^"']+["']/gi, '$1 [redacted]')
     .replace(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/g, '[email redacted]')
     .replace(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g, '[cpf redacted]')

@@ -2,7 +2,7 @@ import React from 'react';
 import { DeepShopDeliveryDeliveryLogo } from './DeepShopDeliveryLogo.tsx';
 
 // Desenho ilustrativo passo a passo completo:
-// 1. Vitrine -> 2. Sacola -> 3. Pedido -> 4. Aprovação do ADM -> 5. Pagamento pelo WhatsApp direto com ADM -> 6. Entrega ao Cliente Feliz
+// 1. Vitrine -> 2. Sacola -> 3. Pedido -> 4. Aprovação do ADM -> 5. Pagamento online -> 6. Entrega ao Cliente Feliz
 export const LogisticsFlowIllustration: React.FC = () => {
   return (
     <div className="w-full rounded-2xl overflow-hidden bg-gradient-to-br from-[#EAF8FF] via-white to-[#EAF8FF] border-2 border-[#087BFF]/30 shadow-sm p-4 sm:p-5 space-y-4">
@@ -17,7 +17,7 @@ export const LogisticsFlowIllustration: React.FC = () => {
           </span>
         </div>
         <span className="text-[11px] font-bold text-[#087BFF]">
-          Rápido, seguro e direto com o ADM
+          Rápido e seguro pelo sistema
         </span>
       </div>
 
@@ -132,13 +132,13 @@ export const LogisticsFlowIllustration: React.FC = () => {
           </p>
         </div>
 
-        {/* ETAPA 5: PAGAMENTO PELO WHATSAPP DIRETO COM ADM */}
+        {/* ETAPA 5: PAGAMENTO ONLINE */}
         <div className="relative bg-white border-2 border-[#087BFF]/25 rounded-2xl p-3 flex flex-col items-center text-center shadow-2xs">
           <span className="absolute top-2 left-2 w-5 h-5 rounded-full bg-[#087BFF] text-white text-[10px] font-black flex items-center justify-center">
             5
           </span>
           <svg viewBox="0 0 96 80" fill="none" className="w-20 h-16 sm:w-24 sm:h-20">
-            {/* Balão de conversa WhatsApp + Pix direto com ADM */}
+            {/* Pagamento online */}
             <path
               d="M18 22C18 14.8203 23.8203 9 31 9H61C68.1797 9 74 14.8203 74 22V44C74 51.1797 68.1797 57 61 57H34L20 66V54.5C18.7 51.5 18 48 18 44V22Z"
               fill="#FFFFFF"
@@ -146,23 +146,23 @@ export const LogisticsFlowIllustration: React.FC = () => {
               strokeWidth="3"
               strokeLinejoin="round"
             />
-            {/* Símbolo Pix + WhatsApp */}
+            {/* Indicador de pagamento online */}
             <rect x="25" y="17" width="42" height="14" rx="4" fill="#087BFF" />
             <text x="46" y="26.5" textAnchor="middle" fill="#FFFFFF" fontSize="7.5" fontWeight="900">
-              PIX + WHATSAPP
+              PAGAMENTO ONLINE
             </text>
             <rect x="25" y="36" width="32" height="12" rx="4" fill="#EAF8FF" stroke="#087BFF" strokeWidth="1.5" />
             <text x="41" y="44" textAnchor="middle" fill="#09090B" fontSize="6.5" fontWeight="900">
-              DIRETO C/ ADM
+              ONLINE
             </text>
             <circle cx="67" cy="44" r="9" fill="#09090B" />
             <path d="M63.5 44L66 46.5L71 41.5" stroke="#C084FC" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           <div className="text-xs font-extrabold text-zinc-900 mt-1">
-            5. Pagamento no WhatsApp
+            5. Pagamento online
           </div>
           <p className="text-[10px] text-zinc-600 leading-tight mt-0.5">
-            Pagamento fácil direto com o ADM no WhatsApp
+            Pagamento seguro pelo sistema
           </p>
         </div>
 

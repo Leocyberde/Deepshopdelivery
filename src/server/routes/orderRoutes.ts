@@ -7,11 +7,6 @@ import { db } from '../../db/index.ts';
 import * as schema from '../../db/schema.ts';
 import { freightForSavedAddress, requireAvailableFreight, FreightError } from '../services/geoService.ts';
 import { isServedAddress } from '../../services/freightService.ts';
-import {
-  buildOrderWhatsAppMessage,
-  buildRefundWhatsAppMessage,
-  buildWhatsAppLink,
-} from '../../utils/whatsapp.ts';
 import { AuthRequest, requireAuth, JWT_SECRET } from '../middleware/auth.ts';
 import {
   CUSTOMER_CANCELLABLE_STATUSES,
@@ -49,7 +44,7 @@ function getSafeOrderBusinessError(error: unknown): string | null {
 
 async function buildIdempotentOrderReplay(order: InferSelectModel<typeof schema.orders>) {
   const items = await db.select().from(schema.orderItems).where(eq(schema.orderItems.orderId, order.id));
-  return { ...order, items, idempotentReplay: true, whatsappMessage: '', whatsappUrl: '' };
+  return { ...order, items, idempotentReplay: true };
 }
 function toPaymentSummary(payment: InferSelectModel<typeof schema.payments> | undefined) {
   if (!payment) return null;
@@ -519,22 +514,6 @@ export function registerOrderRoutes(app: Express) {
       }
 
       const allImages = await db.select().from(schema.productImages);
-      const whatsappNumber = settingsMap.whatsapp_number || '';
-      const whatsappMessage = buildOrderWhatsAppMessage({
-        orderNumber: createdOrderResult.order.orderNumber,
-        items: createdOrderResult.items,
-        subtotal: createdOrderResult.order.subtotal,
-        deliveryFee: createdOrderResult.order.deliveryFee,
-        total: createdOrderResult.order.total,
-        paymentMethod: createdOrderResult.order.paymentMethod,
-        changeFor: createdOrderResult.order.changeFor,
-        addressSnapshot: createdOrderResult.order.addressSnapshot,
-        notes: createdOrderResult.order.notes,
-        deliveryFeeSource: createdOrderResult.order.deliveryFeeSource,
-        deliveryDistanceKm: createdOrderResult.order.deliveryDistanceKm,
-      });
-      const whatsappUrl = buildWhatsAppLink(whatsappNumber, whatsappMessage);
-
       const enrichedItems = createdOrderResult.items.map((it) => {
         const prodImgs = allImages.filter((img) => img.productId === it.productId);
         const primary =
@@ -564,8 +543,6 @@ export function registerOrderRoutes(app: Express) {
         canCustomerCancel: true,
         requiresRefundOnCancel: false,
         items: enrichedItems,
-        whatsappMessage,
-        whatsappUrl,
       });
     } catch (error: any) {
       if (error instanceof FreightError) { res.status(error.status).json({ error: error.message, code: error.code }); return; }
@@ -613,11 +590,6 @@ export function registerOrderRoutes(app: Express) {
       const totalOrders = Number(total || 0);
       const totalPages = Math.max(1, Math.ceil(totalOrders / pageSize));
 
-      const [customerUser] = await db
-        .select()
-        .from(schema.users)
-        .where(eq(schema.users.id, req.user!.id));
-
       const allItems = await db.select().from(schema.orderItems);
       const allImages = await db.select().from(schema.productImages);
       const allHistory = await db
@@ -631,10 +603,6 @@ export function registerOrderRoutes(app: Express) {
         ? await db.select().from(schema.orderFulfillments).where(inArray(schema.orderFulfillments.orderId, userOrders.map((order) => order.id)))
         : [];
       const paymentsByOrder = new Map(paymentRows.map((payment) => [payment.orderId, payment]));
-      const settingsMap = await getSettingsMap();
-      const whatsappNumber = settingsMap.whatsapp_number || '';
-
-
       const enriched = userOrders.map((o) => {
         const items = allItems
           .filter((i) => i.orderId === o.id)
@@ -648,39 +616,12 @@ export function registerOrderRoutes(app: Express) {
           });
         const history = allHistory.filter((h) => h.orderId === o.id);
         const isFreeDelivery = o.deliveryFee !== null && Number(o.deliveryFee) === 0;
-        const whatsappMessage = buildOrderWhatsAppMessage({
-          orderNumber: o.orderNumber,
-          items,
-          subtotal: o.subtotal,
-          deliveryFee: o.deliveryFee,
-          total: o.total,
-          paymentMethod: o.paymentMethod,
-          changeFor: o.changeFor,
-          addressSnapshot: o.addressSnapshot,
-          notes: o.notes,
-          deliveryFeeSource: o.deliveryFeeSource,
-          deliveryDistanceKm: o.deliveryDistanceKm,
-        });
-
         const canCustomerCancel = CUSTOMER_CANCELLABLE_STATUSES.includes(o.status);
         const requiresRefundOnCancel = PAID_ORDER_STATUSES.includes(o.status);
         const paymentReleased = Boolean(
           isFreeDelivery ||
             (o.deliveryFee !== null && o.deliveryFee !== undefined && o.deliveryFee !== '')
         );
-
-        const refundWhatsappMessage = buildRefundWhatsAppMessage({
-          orderNumber: o.orderNumber,
-          customerName: customerUser?.name || req.user!.name,
-          customerPhone: customerUser?.phone || '',
-          items,
-          subtotal: o.subtotal,
-          deliveryFee: o.deliveryFee,
-          total: o.total,
-          cancellationReason:
-            o.cancellationReason || 'Solicito o cancelamento e estorno do valor pago.',
-        });
-        const refundWhatsappUrl = buildWhatsAppLink(whatsappNumber, refundWhatsappMessage);
 
         const { deliveryDistanceKm: _customerDeliveryDistanceKm, ...customerOrder } = o;
         return {
@@ -693,14 +634,6 @@ export function registerOrderRoutes(app: Express) {
           items,
           fulfillments: fulfillmentRows.filter((f) => f.orderId === o.id).map(({ deliveredBy: _deliveredBy, ...fulfillment }) => fulfillment),
           history,
-          whatsappMessage,
-          whatsappUrl: buildWhatsAppLink(whatsappNumber, whatsappMessage),
-          refundWhatsappMessage:
-            o.refundRequested || requiresRefundOnCancel ? refundWhatsappMessage : null,
-          refundWhatsappUrl:
-            o.refundRequested || requiresRefundOnCancel ? refundWhatsappUrl : null,
-          pixKey: settingsMap.pix_key || '',
-          pixInstructions: settingsMap.pix_instructions || '',
         };
       });
 
@@ -757,23 +690,7 @@ export function registerOrderRoutes(app: Express) {
       const [payment] = await db.select().from(schema.payments).where(eq(schema.payments.orderId, order.id));
       const fulfillments = await db.select().from(schema.orderFulfillments).where(eq(schema.orderFulfillments.orderId, order.id));
 
-      const settingsMap = await getSettingsMap();
-      const whatsappNumber = settingsMap.whatsapp_number || '';
       const isFreeDelivery = order.deliveryFee !== null && Number(order.deliveryFee) === 0;
-      const whatsappMessage = buildOrderWhatsAppMessage({
-        orderNumber: order.orderNumber,
-        items,
-        subtotal: order.subtotal,
-        deliveryFee: order.deliveryFee,
-        total: order.total,
-        paymentMethod: order.paymentMethod,
-        changeFor: order.changeFor,
-        addressSnapshot: order.addressSnapshot,
-        notes: order.notes,
-        deliveryFeeSource: order.deliveryFeeSource,
-        deliveryDistanceKm: order.deliveryDistanceKm,
-      });
-
       const canCustomerCancel = CUSTOMER_CANCELLABLE_STATUSES.includes(order.status);
       const requiresRefundOnCancel = PAID_ORDER_STATUSES.includes(order.status);
       const paymentReleased = Boolean(
@@ -782,19 +699,6 @@ export function registerOrderRoutes(app: Express) {
             order.deliveryFee !== undefined &&
             order.deliveryFee !== '')
       );
-      const refundWhatsappMessage = buildRefundWhatsAppMessage({
-        orderNumber: order.orderNumber,
-        customerName: orderCustomer?.name || 'Cliente',
-        customerPhone: orderCustomer?.phone || '',
-        items,
-        subtotal: order.subtotal,
-        deliveryFee: order.deliveryFee,
-        total: order.total,
-        cancellationReason:
-          order.cancellationReason || 'Solicito o cancelamento e estorno do valor pago.',
-      });
-      const refundWhatsappUrl = buildWhatsAppLink(whatsappNumber, refundWhatsappMessage);
-
       const orderResponse = isAdminRole(req.user!.role) ? order : (() => {
         const { deliveryDistanceKm: _customerDeliveryDistanceKm, ...customerOrder } = order;
         return customerOrder;
@@ -809,14 +713,6 @@ export function registerOrderRoutes(app: Express) {
         items,
         fulfillments: fulfillments.map(({ deliveredBy: _deliveredBy, ...fulfillment }) => fulfillment),
         history,
-        whatsappMessage,
-        whatsappUrl: buildWhatsAppLink(whatsappNumber, whatsappMessage),
-        refundWhatsappMessage:
-          order.refundRequested || requiresRefundOnCancel ? refundWhatsappMessage : null,
-        refundWhatsappUrl:
-          order.refundRequested || requiresRefundOnCancel ? refundWhatsappUrl : null,
-        pixKey: settingsMap.pix_key || '',
-        pixInstructions: settingsMap.pix_instructions || '',
       });
     } catch (error) {
       logServerError('server_operation_failed', error);
@@ -984,30 +880,6 @@ export function registerOrderRoutes(app: Express) {
         }
       }
 
-      const [customerUser] = await db
-        .select()
-        .from(schema.users)
-        .where(eq(schema.users.id, existingOrder.userId));
-      const settingsMap = await getSettingsMap();
-      const whatsappNumber = settingsMap.whatsapp_number || '';
-
-      let refundWhatsappMessage: string | null = null;
-      let refundWhatsappUrl: string | null = null;
-
-      if (result.wasPaid) {
-        refundWhatsappMessage = buildRefundWhatsAppMessage({
-          orderNumber: existingOrder.orderNumber,
-          customerName: customerUser?.name || req.user!.name,
-          customerPhone: customerUser?.phone || '',
-          items: result.items,
-          subtotal: existingOrder.subtotal,
-          deliveryFee: existingOrder.deliveryFee,
-          total: existingOrder.total,
-          cancellationReason: finalReason,
-        });
-        refundWhatsappUrl = buildWhatsAppLink(whatsappNumber, refundWhatsappMessage);
-      }
-
       res.json({
         ...result.updatedOrder,
         canCustomerCancel: false,
@@ -1015,8 +887,6 @@ export function registerOrderRoutes(app: Express) {
         wasPaid: result.wasPaid,
         refundRequested: result.wasPaid,
         cancellationReason: result.updatedOrder.cancellationReason || finalReason,
-        refundWhatsappMessage,
-        refundWhatsappUrl,
       });
     } catch (error: any) {
       const isStateConflict = error instanceof Error && error.message.startsWith('O pedido mudou de estado');

@@ -4,9 +4,6 @@ import { Lock, Eye, EyeOff, KeyRound, Database, Download, Upload, Server, CheckC
 import { useApp } from '../../context/AppContext.tsx';
 
 interface SettingsFormState {
-  whatsapp_number: string;
-  pix_key: string;
-  pix_instructions: string;
   freight_base_km: string;
   freight_base_fee: string;
   freight_extra_km_fee: string;
@@ -25,12 +22,9 @@ interface SettingsFormState {
   company_cnpj: string;
   company_address: string;
   company_email: string;
-  company_phone: string;
   privacy_content: string;
   terms_content: string;
   exchange_content: string;
-  callmebot_enabled: string;
-  callmebot_last_sent_at: string;
 }
 
 interface AdminSettingsSectionProps {
@@ -83,27 +77,6 @@ export const AdminSettingsSection: React.FC<AdminSettingsSectionProps> = ({
     'Chegaram novidades imperdíveis com pronta entrega em Itatiba! Peça agora e receba em poucas horas.'
   );
   const [sendingBroadcast, setSendingBroadcast] = useState(false);
-  const [testingCallMeBot, setTestingCallMeBot] = useState(false);
-  const [callMeBotConfigured, setCallMeBotConfigured] = useState(false);
-
-  const handleTestCallMeBot = async () => {
-    setTestingCallMeBot(true);
-    try {
-      const res = await apiFetch<{ message: string }>('/api/admin/callmebot/test', { method: 'POST' });
-      toast(res.message || 'Teste enviado.', 'success');
-      setSettingsForm((prev) => ({ ...prev, callmebot_last_sent_at: new Date().toISOString() }));
-    } catch (err: any) {
-      toast(err.message || 'Não foi possível enviar o teste.', 'error');
-    } finally {
-      setTestingCallMeBot(false);
-    }
-  };
-
-  useEffect(() => {
-    apiFetch<{ configured: boolean }>('/api/admin/callmebot/status')
-      .then((res) => setCallMeBotConfigured(Boolean(res.configured)))
-      .catch(() => setCallMeBotConfigured(false));
-  }, [apiFetch]);
 
   const handleSendBroadcast = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -265,8 +238,7 @@ export const AdminSettingsSection: React.FC<AdminSettingsSectionProps> = ({
       <div>
         <h1 className="text-2xl font-bold text-zinc-900">Configurações da Loja</h1>
         <p className="text-xs text-zinc-500">
-          Defina o WhatsApp oficial de recebimento de pedidos, chave Pix, parâmetros de frete e
-          gerencie seu banco de dados PostgreSQL e migração para VPS.
+          Configure frete, operação da loja, custos e gerencie seu banco de dados PostgreSQL e migração para VPS.
         </p>
       </div>
 
@@ -472,83 +444,24 @@ psql -U postgres -d deepshopdelivery -f deepshopdelivery-postgresql-vps.sql`}
       >
         <div className="space-y-4">
           <h2 className="text-sm font-bold text-zinc-900 border-b border-stone-200 pb-2">
-            1. Atendimento WhatsApp & Pagamento Pix
+            1. Prazo de reserva do pedido
           </h2>
-
-          {!String(settingsForm.whatsapp_number || '').replace(/\D/g, '') && (
-            <div
-              role="alert"
-              className="text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-300 rounded-lg px-3 py-2"
-            >
-              Configure o WhatsApp da loja. Sem o número, os clientes não conseguem enviar pedidos pelo
-              WhatsApp.
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="block text-xs font-semibold text-zinc-700">
-                Número do WhatsApp da Loja (com DDI 55 + DDD)
-              </label>
-              <input
-                type="text"
-                required
-                value={settingsForm.whatsapp_number}
-                onChange={(e) =>
-                  setSettingsForm({ ...settingsForm, whatsapp_number: e.target.value })
-                }
-                placeholder="55 + DDD + número"
-                className="w-full px-3.5 py-2 text-sm bg-white border border-stone-300 rounded-lg font-mono"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="block text-xs font-semibold text-zinc-700">
-                Prazo de Reserva / Pagamento em Horas (0,5 = 30 minutos)
-              </label>
-              <input
-                type="number"
-                min="0.5"
-                step="0.5"
-                required
-                value={settingsForm.payment_deadline_hours}
-                onChange={(e) =>
-                  setSettingsForm({
-                    ...settingsForm,
-                    payment_deadline_hours: e.target.value,
-                  })
-                }
-                className="w-full px-3.5 py-2 text-sm bg-white border border-stone-300 rounded-lg font-mono"
-              />
-              <p className="text-[11px] text-zinc-500">
-                Após esse prazo sem confirmação de pagamento, o pedido é cancelado automaticamente e os produtos voltam ao estoque.
-              </p>
-            </div>
-          </div>
-
-          <div className="space-y-1">
-            <label className="block text-xs font-semibold text-zinc-700">Chave Pix</label>
+          <div className="space-y-1 max-w-sm">
+            <label className="block text-xs font-semibold text-zinc-700">
+              Prazo de reserva do pedido em horas (0,5 = 30 minutos)
+            </label>
             <input
-              type="text"
-              value={settingsForm.pix_key}
-              onChange={(e) => setSettingsForm({ ...settingsForm, pix_key: e.target.value })}
-              placeholder="CNPJ, E-mail, Telefone ou Chave Aleatória"
+              type="number"
+              min="0.5"
+              step="0.5"
+              required
+              value={settingsForm.payment_deadline_hours}
+              onChange={(e) => setSettingsForm({ ...settingsForm, payment_deadline_hours: e.target.value })}
               className="w-full px-3.5 py-2 text-sm bg-white border border-stone-300 rounded-lg font-mono"
             />
-          </div>
-
-          <div className="space-y-1">
-            <label className="block text-xs font-semibold text-zinc-700">
-              Instruções de Pagamento Pix
-            </label>
-            <textarea
-              rows={2}
-              value={settingsForm.pix_instructions}
-              onChange={(e) =>
-                setSettingsForm({ ...settingsForm, pix_instructions: e.target.value })
-              }
-              className="w-full px-3.5 py-2 text-sm bg-white border border-stone-300 rounded-lg"
-            />
+            <p className="text-[11px] text-zinc-500">
+              Após esse prazo sem confirmação do pagamento online, o pedido é cancelado automaticamente e os produtos voltam ao estoque.
+            </p>
           </div>
         </div>
 
@@ -817,17 +730,13 @@ psql -U postgres -d deepshopdelivery -f deepshopdelivery-postgresql-vps.sql`}
         <div className="space-y-4">
           <h2 className="text-sm font-bold text-zinc-900 border-b border-stone-200 pb-2">5. Dados da Empresa, LGPD e Notificações</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {([['company_name','Nome da empresa'],['company_cnpj','CNPJ'],['company_address','Endereço da empresa'],['company_email','E-mail da empresa'],['company_phone','Telefone da empresa']] as const).map(([key,label]) => (
+            {([['company_name','Nome da empresa'],['company_cnpj','CNPJ'],['company_address','Endereço da empresa'],['company_email','E-mail da empresa']] as const).map(([key,label]) => (
               <div key={key} className="space-y-1"><label className="block text-xs font-semibold text-zinc-700">{label}</label><input value={(settingsForm as any)[key] || ''} onChange={(e) => setSettingsForm({ ...settingsForm, [key]: e.target.value })} className="w-full px-3 py-2 text-xs bg-white border border-stone-300 rounded-lg" /></div>
             ))}
           </div>
           {([['privacy_content','Texto da Política de Privacidade'],['terms_content','Texto dos Termos de Uso'],['exchange_content','Texto de Trocas e Devoluções']] as const).map(([key,label]) => (
             <div key={key} className="space-y-1"><label className="block text-xs font-semibold text-zinc-700">{label}</label><textarea rows={4} value={(settingsForm as any)[key] || ''} onChange={(e) => setSettingsForm({ ...settingsForm, [key]: e.target.value })} className="w-full px-3 py-2 text-xs bg-white border border-stone-300 rounded-lg" /></div>
           ))}
-          <div className="p-4 rounded-xl bg-sky-50 border border-sky-200 space-y-3">
-            <div className="flex items-center justify-between gap-3"><div><div className="text-xs font-bold text-sky-900">Aviso de novo pedido via CallMeBot</div><div className="text-[11px] text-sky-800">Configure CALLMEBOT_PHONE e CALLMEBOT_APIKEY no ambiente da aplicação.</div></div><label className="flex items-center gap-2 text-xs font-semibold"><input type="checkbox" checked={settingsForm.callmebot_enabled === 'true'} onChange={(e) => setSettingsForm({ ...settingsForm, callmebot_enabled: e.target.checked ? 'true' : 'false' })} /> Ativo</label></div>
-            <div className="flex flex-wrap items-center gap-3"><button type="button" onClick={handleTestCallMeBot} disabled={testingCallMeBot || !callMeBotConfigured || settingsForm.callmebot_enabled !== 'true'} className="px-3 py-2 text-xs font-semibold text-white bg-sky-700 rounded-lg disabled:opacity-50">{testingCallMeBot ? 'Enviando...' : 'Enviar mensagem de teste'}</button><span className="text-[11px] text-sky-900">{callMeBotConfigured ? 'Credenciais detectadas.' : 'Credenciais não detectadas no ambiente.'}{settingsForm.callmebot_last_sent_at ? ` Último envio: ${new Date(settingsForm.callmebot_last_sent_at).toLocaleString('pt-BR')}` : ''}</span></div>
-          </div>
         </div>
 
         <button

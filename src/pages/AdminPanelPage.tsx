@@ -140,9 +140,6 @@ export const AdminPanelPage: React.FC = () => {
   });
   // State for Settings
   const [settingsForm, setSettingsForm] = useState({
-    whatsapp_number: '',
-    pix_key: '',
-    pix_instructions: '',
     freight_base_km: '4.0',
     freight_base_fee: '7.50',
     freight_extra_km_fee: '1.50',
@@ -169,12 +166,9 @@ export const AdminPanelPage: React.FC = () => {
     company_cnpj: '',
     company_address: '',
     company_email: '',
-    company_phone: '',
     privacy_content: '',
     terms_content: '',
     exchange_content: '',
-    callmebot_enabled: 'false',
-    callmebot_last_sent_at: '',
   });
 
   // State for Admin New Customer Notifications (Requisito 3)

@@ -4,8 +4,6 @@ import {
   Plus,
   Edit2,
   Trash2,
-  ExternalLink,
-  Copy,
   ArrowLeft,
   Store,
   Check,
@@ -29,7 +27,6 @@ import {
   formatCepMask,
   lookupCepAddress,
 } from '../context/AppContext.tsx';
-import { buildRefundWhatsAppMessage, buildWhatsAppLink } from '../utils/whatsapp.ts';
 import { LEGAL_VERSION } from '../config/legal.ts';
 import { formatDeliveryDateTime, formatDeliveryTime } from '../utils/deliverySchedule.ts';
 
@@ -119,8 +116,6 @@ interface CustomerOrder {
   requiresRefundOnCancel?: boolean;
   refundRequested?: boolean;
   cancellationReason?: string | null;
-  refundWhatsappMessage?: string | null;
-  refundWhatsappUrl?: string | null;
   notes: string | null;
   createdAt: string;
   deliveryMode?: 'FAST' | 'SCHEDULED' | null;
@@ -141,8 +136,6 @@ interface CustomerOrder {
   items: OrderItem[];
   fulfillments?: OrderFulfillmentPart[];
   history: OrderHistoryItem[];
-  whatsappMessage: string;
-  whatsappUrl: string;
 }
 
 const LAST_VIEWED_ORDER_KEY_PREFIX = 'deepshopdelivery_customer_last_viewed_order_v1:';
@@ -216,12 +209,6 @@ export const CustomerAccountPage: React.FC = () => {
   const [cancellingOrderTarget, setCancellingOrderTarget] = useState<CustomerOrder | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [submittingCancel, setSubmittingCancel] = useState(false);
-  const [completedRefundModal, setCompletedRefundModal] = useState<{
-    orderNumber: string;
-    cancellationReason: string;
-    refundWhatsappMessage: string;
-    refundWhatsappUrl: string;
-  } | null>(null);
 
   // Address Form Modal/Section
   const [editingAddress, setEditingAddress] = useState<AddressItem | null>(null);
@@ -352,8 +339,6 @@ export const CustomerAccountPage: React.FC = () => {
         wasPaid: boolean;
         refundRequested: boolean;
         cancellationReason: string;
-        refundWhatsappMessage: string | null;
-        refundWhatsappUrl: string | null;
       }>(`/api/orders/${cancellingOrderTarget.id}/cancel`, {
         method: 'POST',
         body: JSON.stringify({
@@ -368,15 +353,9 @@ export const CustomerAccountPage: React.FC = () => {
       setCancellingOrderTarget(null);
       await loadData();
 
-      if (res.wasPaid && res.refundWhatsappMessage && res.refundWhatsappUrl) {
-        setCompletedRefundModal({
-          orderNumber: res.orderNumber,
-          cancellationReason: res.cancellationReason,
-          refundWhatsappMessage: res.refundWhatsappMessage,
-          refundWhatsappUrl: res.refundWhatsappUrl,
-        });
+      if (res.wasPaid) {
         toast(
-          `Pedido ${res.orderNumber} cancelado! Seu pedido de estorno para o WhatsApp está pronto abaixo.`,
+          `Pedido ${res.orderNumber} cancelado! O estorno será tratado pelo meio de pagamento utilizado.`,
           'success'
         );
       } else {
@@ -835,52 +814,6 @@ export const CustomerAccountPage: React.FC = () => {
                           {order.addressSnapshot.neighborhood}, {order.addressSnapshot.city}/
                           {order.addressSnapshot.state}
                         </div>
-
-                        {order.status === 'CANCELLED' &&
-                          order.refundRequested &&
-                          order.refundWhatsappUrl && (
-                            <div className="mt-2 p-3.5 rounded-lg bg-amber-50 border border-amber-200 space-y-2">
-                              <div className="text-xs font-bold text-amber-950">
-                                Pedido de Estorno Preenchido para o WhatsApp
-                              </div>
-                              {order.cancellationReason && (
-                                <div className="text-xs text-amber-900">
-                                  <strong>Motivo informado:</strong> {order.cancellationReason}
-                                </div>
-                              )}
-                              {order.refundWhatsappMessage && (
-                                <pre className="p-2.5 rounded bg-white border border-amber-200 text-[11px] font-mono text-zinc-800 whitespace-pre-wrap">
-                                  {order.refundWhatsappMessage}
-                                </pre>
-                              )}
-                              <div className="flex flex-wrap items-center gap-2">
-                                <a
-                                  href={order.refundWhatsappUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg transition-colors"
-                                >
-                                  <span>Enviar Pedido de Estorno no WhatsApp</span>
-                                  <ExternalLink className="w-3.5 h-3.5" />
-                                </a>
-                                {order.refundWhatsappMessage && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      navigator.clipboard.writeText(
-                                        order.refundWhatsappMessage || ''
-                                      );
-                                      toast('Pedido de estorno copiado!', 'success');
-                                    }}
-                                    className="inline-flex items-center gap-1 px-3 py-2 text-xs font-medium text-zinc-700 bg-white border border-amber-300 hover:bg-stone-50 rounded-lg transition-colors"
-                                  >
-                                    <Copy className="w-3.5 h-3.5" />
-                                    <span>Copiar Pedido de Estorno</span>
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          )}
                       </div>
 
                       <div className="flex flex-wrap items-center gap-2.5">
@@ -1081,7 +1014,7 @@ export const CustomerAccountPage: React.FC = () => {
                                   <XCircle className="w-3.5 h-3.5" />
                                   <span>
                                     {isPaidBeforeDelivery
-                                      ? 'Cancelar Pedido e Solicitar Estorno via WhatsApp'
+                                      ? 'Cancelar Pedido e Solicitar Estorno'
                                       : 'Cancelar Pedido'}
                                   </span>
                                 </button>
@@ -1504,19 +1437,6 @@ export const CustomerAccountPage: React.FC = () => {
         const isPaid =
           cancellingOrderTarget.status === 'PAID' ||
           cancellingOrderTarget.status === 'PREPARING';
-        const previewRefundMessage = isPaid
-          ? buildRefundWhatsAppMessage({
-              orderNumber: cancellingOrderTarget.orderNumber,
-              customerName: user.name,
-              customerPhone: user.phone,
-              items: cancellingOrderTarget.items,
-              subtotal: cancellingOrderTarget.subtotal,
-              deliveryFee: cancellingOrderTarget.deliveryFee,
-              total: cancellingOrderTarget.total,
-              cancellationReason:
-                cancelReason.trim() || 'Solicito o cancelamento e estorno do valor pago.',
-            })
-          : '';
 
         return (
           <div
@@ -1545,7 +1465,7 @@ export const CustomerAccountPage: React.FC = () => {
                 </h3>
                 <p className="text-xs text-zinc-600 leading-relaxed">
                   {isPaid
-                    ? 'Seu pedido já foi pago e ainda não saiu para entrega. Informe o motivo do cancelamento abaixo para gerarmos seu pedido de estorno preenchido para o WhatsApp.'
+                    ? 'Seu pedido já foi pago e ainda não saiu para entrega. Informe o motivo do cancelamento abaixo para registrarmos a solicitação de estorno.'
                     : 'Este pedido ainda não foi marcado como pago, mas os itens já estavam reservados. Ao cancelar, a reserva será devolvida ao estoque da loja.'}
                 </p>
               </div>
@@ -1587,17 +1507,6 @@ export const CustomerAccountPage: React.FC = () => {
                 />
               </div>
 
-              {isPaid && (
-                <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 space-y-2">
-                  <div className="text-xs font-bold text-amber-950">
-                    Prévia do Pedido de Estorno Preenchido para o WhatsApp:
-                  </div>
-                  <pre className="p-2.5 rounded-lg bg-white border border-amber-200 text-[11px] font-mono text-zinc-800 whitespace-pre-wrap leading-relaxed">
-                    {previewRefundMessage}
-                  </pre>
-                </div>
-              )}
-
               <div className="flex items-center justify-end gap-2.5 pt-2">
                 <button
                   type="button"
@@ -1614,7 +1523,7 @@ export const CustomerAccountPage: React.FC = () => {
                   {submittingCancel
                     ? 'Cancelando...'
                     : isPaid
-                    ? 'Confirmar Cancelamento e Gerar Estorno'
+                    ? 'Confirmar Cancelamento'
                     : 'Confirmar Cancelamento'}
                 </button>
               </div>
@@ -1622,62 +1531,6 @@ export const CustomerAccountPage: React.FC = () => {
           </div>
         );
       })()}
-
-      {/* Modal com Pedido de Estorno Preenchido */}
-      {completedRefundModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4"
-          role="dialog"
-          aria-modal="true"
-        >
-          <div className="relative w-full max-w-lg bg-white border border-stone-200 rounded-2xl shadow-xl p-6 space-y-4">
-            <button
-              type="button"
-              onClick={() => setCompletedRefundModal(null)}
-              aria-label="Fechar pedido de estorno"
-              className="absolute top-4 right-4 w-8 h-8 rounded-lg bg-stone-100 hover:bg-stone-200 text-zinc-700 flex items-center justify-center"
-            >
-              <X className="w-4 h-4" />
-            </button>
-            <div className="space-y-1 pr-8">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">
-                Pedido Cancelado — Estorno Pronto
-              </span>
-              <h3 className="text-lg font-bold text-zinc-900">
-                Pedido de Estorno ({formatOrderNumberLabel(completedRefundModal.orderNumber)})
-              </h3>
-              <p className="text-xs text-zinc-600">
-                Envie a mensagem abaixo já preenchida com os dados do seu pedido e o motivo do cancelamento para o WhatsApp da loja para receber seu estorno:
-              </p>
-            </div>
-            <pre className="p-3.5 rounded-xl bg-stone-100 border border-stone-200 text-xs font-mono text-zinc-800 whitespace-pre-wrap leading-relaxed">
-              {completedRefundModal.refundWhatsappMessage}
-            </pre>
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-              <a
-                href={completedRefundModal.refundWhatsappUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-semibold text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg transition-colors"
-              >
-                <span>Enviar Pedido de Estorno para o WhatsApp</span>
-                <ExternalLink className="w-3.5 h-3.5" />
-              </a>
-              <button
-                type="button"
-                onClick={() => {
-                  navigator.clipboard.writeText(completedRefundModal.refundWhatsappMessage);
-                  toast('Pedido de estorno copiado!', 'success');
-                }}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-medium text-zinc-700 bg-stone-100 hover:bg-stone-200 rounded-lg transition-colors"
-              >
-                <Copy className="w-3.5 h-3.5" />
-                <span>Copiar</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </main>
   );
 };

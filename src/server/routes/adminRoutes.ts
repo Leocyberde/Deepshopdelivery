@@ -26,10 +26,6 @@ import {
   resolveAddressFreight,
   calculateSuggestedFreight,
 } from '../../services/freightService.ts';
-import {
-  buildOrderWhatsAppMessage,
-  buildWhatsAppLink,
-} from '../../utils/whatsapp.ts';
 import { AuthRequest, requireAuth, requireAdmin } from '../middleware/auth.ts';
 import { isAdminRole } from '../governance.ts';
 import { audit as auditAdminEvent } from './adminPhase3Routes.ts';
@@ -55,7 +51,6 @@ import {
 import { recordInventoryMovement } from '../services/inventoryService.ts';
 import { expireOverdueUnpaidOrders, PAYMENT_TIMEOUT_REASON_PREFIX, LEGACY_PAYMENT_TIMEOUT_REASON_PREFIX } from '../services/orderExpirationService.ts';
 import { getStoreRange, DEFAULT_STORE_TIMEZONE, tzToUtc } from '../../utils/timezone.ts';
-import { getCallMeBotStatus, sendCallMeBotMessage } from '../services/callmebotService.ts';
 import { DEFAULT_STORE_HOURS, getStoreState, parseStoreHours, validateStoreHours } from '../services/storeStatusService.ts';
 import { calculateStockProfitScenarios } from '../services/profitService.ts';
 const notPaymentExpiredOrder = () => sql`COALESCE(${schema.orders.cancellationReason}, '') NOT LIKE ${PAYMENT_TIMEOUT_REASON_PREFIX + '%'} AND COALESCE(${schema.orders.cancellationReason}, '') NOT LIKE ${LEGACY_PAYMENT_TIMEOUT_REASON_PREFIX + '%'}`;
@@ -475,19 +470,11 @@ export function registerAdminRoutes(app: Express) {
 
           const customerPhone = owner ? owner.phone : '';
           const customerName = owner ? owner.name : 'Cliente';
-          const customerWhatsappUrl = customerPhone
-            ? buildWhatsAppLink(
-                customerPhone,
-                `Olá ${customerName}! Aqui é da loja DeepShop sobre o seu pedido ${o.orderNumber} (Status: ${ORDER_STATUS_LABELS_PT[o.status] || o.status}).`
-              )
-            : '';
-
           return {
             ...o,
             customerName,
             customerPhone,
             customerEmail: owner ? owner.email : '',
-            customerWhatsappUrl,
             items: ordItems,
           };
         });
@@ -1996,19 +1983,6 @@ export function registerAdminRoutes(app: Express) {
       const isFreeDelivery = order.deliveryFee !== null && Number(order.deliveryFee) === 0;
       const ageHours = (Date.now() - new Date(order.createdAt).getTime()) / (1000 * 60 * 60);
       const paymentReleased = Boolean(isFreeDelivery || order.deliveryFee !== null);
-      const whatsappMessage = buildOrderWhatsAppMessage({
-        orderNumber: order.orderNumber,
-        items,
-        subtotal: order.subtotal,
-        deliveryFee: order.deliveryFee,
-        deliveryDistanceKm: order.deliveryDistanceKm,
-        total: order.total,
-        paymentMethod: order.paymentMethod,
-        changeFor: order.changeFor,
-        addressSnapshot: order.addressSnapshot,
-        notes: order.notes,
-        deliveryFeeSource: order.deliveryFeeSource,
-      });
       const customerPhone = row.customerPhone || '';
       const customerName = row.customerName || 'Cliente';
       const [payment] = await db.select().from(schema.payments).where(eq(schema.payments.orderId, order.id));
@@ -2028,9 +2002,6 @@ export function registerAdminRoutes(app: Express) {
         customerName,
         customerPhone,
         customerEmail: row.customerEmail || '',
-        customerWhatsappUrl: customerPhone
-          ? buildWhatsAppLink(customerPhone, `Olá ${customerName}! Aqui é da loja DeepShop sobre o seu pedido ${order.orderNumber}.`)
-          : '',
         isFreeDelivery,
         paymentReleased,
         isPaymentExpired: Boolean(
@@ -2040,7 +2011,6 @@ export function registerAdminRoutes(app: Express) {
         ageHours: Number(ageHours.toFixed(1)),
         items,
         history,
-        whatsappMessage,
       });
     } catch (error) {
       logServerError('server_operation_failed', error);
@@ -2288,9 +2258,6 @@ export function registerAdminRoutes(app: Express) {
       const map = await getSettingsMap();
       res.json({
         ...Object.fromEntries(Object.entries(GEO_DEFAULTS).map(([key, fallback]) => [key, map[key] ?? fallback])),
-        whatsapp_number: map.whatsapp_number || '',
-        pix_key: map.pix_key || '',
-        pix_instructions: map.pix_instructions || '',
         freight_base_km: map.freight_base_km || '4.0',
         freight_base_fee: map.freight_base_fee || '7.50',
         freight_extra_km_fee: map.freight_extra_km_fee || '1.50',
@@ -2309,12 +2276,9 @@ export function registerAdminRoutes(app: Express) {
         company_cnpj: map.company_cnpj || '',
         company_address: map.company_address || '',
         company_email: map.company_email || '',
-        company_phone: map.company_phone || '',
         privacy_content: map.privacy_content || '',
         terms_content: map.terms_content || '',
         exchange_content: map.exchange_content || '',
-        callmebot_enabled: map.callmebot_enabled || 'false',
-        callmebot_last_sent_at: map.callmebot_last_sent_at || '',
       });
     } catch (error) {
       logServerError('server_operation_failed', error);
@@ -2326,9 +2290,6 @@ export function registerAdminRoutes(app: Express) {
     try {
       const allowedKeys = [
         ...Object.keys(GEO_DEFAULTS),
-        'whatsapp_number',
-        'pix_key',
-        'pix_instructions',
         'freight_base_km',
         'freight_base_fee',
         'freight_extra_km_fee',
@@ -2347,11 +2308,9 @@ export function registerAdminRoutes(app: Express) {
         'company_cnpj',
         'company_address',
         'company_email',
-        'company_phone',
         'privacy_content',
         'terms_content',
         'exchange_content',
-        'callmebot_enabled',
       ];
 
       if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) { res.status(400).json({ error: 'Configurações inválidas.' }); return; }
@@ -2392,34 +2351,6 @@ export function registerAdminRoutes(app: Express) {
     } catch (error) {
       logServerError('server_operation_failed', error);
       res.status(500).json({ error: 'Erro ao salvar configurações.' });
-    }
-  });
-
-  app.get('/api/admin/callmebot/status', requireAuth, requireAdmin, async (_req, res) => {
-    try {
-      res.json(await getCallMeBotStatus());
-    } catch (error) {
-      logServerError('server_operation_failed', error);
-      res.status(500).json({ error: 'Erro ao consultar configuração do CallMeBot.' });
-    }
-  });
-
-  app.post('/api/admin/callmebot/test', requireAuth, requireAdmin, async (_req, res) => {
-    try {
-      const result = await sendCallMeBotMessage('Teste de notificações do DeepShop Delivery: o CallMeBot está configurado e funcionando.');
-      if (!result.sent) {
-        const message = result.reason === 'not_configured'
-          ? 'Defina CALLMEBOT_PHONE e CALLMEBOT_APIKEY no ambiente da aplicação.'
-          : result.reason === 'disabled'
-          ? 'Ative o envio do CallMeBot nas configurações.'
-          : 'O envio de teste falhou. Verifique os logs e as credenciais.';
-        res.status(400).json({ error: message, reason: result.reason });
-        return;
-      }
-      res.json({ success: true, message: 'Mensagem de teste enviada com sucesso.' });
-    } catch (error) {
-      logServerError('server_operation_failed', error);
-      res.status(500).json({ error: 'Erro ao enviar teste do CallMeBot.' });
     }
   });
 

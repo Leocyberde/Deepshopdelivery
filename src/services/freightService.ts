@@ -3,7 +3,6 @@ export interface FreightRuleConfig {
   baseFee: number;
   extraKmFee: number;
   maxKm?: number;
-  outOfAreaWhatsapp?: string;
   band1Enabled?: boolean;
   band1MinRequired?: boolean;
   band1MinValue?: number;
@@ -11,9 +10,9 @@ export interface FreightRuleConfig {
   band2MinValue?: number;
 }
 
-export const OUT_OF_AREA_MESSAGE = 'Não entregamos nessa região. Entre em contato através do WhatsApp: 11910509385';
-export function outOfAreaMessage(phone = '11910509385'): string {
-  return `Não entregamos nessa região. Entre em contato através do WhatsApp: ${phone}`;
+export const OUT_OF_AREA_MESSAGE = 'Não entregamos nessa região no momento.';
+export function outOfAreaMessage(): string {
+  return OUT_OF_AREA_MESSAGE;
 }
 export function normalizeGeoText(value: unknown): string {
   return String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/\s+/g, ' ');
@@ -47,7 +46,7 @@ export function computeOrderFreight({ distanceKm, itemsSubtotal, rules, customer
   const empty: OrderFreightResult = { status: 'DISTANCE_UNAVAILABLE', distanceKm: null, normalFee: null, finalFee: null, source: 'DISTANCE_UNAVAILABLE', appliedBand: null, minimumRequired: null, missingAmount: null, message: 'Não conseguimos calcular o frete agora' };
   if (distanceKm === null || distanceKm === undefined || !Number.isFinite(distanceKm) || distanceKm < 0) return empty;
   const km = Math.round(distanceKm * 100) / 100;
-  if (km > (rules.maxKm ?? 20)) return { ...empty, status: 'OUT_OF_DELIVERY_AREA', source: 'OUT_OF_DELIVERY_AREA', distanceKm: km, message: outOfAreaMessage(rules.outOfAreaWhatsapp) };
+  if (km > (rules.maxKm ?? 20)) return { ...empty, status: 'OUT_OF_DELIVERY_AREA', source: 'OUT_OF_DELIVERY_AREA', distanceKm: km, message: outOfAreaMessage() };
   if (!Number.isFinite(itemsSubtotal) || itemsSubtotal < 0) throw new Error('Subtotal inválido.');
   const subtotalCents = Math.round(itemsSubtotal * 100);
   const normalCents = Math.round(calculateSuggestedFreight(km, rules) * 100);

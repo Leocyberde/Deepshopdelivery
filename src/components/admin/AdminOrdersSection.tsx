@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, ExternalLink, Truck, ArrowUpDown, Printer } from 'lucide-react';
+import { Search, Truck, ArrowUpDown, Printer } from 'lucide-react';
 import { OrderNfeBox } from './OrderNfeBox.tsx';
 import { printWithBrowser, rawbtUrl, type ReceiptOrder } from '../../utils/receiptPrinter.ts';
 import {
@@ -292,17 +292,6 @@ export const AdminOrdersSection: React.FC<AdminOrdersSectionProps> = ({
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              {selectedAdminOrder.customerWhatsappUrl && (
-                <a
-                  href={selectedAdminOrder.customerWhatsappUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg"
-                >
-                  <span>WhatsApp do Cliente</span>
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
-              )}
               <a
                 href={rawbtUrl(toReceiptOrder(selectedAdminOrder), window.location.origin)}
                 className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-700 rounded-lg"
@@ -548,7 +537,7 @@ export const AdminOrdersSection: React.FC<AdminOrdersSectionProps> = ({
           <thead>
             <tr className="border-b border-stone-200 text-zinc-500 bg-stone-50">
               <th className="py-3 px-4 font-semibold">Pedido</th>
-              <th className="py-3 px-4 font-semibold">Cliente / WhatsApp</th>
+              <th className="py-3 px-4 font-semibold">Cliente</th>
               <th className="py-3 px-4 font-semibold text-right">Subtotal</th>
               <th className="py-3 px-4 font-semibold text-right">Frete / Dist.</th>
               <th className="py-3 px-4 font-semibold text-right">Total</th>

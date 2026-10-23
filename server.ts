@@ -24,7 +24,6 @@ import { registerAdminRefundRoutes } from './src/server/routes/adminRefundRoutes
 import { registerAdminNfeRoutes } from './src/server/routes/adminNfeRoutes.ts';
 import { startOrderExpirationWatcher } from './src/server/services/orderExpirationService.ts';
 import { startNfeCertificateWatcher } from './src/server/services/nfeService.ts';
-import { startOrderNotificationWatcher } from './src/server/services/orderNotificationService.ts';
 import { startSupportLifecycleWatcher } from './src/server/services/supportLifecycleService.ts';
 import { logServerError, logServerEvent, runWithRequestLogContext } from './src/server/logger.ts';
 import { parseSiteUrl } from './src/config/siteUrl.ts';
@@ -60,7 +59,6 @@ async function startServer() {
   }
   startOrderExpirationWatcher();
   startNfeCertificateWatcher();
-  startOrderNotificationWatcher();
   startSupportLifecycleWatcher();
   startDailyBackup();
 

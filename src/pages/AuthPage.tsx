@@ -684,12 +684,12 @@ export const AuthPage: React.FC = () => {
                 Aviso de Privacidade e Uso de Dados (LGPD)
               </div>
               <p className="text-xs text-zinc-600 leading-relaxed">
-                <strong>O que coletamos:</strong> Nome, CPF, e-mail, telefone/WhatsApp e endereço de
+                <strong>O que coletamos:</strong> Nome, CPF, e-mail, telefone e endereço de
                 entrega cadastrado.
                 <br />
                 <strong>Para quê:</strong> Exclusivamente para identificar sua conta sem duplicidade,
-                calcular e registrar o valor do frete e distância até o seu endereço, processar seus
-                pedidos e combinar o pagamento e a entrega pelo WhatsApp da loja DeepShop Delivery.
+                calcular e registrar o valor do frete e distância até o seu endereço e processar seus
+                pedidos e organizar a entrega pelo sistema DeepShop Delivery.
                 Seus dados não são compartilhados com terceiros.
               </p>
               <label className="flex items-start gap-2.5 pt-1 cursor-pointer">
@@ -731,7 +731,7 @@ export const AuthPage: React.FC = () => {
               />
             </div>
             <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-950 leading-relaxed">
-              Para sua segurança, peça o código de redefinição à loja pelo WhatsApp. A loja vai gerar
+              Para sua segurança, solicite o código de redefinição ao administrador. O sistema vai gerar
               um código válido por 30 minutos e de uso único. Depois, informe-o abaixo.
             </div>
             <div className="space-y-1.5">

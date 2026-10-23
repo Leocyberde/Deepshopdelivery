@@ -44,9 +44,9 @@ test('mínimo não inclui frete: 85+frete >90 não concede; encomenda e promoç�
 test('distância ausente/NaN/infinita/negativa nunca concede frete', () => {
   for (const distanceKm of [null,undefined,NaN,Infinity,-1]) assert.equal(computeOrderFreight({ distanceKm,itemsSubtotal:1000,rules:{...base,band1Enabled:true},now }).status,'DISTANCE_UNAVAILABLE');
 });
-test('limite máximo configurável; mensagem e telefone configuráveis', () => {
+test('limite máximo configurável; mensagem pública sem contato', () => {
   assert.equal(computeOrderFreight({ distanceKm:21,itemsSubtotal:0,rules:{...base,maxKm:25},now }).status,'OK');
-  assert.equal(computeOrderFreight({ distanceKm:21,itemsSubtotal:0,rules:base,now }).message,'Não entregamos nessa região. Entre em contato através do WhatsApp: 11910509385');
+  assert.equal(computeOrderFreight({ distanceKm:21,itemsSubtotal:0,rules:base,now }).message,'Não entregamos nessa região no momento.');
 });
 test('cidade restrita com UF e sem aceitar nomes semelhantes; rua/bairro não criam nova chave', () => {
   assert.ok(isServedAddress({city:' ITATIBA ',state:'SP'})); assert.ok(!isServedAddress({city:'Itatiba do Sul',state:'RS'})); assert.ok(!isServedAddress({city:'Jundiaí',state:'SP'}));

@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   Clock,
   ExternalLink,
-  MessageCircle,
   Truck,
   TrendingUp,
   DollarSign,
@@ -347,20 +346,8 @@ export const AdminDashboardSection: React.FC<AdminDashboardSectionProps> = ({
                       </div>
                     </div>
 
-                    {/* Botões de Ação Imediata (Responder no WhatsApp e Abrir Pedido) */}
+                    {/* Botões de Ação Imediata */}
                     <div className="md:col-span-3 flex flex-wrap sm:flex-nowrap md:flex-col lg:flex-row items-center gap-2 justify-end">
-                      {ord.customerWhatsappUrl && (
-                        <a
-                          href={ord.customerWhatsappUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-colors"
-                          title="Abrir conversa no WhatsApp com mensagem sobre o pedido"
-                        >
-                          <MessageCircle className="w-3.5 h-3.5 shrink-0" />
-                          <span>WhatsApp</span>
-                        </a>
-                      )}
 
                       <button
                         type="button"

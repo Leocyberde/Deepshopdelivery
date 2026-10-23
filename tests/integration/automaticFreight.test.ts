@@ -126,7 +126,7 @@ test('F04 consistência quote/pedido, preço promocional e todos itens/preorder 
 test('F05 Itatiba apenas, fora da área salvo com distância; >20 bloqueia mesmo com benefício; 15-20 normal',async()=>{
   const before=calls;assert.equal((await create('501',{city:'Jundiaí'})).status,422);assert.equal(calls,before);
   const signup=await api('/api/auth/register',{name:'Fora',email:`outside-${Date.now()}@test.local`,phone:'11911111111',password:'FakeTest123!',lgpdAccepted:true,address:address('1',{city:'Jundiaí'})},'');assert.equal(signup.status,422,JSON.stringify(signup.data));assert.equal(calls,before);
-  meters=20010;const a=await create('502');assert.equal(a.status,422);assert.equal(a.data.error,'Não entregamos nessa região. Entre em contato através do WhatsApp: 11910509385');assert.equal(a.data.deliveryDistanceKm,undefined);assert.equal(a.data.served,true);assert.ok((await pool.query('SELECT id FROM addresses WHERE id=$1',[a.data.id])).rowCount);
+  meters=20010;const a=await create('502');assert.equal(a.status,422);assert.equal(a.data.error,'Não entregamos nessa região no momento.');assert.equal(a.data.deliveryDistanceKm,undefined);assert.equal(a.data.served,true);assert.ok((await pool.query('SELECT id FROM addresses WHERE id=$1',[a.data.id])).rowCount);
   await pool.query("UPDATE users SET free_delivery_until=NOW()+INTERVAL '1 day' WHERE id=$1",[userId]);const o=await order(a.data.id);assert.equal(o.status,422);assert.equal(o.data.code,'OUT_OF_DELIVERY_AREA');
   meters=20000;const b=await create('503');assert.equal(b.status,201);await pool.query('UPDATE users SET free_delivery_until=null WHERE id=$1',[userId]);assert.equal((await order(b.data.id)).data.deliveryFee,'31.50');
 });

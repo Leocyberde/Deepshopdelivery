@@ -301,7 +301,7 @@ export function registerAuthRoutes(app: Express) {
       logServerEvent('auth.registration.succeeded', 'info', { userId: newUser.id, role: 'CUSTOMER', result: 'created' });
 
       res.status(createdAddress?.deliveryInArea === false ? 422 : 201).json({
-        ...(createdAddress?.deliveryInArea === false ? { code: 'OUT_OF_DELIVERY_AREA', error: 'Não entregamos nessa região. Entre em contato através do WhatsApp: 11910509385' } : {}),
+        ...(createdAddress?.deliveryInArea === false ? { code: 'OUT_OF_DELIVERY_AREA', error: 'Não entregamos nessa região no momento.' } : {}),
         token,
         user: {
           id: newUser.id,
@@ -405,7 +405,7 @@ export function registerAuthRoutes(app: Express) {
 
   // Recuperação de senha ASSISTIDA (Etapa 1.3).
   // A rota pública antiga (/api/auth/recover-password) foi removida: ela redefinia qualquer conta
-  // só com e-mail e telefone. Agora o cliente pede o código pelo WhatsApp da loja, o admin gera um
+  // só com e-mail e telefone; o código é gerado pelo fluxo seguro do sistema.
   // código de uso único (30 min) e o cliente define a nova senha com ele. Contas ADMIN ficam de fora.
   const RESET_CODE_TTL_MS = 30 * 60 * 1000;
   const RESET_CODE_MAX_ATTEMPTS = 5;

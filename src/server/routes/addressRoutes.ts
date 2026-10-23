@@ -271,7 +271,7 @@ export function registerAddressRoutes(app: Express) {
       const code = result.address.deliveryInArea === false ? 'OUT_OF_DELIVERY_AREA' : result.geo.code;
       const status = code === 'OUT_OF_DELIVERY_AREA' ? 422 : code === 'DAILY_LIMIT' ? 429 : 201;
       res.status(status).json({ ...toCustomerAddress(result.address), address: toCustomerAddress(result.address), code,
-        ...(status === 422 ? { error: outOfAreaMessage((await getSettingsMap()).freight_out_of_area_whatsapp) } : status === 429 ? { error: 'Limite diário de consultas atingido. Tente novamente em 24 horas.' } : {}) });
+        ...(status === 422 ? { error: outOfAreaMessage() } : status === 429 ? { error: 'Limite diário de consultas atingido. Tente novamente em 24 horas.' } : {}) });
     } catch (error) {
       logServerError('server_operation_failed', error);
       res.status(500).json({ error: 'Erro ao salvar endereço.' });
@@ -367,7 +367,7 @@ export function registerAddressRoutes(app: Express) {
         ? await calculateAddressDistance(updated.id, req.user!.id) : { address: updated, geo: { code: 'OK' } };
       const code = result.address.deliveryInArea === false ? 'OUT_OF_DELIVERY_AREA' : result.geo.code;
       res.status(code === 'OUT_OF_DELIVERY_AREA' ? 422 : code === 'DAILY_LIMIT' ? 429 : 200).json({ ...toCustomerAddress(result.address), address: toCustomerAddress(result.address), code,
-        ...(code === 'OUT_OF_DELIVERY_AREA' ? { error: outOfAreaMessage((await getSettingsMap()).freight_out_of_area_whatsapp) } : code === 'DAILY_LIMIT' ? { error: 'Limite diário de consultas atingido. Tente novamente em 24 horas.' } : {}) });
+        ...(code === 'OUT_OF_DELIVERY_AREA' ? { error: outOfAreaMessage() } : code === 'DAILY_LIMIT' ? { error: 'Limite diário de consultas atingido. Tente novamente em 24 horas.' } : {}) });
     } catch (error) {
       logServerError('server_operation_failed', error);
       res.status(500).json({ error: 'Erro ao atualizar endereço.' });
@@ -382,7 +382,7 @@ export function registerAddressRoutes(app: Express) {
       if (!owned) { res.status(404).json({ error: 'Endereço não encontrado.' }); return; }
       const result = await calculateAddressDistance(id, req.user!.id);
       const code = result.address.deliveryInArea === false ? 'OUT_OF_DELIVERY_AREA' : result.geo.code;
-      res.status(code === 'DAILY_LIMIT' ? 429 : code === 'OUT_OF_DELIVERY_AREA' ? 422 : 200).json({ ...toCustomerAddress(result.address), code, ...(code === 'DAILY_LIMIT' ? { error: 'Limite diário de consultas atingido. Tente novamente em 24 horas.' } : code === 'OUT_OF_DELIVERY_AREA' ? { error: outOfAreaMessage((await getSettingsMap()).freight_out_of_area_whatsapp) } : {}) });
+      res.status(code === 'DAILY_LIMIT' ? 429 : code === 'OUT_OF_DELIVERY_AREA' ? 422 : 200).json({ ...toCustomerAddress(result.address), code, ...(code === 'DAILY_LIMIT' ? { error: 'Limite diário de consultas atingido. Tente novamente em 24 horas.' } : code === 'OUT_OF_DELIVERY_AREA' ? { error: outOfAreaMessage() } : {}) });
     } catch (error) {
       if (error instanceof FreightError) { res.status(error.status).json({ error: error.message, code: error.code }); return; }
       logServerError('geo.owner.retry.failed', error); res.status(500).json({ error: 'Erro ao calcular distância.' });

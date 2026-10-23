@@ -45,7 +45,7 @@ export function registerGeoAdminRoutes(app: Express) {
       if (!Number.isSafeInteger(id) || id <= 0) throw new FreightError('INVALID_ID', 400, 'Endereço inválido.');
       const result = await calculateAddressDistance(id, null, true);
       await db.insert(schema.adminAuditLogs).values({ actorUserId: req.user!.id, actorEmail: req.user!.email, action: 'GEO_ADDRESS_RECALCULATED', entityType: 'address', entityId: String(id), details: { code: result.geo.code, distanceKm: result.address.deliveryDistanceKm } });
-      res.status(result.address.deliveryInArea === false ? 422 : 200).json({ ...result.address, geo: result.geo, freight: resolveAddressFreight(result.address), ...(result.address.deliveryInArea === false ? { code: 'OUT_OF_DELIVERY_AREA', error: outOfAreaMessage((await getSettingsMap()).freight_out_of_area_whatsapp) } : {}) });
+      res.status(result.address.deliveryInArea === false ? 422 : 200).json({ ...result.address, geo: result.geo, freight: resolveAddressFreight(result.address), ...(result.address.deliveryInArea === false ? { code: 'OUT_OF_DELIVERY_AREA', error: outOfAreaMessage() } : {}) });
     } catch (error) { failed(res, error); }
   });
   app.post('/api/admin/geo/calculate-pending', requireAuth, requireAdmin, sameOrigin, geoManager, async (req: AuthRequest, res) => {

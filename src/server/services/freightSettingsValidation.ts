@@ -12,7 +12,6 @@ export function validateFreightSettings(body: Record<string, unknown>, previous:
     if (key === 'freight_max_km' && (val < 15 || val > 1000)) return 'freight_max_km: informe de 15 a 1000 km.';
     if (key === 'freight_base_km' && val <= 0) return 'A distância base deve ser maior que zero.';
   }
-  if (body.freight_out_of_area_whatsapp !== undefined && (typeof body.freight_out_of_area_whatsapp !== 'string' || !/^\d{10,15}$/.test(body.freight_out_of_area_whatsapp))) return 'WhatsApp da região: informe somente 10 a 15 dígitos.';
   if (body.store_origin_address !== undefined && (typeof body.store_origin_address !== 'string' || body.store_origin_address.length > 500)) return 'Endereço da loja inválido.';
   const merged = { ...GEO_DEFAULTS, ...previous, ...Object.fromEntries(Object.entries(body).map(([key, value]) => [key, String(value)])) };
   if (merged.freight_free_band2_enabled === 'true' && Number(merged.freight_free_band2_min_value) <= 0) return 'A faixa 2 ativa exige mínimo maior que zero.';

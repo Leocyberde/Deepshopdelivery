@@ -89,7 +89,7 @@ export function buildStatusNotificationTexts(
     message = `Seus produtos já estão sendo separados e conferidos no estoque com todo o cuidado.`;
   } else if (newStatus === 'AWAITING_PAYMENT') {
     title = `💰 Frete definido! Pedido #${orderNumber}`;
-    message = `O frete foi calculado e os produtos estão reservados! Conclua o pagamento via Pix no WhatsApp para liberar o envio.`;
+    message = `O frete foi calculado e os produtos estão reservados! Conclua o pagamento online para liberar o envio.`;
   } else if (newStatus === 'CANCELLED') {
     title = `❌ Pedido #${orderNumber} Cancelado`;
     message = `Este pedido foi cancelado e os produtos reservados voltaram para o estoque da loja.`;
