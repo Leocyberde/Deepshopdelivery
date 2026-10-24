@@ -35,6 +35,12 @@ import { AdminSupportSection } from '../components/admin/AdminSupportSection.tsx
 import { AdminFulfillmentSection } from '../components/admin/AdminFulfillmentSection.tsx';
 import { AdminRefundsSection } from '../components/admin/AdminRefundsSection.tsx';
 
+function formatMoneyInput(value: unknown): string {
+  if (value === null || value === undefined || String(value).trim() === '') return '';
+  const amount = Number(String(value).replace(',', '.'));
+  return Number.isFinite(amount) ? amount.toFixed(2) : '';
+}
+
 function resolveSectionFromPath(pathname: string): AdminSection {
   if (pathname.includes('/admin/estoque')) return 'STOCK';
   if (pathname.includes('/admin/fornecedores')) return 'SUPPLIERS';
@@ -710,7 +716,7 @@ export const AdminPanelPage: React.FC = () => {
     setProdFiscal({ ncm: prod.fiscalNcm || '', cfop: prod.fiscalCfop || '5102', origem: prod.fiscalOrigem || '0', csosn: prod.fiscalCsosn || '102', unidade: prod.fiscalUnidade || 'UN' });
     setProdFulfillmentType(prod.fulfillmentType === 'PREORDER' ? 'PREORDER' : 'DELIVERY');
     setProdAllowPreorder(prod.allowPreorder !== false);
-    setProdVariantsJson(JSON.stringify(Array.isArray(prod.variants) ? prod.variants.map((v: any) => ({ sku: v.sku || '', options: v.options || {}, price: v.price, promoPrice: v.promoPrice, cost: v.cost, stock: v.stock, stockMinimum: v.stockMinimum, allowPreorder: v.allowPreorder !== false })) : [], null, 2));
+    setProdVariantsJson(JSON.stringify(Array.isArray(prod.variants) ? prod.variants.map((v: any) => ({ sku: v.sku || '', options: v.options || {}, price: v.price, promoPrice: v.promoPrice, cost: formatMoneyInput(v.cost ?? 0), stock: v.stock, stockMinimum: v.stockMinimum, allowPreorder: v.allowPreorder !== false })) : [], null, 2));
     setSelectedKitItems(Object.fromEntries((prod.kitComponents || []).map((item: any) => [Number(item.componentProductId), Number(item.quantityPerKit)])));
     setProdCategoryId(prod.categoryId);
     setProdCode(prod.code || 'A001');
@@ -743,7 +749,7 @@ export const AdminPanelPage: React.FC = () => {
       setProdPromoMinutes('0');
     }
     setProdCostMode('unit');
-    setProdCost(String(prod.costUnitPrecise ?? prod.cost ?? ''));
+    setProdCost(formatMoneyInput(prod.costUnitPrecise ?? prod.cost));
     setProdCostLotUnits(String(prod.costLotUnits ?? prod.stock ?? 1));
     setProdStock(String(prod.stock ?? 0));
     setPurchaseCostMode('same');

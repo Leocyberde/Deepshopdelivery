@@ -35,7 +35,7 @@ export function calculateFulfillmentSplit(quantity: number, stock: number, recei
 export function calculatePreorderWindow(
   now = new Date(),
   startOffsetDays = 1,
-  windowDays = 7,
+  windowDays = 6,
   timeZone = STORE_TIMEZONE,
 ): PreorderWindow {
   const local = getDatePartsInTimezone(now, timeZone);

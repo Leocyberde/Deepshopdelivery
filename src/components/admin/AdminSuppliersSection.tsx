@@ -45,7 +45,7 @@ export const AdminSuppliersSection: React.FC<Props> = ({ apiFetch, toast }) => {
   useEffect(() => { if (selected) void loadPurchases(selected).catch((err) => toast(err.message, 'error')); }, [selected, search, from, to]);
 
   const filteredSuppliers = useMemo(() => suppliers.filter((s) => `${s.name} ${s.contact || ''}`.toLowerCase().includes(search.toLowerCase())), [suppliers, search]);
-  const openNewSupplier = () => { setSupplierForm(blankSupplier); setShowSupplierForm(true); };
+  const openNewSupplier = () => { setSelected(null); setSupplierForm(blankSupplier); setShowSupplierForm(true); };
   const openSupplier = (supplier: Supplier) => { setSelected(supplier); setSupplierForm({ name: supplier.name, contact: supplier.contact || '', website: supplier.website || '', notes: supplier.notes || '' }); setShowSupplierForm(false); };
   const saveSupplier = async (event: React.FormEvent) => {
     event.preventDefault();

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { Package, ChevronLeft, ChevronRight, Clock } from 'lucide-react';
+import { Package, ChevronLeft, ChevronRight } from 'lucide-react';
 import { ProductMediaItem } from '../../types/app.ts';
 import { isVideoMedia } from '../../utils/formatters.ts';
 
@@ -57,6 +57,7 @@ export const ProductMediaCarousel: React.FC<{
   aspectClassName = 'aspect-4/3',
 }) => {
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const videoRefs = useRef<Map<number, HTMLVideoElement>>(new Map());
   const [activeIndex, setActiveIndex] = useState(0);
 
   const mediaList: ProductMediaItem[] =
@@ -65,6 +66,57 @@ export const ProductMediaCarousel: React.FC<{
       : fallbackImageUrl
       ? [{ imageUrl: fallbackImageUrl, mediaType: 'IMAGE' }]
       : [];
+
+  useEffect(() => {
+    videoRefs.current.forEach((video, index) => {
+      if (index !== activeIndex) video.pause();
+    });
+
+    const activeVideo = videoRefs.current.get(activeIndex);
+    if (!activeVideo) return;
+
+    // Autoplay móvel é permitido de forma fiável quando o vídeo começa sem áudio.
+    activeVideo.muted = true;
+    activeVideo.defaultMuted = true;
+    activeVideo.playsInline = true;
+
+    let isInView = false;
+    const playIfVisible = () => {
+      if (!isInView || document.visibilityState === 'hidden') {
+        activeVideo.pause();
+        return;
+      }
+      const playAttempt = activeVideo.play();
+      if (playAttempt && typeof playAttempt.catch === 'function') {
+        playAttempt.catch(() => {
+          // Os controlos continuam disponíveis se o navegador bloquear o autoplay.
+        });
+      }
+    };
+
+    const observer = typeof IntersectionObserver !== 'undefined'
+      ? new IntersectionObserver(([entry]) => {
+          isInView = Boolean(entry?.isIntersecting && entry.intersectionRatio >= 0.25);
+          playIfVisible();
+        }, { threshold: [0, 0.25] })
+      : null;
+
+    if (observer) {
+      observer.observe(activeVideo);
+    } else {
+      const rect = activeVideo.getBoundingClientRect();
+      isInView = rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.right > 0
+        && rect.top < window.innerHeight && rect.left < window.innerWidth;
+      playIfVisible();
+    }
+
+    const handleVisibilityChange = () => playIfVisible();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      observer?.disconnect();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [activeIndex, images, fallbackImageUrl]);
 
   const handleScroll = () => {
     const el = scrollRef.current;
@@ -124,10 +176,16 @@ export const ProductMediaCarousel: React.FC<{
                 >
                   {isVid ? (
                     <video
+                      ref={(node) => {
+                        if (node) videoRefs.current.set(idx, node);
+                        else videoRefs.current.delete(idx);
+                      }}
                       src={item.imageUrl}
                       controls
+                      muted
                       playsInline
                       preload="metadata"
+                      aria-label={`${alt} - Vídeo ${idx + 1}`}
                       className="w-full h-full object-cover bg-black"
                     />
                   ) : linkTo ? (
@@ -280,20 +338,13 @@ export const PromoCountdown: React.FC<{
 
   return (
     <div
-      className={`inline-flex items-center gap-1.5 font-mono tabular-nums rounded-md border ${
-        compact
-          ? 'px-2 py-0.5 text-[11px] font-semibold bg-amber-50 border-amber-200 text-amber-900'
-          : 'px-2.5 py-1 text-xs font-semibold bg-amber-50 border-amber-200 text-amber-900'
+      className={`inline-flex flex-wrap items-center gap-1.5 font-mono tabular-nums ${
+        compact ? 'text-[10px]' : 'text-xs'
       }`}
       title="Tempo restante da promoção"
     >
-      <Clock
-        className={
-          compact ? 'w-3 h-3 text-amber-700 shrink-0' : 'w-3.5 h-3.5 text-amber-700 shrink-0'
-        }
-      />
-      <span>Oferta termina em:</span>
-      <strong className="font-bold text-amber-950">{formattedTime}</strong>
+      <span className="inline-block bg-[#087BFF] text-white text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded leading-none whitespace-nowrap">Oferta Relâmpago</span>
+      <strong className="font-bold text-blue-700 whitespace-nowrap">{formattedTime}</strong>
     </div>
   );
 };

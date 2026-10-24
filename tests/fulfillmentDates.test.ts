@@ -19,7 +19,7 @@ test('split delivery/encomenda respeita estoque e a opção de receber tudo como
 test('janela de encomenda usa data local e atravessa mês/ano', () => {
   const october = calculatePreorderWindow(new Date('2026-10-14T02:30:00.000Z'));
   assert.equal(october.start.toISOString(), '2026-10-14T03:00:00.000Z');
-  assert.equal(new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' }).format(october.end), '21/10');
+  assert.equal(new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' }).format(october.end), '20/10');
   const year = calculatePreorderWindow(new Date('2026-12-31T23:30:00.000Z'));
   assert.equal(new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' }).format(year.start), '01/01');
 });
@@ -37,7 +37,7 @@ test('totais cobram frete uma única vez e reembolso aplica regra de entrega', (
 const allDayHours: DeliveryStoreHours = Object.fromEntries(Object.entries(hours).map(([day, rule]) => [day, { ...rule, open: '00:00', close: '23:59' }])) as DeliveryStoreHours;
 test('formatos de janela e promessa não usam contagem fixa de dias', () => {
   const window = calculatePreorderWindow(new Date('2026-10-13T15:00:00.000Z'));
-  assert.equal(formatPreorderWindow(window), '14/10 a 21/10');
+  assert.equal(formatPreorderWindow(window), '14/10 a 20/10');
   const eta = new Date('2026-10-13T22:00:00.000Z');
   assert.equal(formatDeliveryPromise(eta, new Date('2026-10-13T19:00:00.000Z')), 'Chega até às 19h');
 });

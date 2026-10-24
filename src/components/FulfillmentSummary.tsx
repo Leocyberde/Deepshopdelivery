@@ -83,7 +83,7 @@ export const FulfillmentSummary: React.FC<{ items: CartItem[] }> = ({ items }) =
         <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3">
           <div className="flex items-center gap-2 font-semibold text-amber-800">
             <PackageCheck className="w-4 h-4" />
-            <span>Encomenda{quote.promises?.preorderWindow ? ` — chega entre ${quote.promises.preorderWindow}` : ''}</span>
+            <span>{quote.promises?.preorderWindow ? `Chegará em ${quote.promises.preorderWindow}` : 'Encomenda'}</span>
           </div>
           <ul className="mt-1 text-zinc-700">
             {preorderLines.map((l) => (

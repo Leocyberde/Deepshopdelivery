@@ -26,7 +26,7 @@ export function buildFulfillmentPromises(settingsMap: Record<string, string>, no
   const window = calculatePreorderWindow(
     now,
     Number(settingsMap.preorder_start_offset_days || 1),
-    Number(settingsMap.preorder_window_days || 7),
+    Number(settingsMap.preorder_window_days || 6),
     storeState.timezone,
   );
   return { deliveryPromise, preorderWindow: formatPreorderWindow(window, storeState.timezone) };

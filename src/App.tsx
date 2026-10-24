@@ -62,6 +62,7 @@ const AppShell: React.FC = () => {
               <Route path="/admin/produtos-inativos" element={<AdminPanelPage />} />
               <Route path="/admin/produtos-em-encomenda" element={<AdminPanelPage />} />
               <Route path="/admin/estoque" element={<AdminPanelPage />} />
+              <Route path="/admin/fornecedores" element={<AdminPanelPage />} />
               <Route path="/admin/categorias" element={<AdminPanelPage />} />
               <Route path="/admin/pedidos" element={<AdminPanelPage />} />
               <Route path="/admin/pedidos-delivery" element={<AdminPanelPage />} />

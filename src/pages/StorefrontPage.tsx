@@ -668,14 +668,14 @@ export const StorefrontPage: React.FC = () => {
                       </div>
 
                       <div className="pt-2">
-                        {/* Bloco de Preço em Destaque em Azul */}
+                        {/* Bloco de Preço em Destaque */}
                         <div>
                           {product.hasPromo && product.promoPrice ? (
                             <div className="flex flex-col">
                               <span className="text-[10px] text-zinc-400 line-through tabular-nums leading-none">
                                 De {formatCurrency(product.price)}
                               </span>
-                              <span className="text-sm sm:text-base font-extrabold text-[#087BFF] tabular-nums leading-tight">
+                              <span className="text-sm sm:text-base font-extrabold text-emerald-700 tabular-nums leading-tight">
                                 Por {formatCurrency(product.promoPrice)}
                               </span>
                             </div>
@@ -698,7 +698,7 @@ export const StorefrontPage: React.FC = () => {
                             <Truck className="w-3 h-3 shrink-0" />
                             <span className="truncate">
                               {product.availabilityMode === 'PREORDER'
-                                ? (promises?.preorderWindow ? `Encomenda: ${promises.preorderWindow}` : 'Encomenda')
+                                ? (promises?.preorderWindow ? `Chegará em ${promises.preorderWindow}` : 'Encomenda')
                                 : (promises?.deliveryPromise || 'Entrega Rápida')}
                             </span>
                           </span>

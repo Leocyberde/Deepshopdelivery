@@ -274,7 +274,7 @@ export function registerOrderRoutes(app: Express) {
         const reservations: Array<{ productId: number; quantity: number; beforeStock: number; afterStock: number }> = [];
         let hasPreorderPart = false;
         let hasDeliveryPart = false;
-        const preorderWindow = calculatePreorderWindow(new Date(), Number(settingsMap.preorder_start_offset_days || 1), Number(settingsMap.preorder_window_days || 7));
+        const preorderWindow = calculatePreorderWindow(new Date(), Number(settingsMap.preorder_start_offset_days || 1), Number(settingsMap.preorder_window_days || 6));
 
         // Agrupa itens com o mesmo productId para garantir que o limite da promoção seja respeitado por produto
         const mergedItemsMap = new Map<string, { productId: number; variantId: number | null; quantity: number; productName?: string; receiveAllAsPreorder?: boolean }>();
