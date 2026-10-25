@@ -22,6 +22,15 @@ interface KitComponentInfo {
   quantityPerKit: number;
 }
 
+interface ProductVariant {
+  id: number;
+  sku?: string | null;
+  options: Record<string, string>;
+  price: string;
+  promoPrice?: string | null;
+  allowPreorder: boolean;
+  availabilityMode: 'DELIVERY' | 'PREORDER';
+}
 interface ProductDetail {
   id: number;
   categoryId: number;
@@ -49,6 +58,7 @@ interface ProductDetail {
   viewsCount?: number;
   clicksCount?: number;
   sharesCount?: number;
+  variants?: ProductVariant[];
 }
 
 export const ProductDetailPage: React.FC = () => {
@@ -66,6 +76,7 @@ export const ProductDetailPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [quantity, setQuantity] = useState(1);
+  const [selectedVariantId, setSelectedVariantId] = useState<number | null>(null);
   const [askOpen, setAskOpen] = useState(false);
   const [askMessage, setAskMessage] = useState('');
   const [askError, setAskError] = useState('');
@@ -81,6 +92,7 @@ export const ProductDetailPage: React.FC = () => {
         if (!mounted) return;
         setProduct(data);
         setQuantity(1);
+        setSelectedVariantId(data.variants?.[0]?.id ?? null);
       })
       .catch((err: any) => {
         if (!mounted) return;
@@ -137,17 +149,23 @@ export const ProductDetailPage: React.FC = () => {
     );
   }
 
-  const outOfStock = false;
-  const lowStock = false;
+  const selectedVariant = product.variants?.find((variant) => variant.id === selectedVariantId) ?? null;
+  const normalPrice = selectedVariant?.price || product.price;
+  const promoPrice = selectedVariant?.promoPrice ?? product.promoPrice;
+  const hasPromo = Boolean(selectedVariant?.promoPrice || product.hasPromo);
+  const availableToPurchase = selectedVariant
+    ? selectedVariant.availabilityMode === 'DELIVERY' || selectedVariant.allowPreorder
+    : product.availabilityMode === 'DELIVERY' || product.allowPreorder;
+  const outOfStock = !availableToPurchase;
   const fullTitle = product.code ? `${product.code} - ${product.name}` : product.name;
   const discountPct =
-    product.discountPercent ??
-    calculateDiscountPercent(product.price, product.promoPrice, product.hasPromo);
-
+    selectedVariant || product.variants?.length
+      ? calculateDiscountPercent(normalPrice, promoPrice, hasPromo)
+      : product.discountPercent ?? calculateDiscountPercent(normalPrice, promoPrice, hasPromo);
   const linePricing = calculatePromoLinePricing({
-    normalPrice: product.price,
-    promoPrice: product.promoPrice,
-    hasPromo: product.hasPromo,
+    normalPrice,
+    promoPrice,
+    hasPromo,
     promoMaxUnits: product.promoMaxUnits,
     quantity,
   });
@@ -185,11 +203,14 @@ export const ProductDetailPage: React.FC = () => {
     addToCart(
       {
         productId: product.id,
-        name: fullTitle,
-        price: parseFloat(product.effectivePrice || product.price),
-        originalPrice: parseFloat(product.price),
-        promoPrice: product.promoPrice ? parseFloat(product.promoPrice) : null,
-        hasPromo: Boolean(product.hasPromo),
+        variantId: selectedVariant?.id,
+        variantOptions: selectedVariant?.options,
+        variantSku: selectedVariant?.sku,
+        name: `${fullTitle}${selectedVariant ? ` — ${Object.values(selectedVariant.options).join(' / ')}` : ''}`,
+        price: parseFloat(selectedVariant?.price || product.effectivePrice || product.price),
+        originalPrice: parseFloat(normalPrice),
+        promoPrice: promoPrice ? parseFloat(promoPrice) : null,
+        hasPromo,
         promoMaxUnits: product.promoMaxUnits ?? null,
         imageUrl: product.imageUrl,
         categoryName: product.categoryName,
@@ -263,14 +284,14 @@ export const ProductDetailPage: React.FC = () => {
             </h1>
 
             <div className="pt-1">
-              {product.hasPromo && product.promoPrice ? (
+              {hasPromo && promoPrice ? (
                 <div className="space-y-2">
                   <div>
                     <div className="text-sm text-zinc-400 line-through tabular-nums">
-                      De {formatCurrency(product.price)}
+                      De {formatCurrency(normalPrice)}
                     </div>
                     <div className="text-2xl font-bold text-emerald-700 tabular-nums">
-                      Por {formatCurrency(product.promoPrice)}
+                      Por {formatCurrency(promoPrice)}
                     </div>
                   </div>
                   {product.promoEndsAt && <PromoCountdown promoEndsAt={product.promoEndsAt} />}
@@ -281,13 +302,13 @@ export const ProductDetailPage: React.FC = () => {
                         {product.promoMaxUnits} {product.promoMaxUnits === 1 ? 'item' : 'itens'}
                       </strong>{' '}
                       na promoção, acima segue o valor normal do produto (
-                      <strong>{formatCurrency(product.price)}</strong>).
+                      <strong>{formatCurrency(normalPrice)}</strong>).
                     </div>
                   )}
                 </div>
               ) : (
                 <span className="text-2xl font-bold text-zinc-900 tabular-nums">
-                  {formatCurrency(product.price)}
+                  {formatCurrency(normalPrice)}
                 </span>
               )}
             </div>
@@ -322,6 +343,30 @@ export const ProductDetailPage: React.FC = () => {
           )}
 
           <div className="border-t border-stone-100 pt-5 space-y-4">
+            {product.variants && product.variants.length > 0 && (
+              <div className="space-y-2 rounded-xl border border-indigo-200 bg-indigo-50 p-3">
+                <h2 className="text-xs font-bold text-indigo-950">Escolha cor e tamanho</h2>
+                <div className="flex flex-wrap gap-2">
+                  {product.variants.map((variant) => (
+                    <button
+                      key={variant.id}
+                      type="button"
+                      onClick={() => setSelectedVariantId(variant.id)}
+                      disabled={variant.availabilityMode !== 'DELIVERY' && !variant.allowPreorder}
+                      className={`rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${selectedVariantId === variant.id ? 'border-indigo-700 bg-indigo-700 text-white' : 'border-indigo-200 bg-white text-indigo-900'} disabled:cursor-not-allowed disabled:opacity-40`}
+                    >
+                      {Object.entries(variant.options).map(([key, value]) => `${key}: ${value}`).join(' · ')}
+                      {variant.availabilityMode === 'PREORDER' ? ' · Encomenda' : ' · Entrega'}
+                    </button>
+                  ))}
+                </div>
+                {selectedVariant && (
+                  <p className="text-[11px] font-medium text-indigo-900">
+                    Selecionado: {Object.values(selectedVariant.options).join(' / ')} · {hasPromo && promoPrice ? `Por ${formatCurrency(promoPrice)}` : formatCurrency(normalPrice)}
+                  </p>
+                )}
+              </div>
+            )}
             {outOfStock ? (
               <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-xs font-medium text-red-800">
                 Produto com estoque esgotado no momento. Não é possível realizar a compra deste item.
