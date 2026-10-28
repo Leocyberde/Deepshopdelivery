@@ -29,6 +29,7 @@ import {
   PromoCountdown,
   DeepShopDeliveryDeliveryLogo,
 } from '../context/AppContext.tsx';
+import { VariantOptionGroups } from '../components/VariantPicker.tsx';
 
 interface Category {
   id: number;
@@ -67,7 +68,7 @@ interface Product {
   imageUrl: string | null;
   images?: ProductMediaItem[];
   hasVariants?: boolean;
-  variants?: Array<{ id: number; sku?: string | null; options: Record<string, string>; price: string; promoPrice?: string | null; allowPreorder: boolean; availabilityMode: 'DELIVERY' | 'PREORDER' }>;
+  variants?: Array<{ id: number; sku?: string | null; options: Record<string, string>; imageUrl?: string | null; price: string; promoPrice?: string | null; allowPreorder: boolean; availabilityMode: 'DELIVERY' | 'PREORDER' }>;
 }
 
 interface DeliveryPromotion {
@@ -844,11 +845,11 @@ export const StorefrontPage: React.FC = () => {
         return <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setAddingProduct(null); }}>
           <section role="dialog" aria-modal="true" aria-labelledby="quantity-picker-title" className="w-full max-w-md rounded-t-2xl bg-white p-5 shadow-2xl sm:rounded-2xl">
             <div className="flex items-start gap-3">
-              <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg border bg-stone-50"><ProductImage src={addingProduct.imageUrl} alt={fullTitle} /></div>
+              <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg border bg-stone-50"><ProductImage src={selectedVariant?.imageUrl || addingProduct.imageUrl} alt={fullTitle} /></div>
               <div className="min-w-0 flex-1"><h2 id="quantity-picker-title" className="font-bold text-zinc-900">{fullTitle}</h2><p className="text-xs text-zinc-500">Máximo de 20 unidades por item · Já na sacola: {currentQuantity} un.</p></div>
               <button type="button" autoFocus onClick={() => setAddingProduct(null)} aria-label="Fechar seletor" className="rounded-lg px-2 py-1 text-zinc-500 hover:bg-stone-100">×</button>
             </div>
-            {addingProduct.variants && addingProduct.variants.length > 0 && <div className="mt-4 rounded-xl border border-indigo-200 bg-indigo-50 p-3"><p className="mb-2 text-xs font-bold text-indigo-950">Escolha a opção</p><div className="flex flex-wrap gap-2">{addingProduct.variants.map((variant) => <button type="button" key={variant.id} onClick={() => setSelectedVariantId(variant.id)} disabled={variant.availabilityMode !== 'DELIVERY' && !variant.allowPreorder} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${selectedVariantId === variant.id ? 'border-indigo-700 bg-indigo-700 text-white' : 'border-indigo-200 bg-white text-indigo-900'} disabled:cursor-not-allowed disabled:opacity-40`}>{Object.entries(variant.options).map(([key, value]) => `${key}: ${value}`).join(' · ')}{variant.availabilityMode === 'PREORDER' ? ' · Encomenda' : ' · Entrega'}</button>)}</div></div>}
+            {addingProduct.variants && addingProduct.variants.length > 0 && <div className="mt-4 max-h-[45vh] overflow-y-auto pr-1"><VariantOptionGroups variants={addingProduct.variants} selectedVariantId={selectedVariantId} onSelect={setSelectedVariantId} /></div>}
             <div className="mt-5 flex items-center justify-center gap-4">
               <button type="button" aria-label="Diminuir quantidade" disabled={addingQuantity <= 1} onClick={() => setAddingQuantity((value) => Math.max(1, value - 1))} className="rounded-full border p-3 disabled:opacity-40"><Minus className="h-4 w-4" /></button>
               <input aria-label="Quantidade" type="number" min="1" max={availableToAdd} value={addingQuantity} disabled={availableToAdd <= 0} onChange={(event) => { const raw = Number(event.target.value); if (!Number.isFinite(raw)) return; if (raw > availableToAdd) { setAddingQuantity(Math.max(1, availableToAdd)); toast(`A quantidade foi ajustada ao estoque disponível: ${availableToAdd} un. já podem ser adicionadas.`, 'info'); return; } setAddingQuantity(Math.max(1, Math.floor(raw))); }} className="w-20 rounded-lg border px-3 py-2 text-center text-lg font-bold" />
@@ -857,7 +858,7 @@ export const StorefrontPage: React.FC = () => {
             {availableToAdd <= 0 ? <p role="status" className="mt-4 text-center text-sm font-semibold text-amber-800">Você já atingiu o estoque disponível deste produto na sacola.</p> : <div className="mt-4 rounded-xl bg-stone-50 p-3 text-sm">
               {pricing.hasLimitExceeded ? <><div>{pricing.promoQty} un. em oferta × {formatCurrency(pricing.promoUnitPrice)} + {pricing.normalQty} un. × {formatCurrency(pricing.normalUnitPrice)} (preço normal) = <strong>{formatCurrency(pricing.subtotal)}</strong></div><p className="mt-2 rounded-lg bg-amber-100 p-2 text-xs font-semibold text-amber-950">A oferta vale para apenas {pricing.promoMaxUnits} unidade(s) por pedido. As demais {pricing.normalQty} unidades serão cobradas pelo preço normal.</p></> : <div>{quantity} un. × {formatCurrency(pricing.hasPromo ? pricing.promoUnitPrice : pricing.normalUnitPrice)} = <strong>{formatCurrency(pricing.subtotal)}</strong></div>}
             </div>}
-            <button type="button" disabled={availableToAdd <= 0} onClick={() => { addToCart({ productId: addingProduct.id, variantId: selectedVariant?.id, variantOptions: selectedVariant?.options, variantSku: selectedVariant?.sku, name: `${fullTitle}${selectedVariant ? ` — ${Object.values(selectedVariant.options).join(' / ')}` : ''}`, price: parseFloat(selectedVariant?.price || addingProduct.effectivePrice || addingProduct.price), originalPrice: parseFloat(selectedVariant?.price || addingProduct.price), promoPrice: selectedVariant?.promoPrice ? parseFloat(selectedVariant.promoPrice) : (addingProduct.promoPrice ? parseFloat(addingProduct.promoPrice) : null), hasPromo: Boolean(selectedVariant?.promoPrice || addingProduct.hasPromo), promoMaxUnits: addingProduct.promoMaxUnits ?? null, imageUrl: addingProduct.imageUrl, categoryName: addingProduct.categoryName }, quantity); setAddingProduct(null); }} className="mt-4 w-full rounded-xl bg-zinc-900 px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-45">{availableToAdd <= 0 ? 'Limite da sacola atingido' : 'Adicionar à sacola'}</button>
+            <button type="button" disabled={availableToAdd <= 0} onClick={() => { addToCart({ productId: addingProduct.id, variantId: selectedVariant?.id, variantOptions: selectedVariant?.options, variantSku: selectedVariant?.sku, name: `${fullTitle}${selectedVariant ? ` — ${Object.values(selectedVariant.options).join(' / ')}` : ''}`, price: parseFloat(selectedVariant?.price || addingProduct.effectivePrice || addingProduct.price), originalPrice: parseFloat(selectedVariant?.price || addingProduct.price), promoPrice: selectedVariant?.promoPrice ? parseFloat(selectedVariant.promoPrice) : (addingProduct.promoPrice ? parseFloat(addingProduct.promoPrice) : null), hasPromo: Boolean(selectedVariant?.promoPrice || addingProduct.hasPromo), promoMaxUnits: addingProduct.promoMaxUnits ?? null, imageUrl: selectedVariant?.imageUrl || addingProduct.imageUrl, categoryName: addingProduct.categoryName }, quantity); setAddingProduct(null); }} className="mt-4 w-full rounded-xl bg-zinc-900 px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-45">{availableToAdd <= 0 ? 'Limite da sacola atingido' : 'Adicionar à sacola'}</button>
           </section>
         </div>;
       })()}

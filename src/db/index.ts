@@ -174,8 +174,13 @@ export async function initializeDatabase() {
       created_at TIMESTAMP NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE product_variants ADD COLUMN IF NOT EXISTS image_url TEXT;
     CREATE INDEX IF NOT EXISTS idx_product_variants_product ON product_variants(product_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_product_variants_product_sku ON product_variants(product_id, sku) WHERE sku IS NOT NULL;
+    -- Produto com variações: o saldo total do produto é sempre a soma dos saldos das variações ativas.
+    UPDATE products p SET stock = v.total, updated_at = NOW()
+    FROM (SELECT product_id, COALESCE(SUM(stock), 0)::int AS total FROM product_variants WHERE status = 'ACTIVE' GROUP BY product_id) v
+    WHERE p.id = v.product_id AND p.is_kit = FALSE AND p.stock <> v.total;
 
     CREATE TABLE IF NOT EXISTS product_kit_items (
       id SERIAL PRIMARY KEY,
@@ -520,6 +525,7 @@ export async function initializeDatabase() {
     CREATE SEQUENCE IF NOT EXISTS nfe_numero_producao_seq START 1;
     ALTER TABLE products ADD COLUMN IF NOT EXISTS fulfillment_type TEXT NOT NULL DEFAULT 'DELIVERY';
     ALTER TABLE products ADD COLUMN IF NOT EXISTS allow_preorder BOOLEAN NOT NULL DEFAULT TRUE;
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS archive_on_stockout BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_eta_at TIMESTAMP;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS preorder_eta_start TIMESTAMP;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS preorder_eta_end TIMESTAMP;

@@ -14,12 +14,14 @@ import { AdminPanelPage } from './pages/AdminPanelPage.tsx';
 import { LegalPage } from './pages/LegalPage.tsx';
 import { Footer } from './components/Footer.tsx';
 import { BottomNav } from './components/BottomNav.tsx';
+import { PwaUpdateBanner } from './components/PwaUpdateBanner.tsx';
 
 export default function App() {
   return (
     <BrowserRouter>
       <AppProvider>
         <AppShell />
+        <PwaUpdateBanner />
       </AppProvider>
     </BrowserRouter>
   );

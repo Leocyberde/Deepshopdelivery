@@ -139,8 +139,15 @@ export const CartPage: React.FC = () => {
                     to={`/produto/${item.productId}`}
                     className="text-sm font-semibold text-zinc-900 hover:underline"
                   >
-                    {item.name}
+                    {item.variantOptions ? item.name.replace(/ — [^—]*$/, '') : item.name}
                   </Link>
+                  {item.variantOptions && Object.keys(item.variantOptions).length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {Object.entries(item.variantOptions).map(([type, value]) => (
+                        <span key={type} className="rounded-md border border-stone-200 bg-stone-50 px-2 py-0.5 text-[11px] font-semibold text-zinc-700">{type}: {value}</span>
+                      ))}
+                    </div>
+                  )}
                   <div className="text-xs text-zinc-500 tabular-nums">
                   Unitário: {formatCurrency(pricing.hasPromo ? pricing.promoUnitPrice : pricing.normalUnitPrice)} • Limite por item: 20 unidades
                   </div>

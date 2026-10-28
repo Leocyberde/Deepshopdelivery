@@ -9,6 +9,7 @@ import {
   getFreightRuleConfig,
   getPrimaryStoreId,
   getSettingsMap,
+  isLocalMediaUrl,
   isPromoCurrentlyActive,
   maskCpf,
   parseAndValidateMediaItems,
@@ -100,7 +101,9 @@ function productData(body: any, existing?: any) {
   if (!/^[0-8]$/.test(fiscalOrigem)) throw new Error('Origem da mercadoria inválida: use um dígito de 0 a 8.');
   if (!/^\d{3}$/.test(fiscalCsosn)) throw new Error('CSOSN inválido: informe 3 dígitos (ex.: 102).');
   if (!/^[A-Z]{1,6}$/.test(fiscalUnidade)) throw new Error('Unidade comercial inválida (ex.: UN).');
-  const allowPreorder = optionalBoolean(body?.allowPreorder, existing?.allowPreorder ?? true);
+  const archiveOnStockout = optionalBoolean(body?.archiveOnStockout, existing?.archiveOnStockout ?? false);
+  // Produto sem reposição nunca vira encomenda: ao zerar o estoque ele é arquivado.
+  const allowPreorder = archiveOnStockout ? false : optionalBoolean(body?.allowPreorder, existing?.allowPreorder ?? true);
   if (!name || name.length > 120 || (body?.description != null && (typeof body.description !== 'string' || body.description.length > 5000))) {
     throw new Error('Nome ou descrição inválidos.');
   }
@@ -144,10 +147,13 @@ function productData(body: any, existing?: any) {
     fiscalUnidade,
     fulfillmentType,
     allowPreorder,
+    archiveOnStockout,
   };
 }
 
-function normalizeVariants(raw: unknown): Array<{ sku: string | null; options: Record<string, string>; price: string; promoPrice: string | null; cost: string; stock: number; stockMinimum: number; allowPreorder: boolean }> {
+type NormalizedVariant = { sku: string | null; options: Record<string, string>; imageUrl: string | null; price: string; promoPrice: string | null; cost: string; stock: number; stockMinimum: number; allowPreorder: boolean };
+
+function normalizeVariants(raw: unknown): NormalizedVariant[] {
   if (raw === undefined || raw === null) return [];
   if (!Array.isArray(raw) || raw.length > 200) throw new Error('Informe no máximo 200 variações.');
   const seen = new Set<string>();
@@ -155,7 +161,7 @@ function normalizeVariants(raw: unknown): Array<{ sku: string | null; options: R
     const options = item?.options && typeof item.options === 'object' && !Array.isArray(item.options)
       ? Object.fromEntries(Object.entries(item.options).map(([k, v]) => [String(k).trim().slice(0, 40), String(v).trim().slice(0, 80)]).filter(([k, v]) => k && v))
       : {};
-    const signature = JSON.stringify(options);
+    const signature = variantSignature(options);
     if (!Object.keys(options).length) throw new Error('Cada variação precisa ter pelo menos uma opção.');
     if (seen.has(signature)) throw new Error('Existem variações repetidas.');
     seen.add(signature);
@@ -166,13 +172,43 @@ function normalizeVariants(raw: unknown): Array<{ sku: string | null; options: R
     if (!Number.isFinite(price) || price < 0 || !Number.isFinite(cost) || cost < 0 || !Number.isSafeInteger(stock) || stock < 0 || !Number.isSafeInteger(stockMinimum) || stockMinimum < 0) throw new Error('Preço, custo ou estoque de variação inválido.');
     if (promo !== null && (!Number.isFinite(promo) || promo < 0 || promo > price)) throw new Error('Preço promocional de variação inválido.');
     const sku = item?.sku ? String(item.sku).trim().slice(0, 80) : null;
-    return { sku, options, price: price.toFixed(2), promoPrice: promo === null ? null : promo.toFixed(2), cost: cost.toFixed(6), stock, stockMinimum, allowPreorder: item?.allowPreorder !== false };
+    const imageUrl = item?.imageUrl ? String(item.imageUrl).trim() : null;
+    if (imageUrl && !isLocalMediaUrl(imageUrl)) throw new Error('A foto da variação precisa ser uma foto enviada pelo painel.');
+    return { sku, options, imageUrl, price: price.toFixed(2), promoPrice: promo === null ? null : promo.toFixed(2), cost: cost.toFixed(6), stock, stockMinimum, allowPreorder: item?.allowPreorder !== false };
   });
 }
-async function replaceProductVariants(tx: any, productId: number, raw: unknown) {
-  const variants = normalizeVariants(raw);
-  await tx.delete(schema.productVariants).where(eq(schema.productVariants.productId, productId));
-  for (const variant of variants) await tx.insert(schema.productVariants).values({ productId, ...variant });
+function variantSignature(options: Record<string, string>): string {
+  return JSON.stringify(Object.entries(options).sort(([a], [b]) => a.localeCompare(b)));
+}
+/** Saldo total do produto = soma dos saldos de todos os modelos/variações. */
+function sumVariantStock(variants: Array<{ stock: number }>): number {
+  return variants.reduce((total, variant) => total + variant.stock, 0);
+}
+/**
+ * Substitui as variações preservando o id das que continuam existindo (mesma combinação de opções).
+ * Assim carrinhos, pedidos e histórico continuam apontando para a mesma variação após editar o produto.
+ * allowedImageUrls: se informado, remove a foto da variação cuja foto saiu da galeria do produto.
+ */
+async function replaceProductVariants(tx: any, productId: number, raw: unknown, allowedImageUrls: Set<string> | null = null, noPreorder = false) {
+  const variants = normalizeVariants(raw).map((variant) => ({
+    ...variant,
+    allowPreorder: noPreorder ? false : variant.allowPreorder,
+    imageUrl: variant.imageUrl && allowedImageUrls && !allowedImageUrls.has(variant.imageUrl) ? null : variant.imageUrl,
+  }));
+  const current = await tx.select().from(schema.productVariants).where(eq(schema.productVariants.productId, productId));
+  const currentBySignature = new Map<string, any>(current.map((row: any) => [variantSignature(row.options || {}), row]));
+  const keptIds = new Set<number>();
+  for (const variant of variants) {
+    const match = currentBySignature.get(variantSignature(variant.options));
+    if (match) keptIds.add(match.id);
+  }
+  const removedIds = current.filter((row: any) => !keptIds.has(row.id)).map((row: any) => row.id);
+  if (removedIds.length) await tx.delete(schema.productVariants).where(inArray(schema.productVariants.id, removedIds));
+  for (const variant of variants) {
+    const match = currentBySignature.get(variantSignature(variant.options));
+    if (match) await tx.update(schema.productVariants).set({ ...variant, status: 'ACTIVE', updatedAt: new Date() }).where(eq(schema.productVariants.id, match.id));
+    else await tx.insert(schema.productVariants).values({ productId, ...variant });
+  }
   return variants;
 }
 function summarizeFingerprint(parts: unknown[]): string {
@@ -375,7 +411,9 @@ export function registerAdminPhase2Routes(app: Express) {
   app.post('/api/admin/products', requireAuth, requireAdmin, async (req: AuthRequest, res) => {
     try {
       const input = productData(req.body);
-      const initialStock = Number(req.body?.stock ?? 0);
+      const variantInput = req.body?.variants !== undefined ? normalizeVariants(req.body.variants) : null;
+      // Com variações (modelos), o saldo do produto é a soma do estoque de cada modelo.
+      const initialStock = variantInput && variantInput.length > 0 ? sumVariantStock(variantInput) : Number(req.body?.stock ?? 0);
       if (!Number.isSafeInteger(initialStock) || initialStock < 0 || initialStock > MAX_STOCK) {
         res.status(400).json({ error: 'Estoque inicial inválido.' }); return;
       }
@@ -395,8 +433,8 @@ export function registerAdminPhase2Routes(app: Express) {
           stock: initialStock, stockMinimum: input.stockMinimum, weight: input.weight,
           supplierId: input.supplierId, supplierProductUrl: input.supplierProductUrl,
           fiscalNcm: input.fiscalNcm, fiscalCfop: input.fiscalCfop, fiscalOrigem: input.fiscalOrigem, fiscalCsosn: input.fiscalCsosn, fiscalUnidade: input.fiscalUnidade,
-          fulfillmentType: effectiveFulfillmentType, allowPreorder: input.allowPreorder,
-          status: req.body?.status === 'INACTIVE' ? 'INACTIVE' : (initialStock > 0 || input.allowPreorder ? 'ACTIVE' : 'INACTIVE'),
+          fulfillmentType: effectiveFulfillmentType, allowPreorder: input.allowPreorder, archiveOnStockout: input.archiveOnStockout,
+          status: req.body?.status === 'INACTIVE' ? 'INACTIVE' : (initialStock > 0 || input.allowPreorder ? 'ACTIVE' : (input.archiveOnStockout ? 'ARCHIVED' : 'INACTIVE')),
         }).returning();
         if (initialStock > 0) {
           const movement = await recordInventoryMovement(tx, {
@@ -406,7 +444,7 @@ export function registerAdminPhase2Routes(app: Express) {
           await recordInitialSupplierPurchase(tx, product, initialStock, movement, req.user!.id, Number(product.costUnitPrecise ?? product.cost ?? 0));
         }
         if (media) for (const item of media) await tx.insert(schema.productImages).values({ productId: product.id, ...item });
-        if (req.body?.variants !== undefined) await replaceProductVariants(tx, product.id, req.body.variants);
+        if (req.body?.variants !== undefined) await replaceProductVariants(tx, product.id, req.body.variants, media ? new Set(media.map((item) => item.imageUrl)) : null, input.archiveOnStockout);
         return product;
       });
       await audit(req, 'PRODUCT_CREATE', 'PRODUCT', created.id, { supplierId: created.supplierId, allowPreorder: created.allowPreorder, initialStock });
@@ -424,7 +462,11 @@ export function registerAdminPhase2Routes(app: Express) {
       const [existing] = await db.select().from(schema.products).where(eq(schema.products.id, id)).limit(1);
       if (!existing) { res.status(404).json({ error: 'Produto não encontrado.' }); return; }
       if (existing.isKit) { res.status(409).json({ error: 'Edite kits pela operação específica de kits.' }); return; }
-      const requestedStock = req.body?.stock === undefined ? existing.stock : Number(req.body.stock);
+      const variantInput = req.body?.variants !== undefined ? normalizeVariants(req.body.variants) : null;
+      // Com variações (modelos), o saldo do produto é sempre a soma do estoque de cada modelo.
+      const requestedStock = variantInput && variantInput.length > 0
+        ? sumVariantStock(variantInput)
+        : req.body?.stock === undefined ? existing.stock : Number(req.body.stock);
       if (!Number.isSafeInteger(requestedStock) || requestedStock < 0 || requestedStock > MAX_STOCK) {
         res.status(400).json({ error: 'Estoque inválido.' }); return;
       }
@@ -449,12 +491,12 @@ export function registerAdminPhase2Routes(app: Express) {
       if (!category) { res.status(400).json({ error: 'Categoria inválida.' }); return; }
       const media = parseAndValidateMediaItems(req.body);
       const requestedStatus = ['ACTIVE', 'INACTIVE', 'ARCHIVED'].includes(req.body?.status) ? req.body.status : existing.status;
-      if (requestedStatus === 'ACTIVE' && requestedStock <= 0 && !input.allowPreorder) { res.status(400).json({ error: 'Produto sem saldo; registre uma entrada de estoque antes de ativá-lo.' }); return; }
+      if (requestedStatus === 'ACTIVE' && requestedStock <= 0 && !input.allowPreorder && !input.archiveOnStockout) { res.status(400).json({ error: 'Produto sem saldo; registre uma entrada de estoque antes de ativá-lo.' }); return; }
       const targetStatus = requestedStatus === 'INACTIVE'
         ? 'INACTIVE'
         : requestedStatus === 'ARCHIVED'
           ? 'ARCHIVED'
-          : requestedStock <= 0 && !input.allowPreorder ? 'INACTIVE' : 'ACTIVE';
+          : requestedStock <= 0 && !input.allowPreorder ? (input.archiveOnStockout ? 'ARCHIVED' : 'INACTIVE') : 'ACTIVE';
       if (targetStatus === 'ARCHIVED') {
         const [activeKitRef] = await db.select({ id: schema.products.id }).from(schema.productKitItems)
           .innerJoin(schema.products, eq(schema.productKitItems.kitProductId, schema.products.id))
@@ -518,7 +560,7 @@ export function registerAdminPhase2Routes(app: Express) {
             }).onConflictDoNothing({ target: schema.supplierPurchases.inventoryMovementId });
           }
         }
-        if (req.body?.variants !== undefined) await replaceProductVariants(tx, id, req.body.variants);
+        if (req.body?.variants !== undefined) await replaceProductVariants(tx, id, req.body.variants, media !== null ? new Set(media.map((item) => item.imageUrl)) : null, input.archiveOnStockout);
         if (media !== null) {
           await tx.delete(schema.productImages).where(eq(schema.productImages.productId, id));
           for (const item of media) await tx.insert(schema.productImages).values({ productId: id, ...item });
@@ -546,7 +588,24 @@ export function registerAdminPhase2Routes(app: Express) {
       if (!Number.isSafeInteger(productId) || productId <= 0) { res.status(400).json({ error: 'Produto inválido.' }); return; }
       const [product] = await db.select({ id: schema.products.id, isKit: schema.products.isKit }).from(schema.products).where(eq(schema.products.id, productId)).limit(1);
       if (!product || product.isKit) { res.status(404).json({ error: 'Produto comum não encontrado.' }); return; }
-      const variants = await db.transaction((tx) => replaceProductVariants(tx, productId, req.body?.variants));
+      const variants = await db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT id FROM products WHERE id = ${productId} FOR UPDATE`);
+        const saved = await replaceProductVariants(tx, productId, req.body?.variants);
+        if (saved.length > 0) {
+          // Mantém o saldo total do produto igual à soma dos modelos e registra a correção no histórico.
+          const [locked] = await tx.select().from(schema.products).where(eq(schema.products.id, productId)).limit(1);
+          const total = sumVariantStock(saved);
+          if (locked && locked.stock !== total) {
+            await tx.update(schema.products).set({ stock: total, updatedAt: new Date() }).where(eq(schema.products.id, productId));
+            await recordInventoryMovement(tx, {
+              productId, delta: total - locked.stock, beforeStock: locked.stock, afterStock: total,
+              movementType: total > locked.stock ? 'MANUAL_ENTRY' : 'MANUAL_CORRECTION',
+              reason: 'Saldo do produto recalculado pela soma do estoque dos modelos', actorUserId: req.user!.id,
+            });
+          }
+        }
+        return saved;
+      });
       await audit(req, 'PRODUCT_VARIANTS_UPDATE', 'PRODUCT', productId, { count: variants.length });
       res.json({ variants });
     } catch (error: any) { logServerError('admin_product_variants_failed', error); res.status(400).json({ error: error?.message || 'Não foi possível salvar as variações.' }); }

@@ -173,6 +173,8 @@ export interface IncomingMediaItem {
 
 // A CSP de produção só permite imagem/vídeo da própria origem (+ data/blob). Por isso o cadastro
 // aceita apenas mídia enviada pelo painel (/api/storage/...), nunca URLs externas.
+export const MAX_PRODUCT_PHOTOS = 15;
+
 export function isLocalMediaUrl(url: string): boolean {
   return /^\/api\/storage\/[A-Za-z0-9._-]+$/.test(url);
 }
@@ -210,8 +212,8 @@ export function parseAndValidateMediaItems(body: any): Array<{
     const photos = cleaned.filter((i: any) => i.mediaType === 'IMAGE');
     const videos = cleaned.filter((i: any) => i.mediaType === 'VIDEO');
 
-    if (photos.length > 5) {
-      throw new Error('Cada produto pode ter no máximo 5 fotos.');
+    if (photos.length > MAX_PRODUCT_PHOTOS) {
+      throw new Error(`Cada produto pode ter no máximo ${MAX_PRODUCT_PHOTOS} fotos.`);
     }
     if (videos.length > 1) {
       throw new Error('Cada produto pode ter no máximo 1 vídeo.');

@@ -24,7 +24,7 @@ interface QuoteResponse {
 export const FulfillmentSummary: React.FC<{ items: CartItem[] }> = ({ items }) => {
   const { apiFetch, user, setCartItemPreorder } = useApp();
   const [quote, setQuote] = useState<QuoteResponse | null>(null);
-  const key = items.map((i) => `${i.productId}:${i.quantity}:${i.receiveAllAsPreorder ? 1 : 0}`).join('|');
+  const key = items.map((i) => `${i.productId}:${i.variantId ?? 'base'}:${i.quantity}:${i.receiveAllAsPreorder ? 1 : 0}`).join('|');
 
   useEffect(() => {
     if (!user || items.length === 0) {
@@ -58,7 +58,11 @@ export const FulfillmentSummary: React.FC<{ items: CartItem[] }> = ({ items }) =
 
   if (!quote || !Array.isArray(quote.lines) || quote.lines.length === 0) return null;
 
-  const nameOf = (productId: number) => items.find((i) => i.productId === productId)?.name || 'Produto';
+  // Cada modelo (variação) é uma linha própria: mostra o nome do produto com o modelo escolhido.
+  const sameLine = (i: CartItem, l: QuoteLine) => i.productId === l.productId && (i.variantId ?? null) === (l.variantId ?? null);
+  const itemOf = (l: QuoteLine) => items.find((i) => sameLine(i, l));
+  const nameOf = (l: QuoteLine) => itemOf(l)?.name || 'Produto';
+  const lineKey = (l: QuoteLine) => `${l.productId}-${l.variantId ?? 'base'}`;
   const deliveryLines = quote.lines.filter((l) => l.deliveryQty > 0);
   const preorderLines = quote.lines.filter((l) => l.preorderQty > 0);
   const hasMixed = deliveryLines.length > 0 && preorderLines.length > 0;
@@ -74,7 +78,7 @@ export const FulfillmentSummary: React.FC<{ items: CartItem[] }> = ({ items }) =
           </div>
           <ul className="mt-1 text-zinc-700">
             {deliveryLines.map((l) => (
-              <li key={`d-${l.productId}`}>{l.deliveryQty}x {nameOf(l.productId)}</li>
+              <li key={`d-${lineKey(l)}`}>{l.deliveryQty}x {nameOf(l)}</li>
             ))}
           </ul>
         </div>
@@ -87,7 +91,7 @@ export const FulfillmentSummary: React.FC<{ items: CartItem[] }> = ({ items }) =
           </div>
           <ul className="mt-1 text-zinc-700">
             {preorderLines.map((l) => (
-              <li key={`p-${l.productId}`}>{l.preorderQty}x {nameOf(l.productId)}</li>
+              <li key={`p-${lineKey(l)}`}>{l.preorderQty}x {nameOf(l)}</li>
             ))}
           </ul>
         </div>
@@ -96,16 +100,16 @@ export const FulfillmentSummary: React.FC<{ items: CartItem[] }> = ({ items }) =
         <p className="text-xs text-zinc-500">Um único pedido e um único pagamento. O frete é cobrado uma só vez.</p>
       )}
       {togglable.map((l) => {
-        const checked = Boolean(items.find((i) => i.productId === l.productId)?.receiveAllAsPreorder);
+        const checked = Boolean(itemOf(l)?.receiveAllAsPreorder);
         return (
-          <label key={`t-${l.productId}`} className="flex items-start gap-2 text-xs text-zinc-700 cursor-pointer">
+          <label key={`t-${lineKey(l)}`} className="flex items-start gap-2 text-xs text-zinc-700 cursor-pointer">
             <input
               type="checkbox"
               className="mt-0.5"
               checked={checked}
               onChange={(e) => setCartItemPreorder(l.productId, e.target.checked, l.variantId ?? undefined)}
             />
-            <span>Receber tudo como encomenda: {nameOf(l.productId)}</span>
+            <span>Receber tudo como encomenda: {nameOf(l)}</span>
           </label>
         );
       })}

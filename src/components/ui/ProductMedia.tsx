@@ -47,6 +47,10 @@ export const ProductMediaCarousel: React.FC<{
   linkTo?: string;
   onLinkClick?: () => void;
   aspectClassName?: string;
+  /** Quando muda (ex.: cliente escolheu outro modelo), o carrossel rola até essa foto. */
+  focusImageUrl?: string | null;
+  /** 'contain' mostra a foto inteira (sem cortar); 'cover' preenche a área. */
+  fit?: 'cover' | 'contain';
 }> = ({
   images,
   fallbackImageUrl,
@@ -55,7 +59,10 @@ export const ProductMediaCarousel: React.FC<{
   linkTo,
   onLinkClick,
   aspectClassName = 'aspect-4/3',
+  focusImageUrl,
+  fit = 'cover',
 }) => {
+  const fitClass = fit === 'contain' ? 'object-contain' : 'object-cover';
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const videoRefs = useRef<Map<number, HTMLVideoElement>>(new Map());
   const [activeIndex, setActiveIndex] = useState(0);
@@ -117,6 +124,16 @@ export const ProductMediaCarousel: React.FC<{
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [activeIndex, images, fallbackImageUrl]);
+
+  useEffect(() => {
+    if (!focusImageUrl) return;
+    const index = mediaList.findIndex((item) => item.imageUrl === focusImageUrl);
+    const el = scrollRef.current;
+    if (index < 0 || !el || el.clientWidth === 0) return;
+    el.scrollTo({ left: index * el.clientWidth, behavior: 'smooth' });
+    setActiveIndex(index);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusImageUrl]);
 
   const handleScroll = () => {
     const el = scrollRef.current;
@@ -186,21 +203,21 @@ export const ProductMediaCarousel: React.FC<{
                       playsInline
                       preload="metadata"
                       aria-label={`${alt} - Vídeo ${idx + 1}`}
-                      className="w-full h-full object-cover bg-black"
+                      className={`w-full h-full bg-black ${fitClass}`}
                     />
                   ) : linkTo ? (
                     <Link to={linkTo} onClick={onLinkClick} className="block w-full h-full">
                       <ProductImage
                         src={item.imageUrl}
                         alt={`${alt} - Foto ${idx + 1}`}
-                        className="w-full h-full object-cover"
+                        className={`w-full h-full ${fitClass}`}
                       />
                     </Link>
                   ) : (
                     <ProductImage
                       src={item.imageUrl}
                       alt={`${alt} - Foto ${idx + 1}`}
-                      className="w-full h-full object-cover"
+                      className={`w-full h-full ${fitClass}`}
                     />
                   )}
                 </div>

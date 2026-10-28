@@ -13,6 +13,7 @@ import {
   ExpandableDescription,
   PromoCountdown,
 } from '../context/AppContext.tsx';
+import { PublicVariant, VariantSheet, VariantSummaryRow } from '../components/VariantPicker.tsx';
 
 interface KitComponentInfo {
   id: number;
@@ -22,15 +23,7 @@ interface KitComponentInfo {
   quantityPerKit: number;
 }
 
-interface ProductVariant {
-  id: number;
-  sku?: string | null;
-  options: Record<string, string>;
-  price: string;
-  promoPrice?: string | null;
-  allowPreorder: boolean;
-  availabilityMode: 'DELIVERY' | 'PREORDER';
-}
+type ProductVariant = PublicVariant;
 interface ProductDetail {
   id: number;
   categoryId: number;
@@ -77,6 +70,8 @@ export const ProductDetailPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [selectedVariantId, setSelectedVariantId] = useState<number | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [pendingAction, setPendingAction] = useState<'cart' | 'buy'>('cart');
   const [askOpen, setAskOpen] = useState(false);
   const [askMessage, setAskMessage] = useState('');
   const [askError, setAskError] = useState('');
@@ -212,7 +207,7 @@ export const ProductDetailPage: React.FC = () => {
         promoPrice: promoPrice ? parseFloat(promoPrice) : null,
         hasPromo,
         promoMaxUnits: product.promoMaxUnits ?? null,
-        imageUrl: product.imageUrl,
+        imageUrl: selectedVariant?.imageUrl || product.imageUrl,
         categoryName: product.categoryName,
       },
       quantity
@@ -220,6 +215,16 @@ export const ProductDetailPage: React.FC = () => {
     if (goToCheckout) {
       navigate('/carrinho');
     }
+  };
+
+  // Produto com modelos: ao tocar em "Sacola"/"Comprar", abre a gaveta com fotos e opções (como no TikTok Shop).
+  const requestAdd = (goToCheckout: boolean) => {
+    if (product.variants && product.variants.length > 0) {
+      setPendingAction(goToCheckout ? 'buy' : 'cart');
+      setSheetOpen(true);
+      return;
+    }
+    handleAdd(goToCheckout);
   };
 
   return (
@@ -250,7 +255,9 @@ export const ProductDetailPage: React.FC = () => {
             fallbackImageUrl={product.imageUrl}
             alt={fullTitle}
             discountPercent={discountPct}
-            aspectClassName="aspect-4/3"
+            aspectClassName="aspect-square"
+            fit="contain"
+            focusImageUrl={selectedVariant?.imageUrl}
           />
         </div>
 
@@ -344,28 +351,11 @@ export const ProductDetailPage: React.FC = () => {
 
           <div className="border-t border-stone-100 pt-5 space-y-4">
             {product.variants && product.variants.length > 0 && (
-              <div className="space-y-2 rounded-xl border border-indigo-200 bg-indigo-50 p-3">
-                <h2 className="text-xs font-bold text-indigo-950">Escolha cor e tamanho</h2>
-                <div className="flex flex-wrap gap-2">
-                  {product.variants.map((variant) => (
-                    <button
-                      key={variant.id}
-                      type="button"
-                      onClick={() => setSelectedVariantId(variant.id)}
-                      disabled={variant.availabilityMode !== 'DELIVERY' && !variant.allowPreorder}
-                      className={`rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${selectedVariantId === variant.id ? 'border-indigo-700 bg-indigo-700 text-white' : 'border-indigo-200 bg-white text-indigo-900'} disabled:cursor-not-allowed disabled:opacity-40`}
-                    >
-                      {Object.entries(variant.options).map(([key, value]) => `${key}: ${value}`).join(' · ')}
-                      {variant.availabilityMode === 'PREORDER' ? ' · Encomenda' : ' · Entrega'}
-                    </button>
-                  ))}
-                </div>
-                {selectedVariant && (
-                  <p className="text-[11px] font-medium text-indigo-900">
-                    Selecionado: {Object.values(selectedVariant.options).join(' / ')} · {hasPromo && promoPrice ? `Por ${formatCurrency(promoPrice)}` : formatCurrency(normalPrice)}
-                  </p>
-                )}
-              </div>
+              <VariantSummaryRow
+                variants={product.variants}
+                selectedVariantId={selectedVariantId}
+                onOpen={() => { setPendingAction('cart'); setSheetOpen(true); }}
+              />
             )}
             {outOfStock ? (
               <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-xs font-medium text-red-800">
@@ -425,7 +415,7 @@ export const ProductDetailPage: React.FC = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                   <button
                     type="button"
-                    onClick={() => handleAdd(false)}
+                    onClick={() => requestAdd(false)}
                     className="inline-flex items-center justify-center gap-2 px-4 py-3 text-xs font-semibold text-zinc-900 bg-stone-100 hover:bg-stone-200 border border-stone-300 rounded-lg transition-colors whitespace-nowrap"
                   >
                     <ShoppingBag className="w-4 h-4" />
@@ -434,7 +424,7 @@ export const ProductDetailPage: React.FC = () => {
 
                   <button
                     type="button"
-                    onClick={() => handleAdd(true)}
+                    onClick={() => requestAdd(true)}
                     className="inline-flex items-center justify-center gap-2 px-4 py-3 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 rounded-lg transition-colors whitespace-nowrap"
                   >
                     <span>Comprar Agora</span>
@@ -514,6 +504,25 @@ export const ProductDetailPage: React.FC = () => {
           </div>
         </div>
       </div>
+      {product.variants && product.variants.length > 0 && (
+        <VariantSheet
+          open={sheetOpen}
+          onClose={() => setSheetOpen(false)}
+          title={fullTitle}
+          fallbackImageUrl={product.imageUrl}
+          variants={product.variants}
+          selectedVariantId={selectedVariantId}
+          onSelect={setSelectedVariantId}
+          normalPrice={normalPrice}
+          promoPrice={promoPrice}
+          hasPromo={hasPromo}
+          quantity={quantity}
+          onQuantityChange={setQuantity}
+          confirmLabel={pendingAction === 'buy' ? 'Comprar agora' : 'Adicionar ao carrinho'}
+          confirmDisabled={outOfStock}
+          onConfirm={() => { setSheetOpen(false); handleAdd(pendingAction === 'buy'); }}
+        />
+      )}
     </main>
   );
 };

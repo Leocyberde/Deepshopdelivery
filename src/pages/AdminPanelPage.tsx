@@ -22,6 +22,7 @@ import { AdminSidebar, AdminSection } from '../components/admin/AdminSidebar.tsx
 import { AdminNotificationsDrawer } from '../components/admin/AdminNotificationsDrawer.tsx';
 import { AdminDashboardSection } from '../components/admin/AdminDashboardSection.tsx';
 import { AdminProductsSection } from '../components/admin/AdminProductsSection.tsx';
+import { MAX_PRODUCT_PHOTOS } from '../config/media.ts';
 import { AdminCategoriesSection } from '../components/admin/AdminCategoriesSection.tsx';
 import { AdminOrdersSection } from '../components/admin/AdminOrdersSection.tsx';
 import { AdminCustomersSection } from '../components/admin/AdminCustomersSection.tsx';
@@ -262,6 +263,7 @@ export const AdminPanelPage: React.FC = () => {
   const [prodFiscal, setProdFiscal] = useState({ ncm: '', cfop: '5102', origem: '0', csosn: '102', unidade: 'UN' });
   const [prodFulfillmentType, setProdFulfillmentType] = useState<'DELIVERY' | 'PREORDER'>('DELIVERY');
   const [prodAllowPreorder, setProdAllowPreorder] = useState(true);
+  const [prodArchiveOnStockout, setProdArchiveOnStockout] = useState(false);
   const [prodVariantsJson, setProdVariantsJson] = useState('[]');
   const [prodImageUrl, setProdImageUrl] = useState('');
   const [prodMediaItems, setProdMediaItems] = useState<ProductMediaItem[]>([]);
@@ -644,6 +646,7 @@ export const AdminPanelPage: React.FC = () => {
     setProdFiscal({ ncm: '', cfop: '5102', origem: '0', csosn: '102', unidade: 'UN' });
     setProdFulfillmentType('DELIVERY');
     setProdAllowPreorder(true);
+    setProdArchiveOnStockout(false);
     setProdVariantsJson('[]');
     setProdCategoryId(categories[0]?.id || '');
     setProdCode(suggestNextCode('P'));
@@ -716,7 +719,8 @@ export const AdminPanelPage: React.FC = () => {
     setProdFiscal({ ncm: prod.fiscalNcm || '', cfop: prod.fiscalCfop || '5102', origem: prod.fiscalOrigem || '0', csosn: prod.fiscalCsosn || '102', unidade: prod.fiscalUnidade || 'UN' });
     setProdFulfillmentType(prod.fulfillmentType === 'PREORDER' ? 'PREORDER' : 'DELIVERY');
     setProdAllowPreorder(prod.allowPreorder !== false);
-    setProdVariantsJson(JSON.stringify(Array.isArray(prod.variants) ? prod.variants.map((v: any) => ({ sku: v.sku || '', options: v.options || {}, price: v.price, promoPrice: v.promoPrice, cost: formatMoneyInput(v.cost ?? 0), stock: v.stock, stockMinimum: v.stockMinimum, allowPreorder: v.allowPreorder !== false })) : [], null, 2));
+    setProdArchiveOnStockout(prod.archiveOnStockout === true);
+    setProdVariantsJson(JSON.stringify(Array.isArray(prod.variants) ? prod.variants.map((v: any) => ({ sku: v.sku || '', options: v.options || {}, imageUrl: v.imageUrl || null, price: v.price, promoPrice: v.promoPrice, cost: formatMoneyInput(v.cost ?? 0), stock: v.stock, stockMinimum: v.stockMinimum, allowPreorder: v.allowPreorder !== false })) : [], null, 2));
     setSelectedKitItems(Object.fromEntries((prod.kitComponents || []).map((item: any) => [Number(item.componentProductId), Number(item.quantityPerKit)])));
     setProdCategoryId(prod.categoryId);
     setProdCode(prod.code || 'A001');
@@ -820,8 +824,8 @@ export const AdminPanelPage: React.FC = () => {
       return;
     }
     if (newMediaType === 'IMAGE') {
-      if (currentPhotosCount >= 5) {
-        toast('Limite atingido: cada produto pode ter até 5 fotos.', 'error');
+      if (currentPhotosCount >= MAX_PRODUCT_PHOTOS) {
+        toast(`Limite atingido: cada produto pode ter até ${MAX_PRODUCT_PHOTOS} fotos.`, 'error');
         return;
       }
       setProdMediaItems((prev) => [
@@ -834,7 +838,7 @@ export const AdminPanelPage: React.FC = () => {
         },
       ]);
       setProdImageUrl('');
-      toast(`Foto adicionada (${currentPhotosCount + 1}/5).`, 'success');
+      toast(`Foto adicionada (${currentPhotosCount + 1}/${MAX_PRODUCT_PHOTOS}).`, 'success');
     } else {
       if (currentVideosCount >= 1) {
         toast('Limite atingido: cada produto pode ter no máximo 1 vídeo.', 'error');
@@ -879,9 +883,9 @@ export const AdminPanelPage: React.FC = () => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
 
-    const remainingSlots = 5 - currentPhotosCount;
+    const remainingSlots = MAX_PRODUCT_PHOTOS - currentPhotosCount;
     if (remainingSlots <= 0) {
-      toast('Este produto já possui o limite máximo de 5 fotos.', 'error');
+      toast(`Este produto já possui o limite máximo de ${MAX_PRODUCT_PHOTOS} fotos.`, 'error');
       e.target.value = '';
       return;
     }
@@ -889,7 +893,7 @@ export const AdminPanelPage: React.FC = () => {
     const filesToUpload = files.slice(0, remainingSlots);
     if (files.length > remainingSlots) {
       toast(
-        `Apenas ${remainingSlots} foto(s) serão enviadas para respeitar o limite de 5 fotos.`,
+        `Apenas ${remainingSlots} foto(s) serão enviadas para respeitar o limite de ${MAX_PRODUCT_PHOTOS} fotos.`,
         'info'
       );
     }
@@ -1037,8 +1041,8 @@ export const AdminPanelPage: React.FC = () => {
           isPrimary: finalMediaItems.length === 0,
         });
       } else {
-        if (finalMediaItems.filter((m) => m.mediaType !== 'VIDEO').length >= 5) {
-          toast('Cada produto pode ter até 5 fotos.', 'error');
+        if (finalMediaItems.filter((m) => m.mediaType !== 'VIDEO').length >= MAX_PRODUCT_PHOTOS) {
+          toast(`Cada produto pode ter até ${MAX_PRODUCT_PHOTOS} fotos.`, 'error');
           return;
         }
         finalMediaItems.push({
@@ -1145,7 +1149,8 @@ export const AdminPanelPage: React.FC = () => {
           fiscalCsosn: prodFiscal.csosn.trim(),
           fiscalUnidade: prodFiscal.unidade.trim().toUpperCase(),
           fulfillmentType: prodFulfillmentType,
-          allowPreorder: prodAllowPreorder,
+          allowPreorder: prodArchiveOnStockout ? false : prodAllowPreorder,
+          archiveOnStockout: prodArchiveOnStockout,
           weight: prodWeight,
           status: prodStatus,
           imageUrl: primaryImageUrl,
@@ -1632,6 +1637,8 @@ ${kitProd.code} - ${kitProd.name}`)) return;
                 setProdFulfillmentType={setProdFulfillmentType}
                 prodAllowPreorder={prodAllowPreorder}
                 setProdAllowPreorder={setProdAllowPreorder}
+                prodArchiveOnStockout={prodArchiveOnStockout}
+                setProdArchiveOnStockout={setProdArchiveOnStockout}
                 prodVariantsJson={prodVariantsJson}
                 setProdVariantsJson={setProdVariantsJson}
                 prodImageUrl={prodImageUrl}

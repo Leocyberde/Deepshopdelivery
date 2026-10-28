@@ -22,11 +22,13 @@ import {
   calculatePromoLinePricing,
 } from '../../context/AppContext.tsx';
 import { simulateProfit } from '../../utils/profitSimulation.ts';
+import { MAX_PRODUCT_PHOTOS } from '../../config/media.ts';
 import { AdminSection } from './AdminSidebar.tsx';
 
 type VariationRow = {
   sku: string;
   options: Record<string, string>;
+  imageUrl?: string | null;
   price: string | number;
   promoPrice?: string | number | null;
   cost: string | number;
@@ -129,6 +131,8 @@ interface AdminProductsSectionProps {
   setProdFulfillmentType: (val: 'DELIVERY' | 'PREORDER') => void;
   prodAllowPreorder: boolean;
   setProdAllowPreorder: (val: boolean) => void;
+  prodArchiveOnStockout: boolean;
+  setProdArchiveOnStockout: (val: boolean) => void;
   prodVariantsJson: string;
   setProdVariantsJson: (val: string) => void;
   prodImageUrl: string;
@@ -219,7 +223,7 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
   prodStatus,
   setProdStatus,
   prodSupplierId, setProdSupplierId, prodSupplierUrl, setProdSupplierUrl, prodFiscal, setProdFiscal,
-  prodFulfillmentType, setProdFulfillmentType, prodAllowPreorder, setProdAllowPreorder, prodVariantsJson, setProdVariantsJson,
+  prodFulfillmentType, setProdFulfillmentType, prodAllowPreorder, setProdAllowPreorder, prodArchiveOnStockout, setProdArchiveOnStockout, prodVariantsJson, setProdVariantsJson,
   prodImageUrl,
   setProdImageUrl,
   prodMediaItems,
@@ -269,7 +273,25 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
   const updateVariationRows = (rows: VariationRow[]) => {
     setVariationRows(rows);
     setProdVariantsJson(JSON.stringify(rows));
+    // Com modelos cadastrados, o estoque do produto é a soma do estoque de cada modelo.
+    if (rows.length > 0) setProdStock(String(rows.reduce((total, row) => total + (Math.max(0, Math.floor(Number(row.stock) || 0))), 0)));
   };
+
+  const variationPhotos = prodMediaItems.filter((item) => item.mediaType !== 'VIDEO' && item.imageUrl);
+  const setRowPhoto = (index: number, imageUrl: string | null) =>
+    updateVariationRows(variationRows.map((row, rowIndex) => rowIndex === index ? { ...row, imageUrl } : row));
+  const assignPhotosInOrder = () =>
+    updateVariationRows(variationRows.map((row, rowIndex) => ({ ...row, imageUrl: variationPhotos[rowIndex]?.imageUrl ?? row.imageUrl ?? null })));
+
+  // Se uma foto foi removida da galeria, o modelo que a usava volta a ficar sem foto.
+  useEffect(() => {
+    if (variationRows.length === 0) return;
+    const available = new Set(variationPhotos.map((item) => item.imageUrl));
+    if (variationRows.some((row) => row.imageUrl && !available.has(row.imageUrl))) {
+      updateVariationRows(variationRows.map((row) => row.imageUrl && !available.has(row.imageUrl) ? { ...row, imageUrl: null } : row));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prodMediaItems]);
 
   const toggleVariationType = (type: string) => {
     setVariationTypes((current) => current.includes(type) ? current.filter((item) => item !== type) : [...current, type]);
@@ -561,7 +583,8 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
                   <div className="space-y-1"><label className="block text-xs font-semibold text-zinc-700">Unidade</label><input maxLength={6} placeholder="UN" value={prodFiscal.unidade} onChange={(e) => setProdFiscal({ ...prodFiscal, unidade: e.target.value.toUpperCase().slice(0, 6) })} className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm" /></div>
                 </div>
               </div>
-              <label className="inline-flex items-center gap-2 text-xs font-semibold text-zinc-700 sm:col-span-12"><input type="checkbox" checked={prodAllowPreorder} onChange={(e) => setProdAllowPreorder(e.target.checked)} className="h-4 w-4 accent-zinc-900" />Permitir encomenda quando acabar</label>
+              <label className="inline-flex items-center gap-2 text-xs font-semibold text-zinc-700 sm:col-span-12"><input type="checkbox" checked={prodAllowPreorder && !prodArchiveOnStockout} disabled={prodArchiveOnStockout} onChange={(e) => setProdAllowPreorder(e.target.checked)} className="h-4 w-4 accent-zinc-900 disabled:opacity-40" />Permitir encomenda quando acabar</label>
+              <label className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs font-semibold text-amber-950 sm:col-span-12"><input type="checkbox" checked={prodArchiveOnStockout} onChange={(e) => { setProdArchiveOnStockout(e.target.checked); if (e.target.checked) setProdAllowPreorder(false); }} className="mt-0.5 h-4 w-4 accent-amber-700" /><span>Produto sem reposição: arquivar quando o estoque geral acabar<span className="mt-0.5 block font-normal text-amber-900">Ao vender a última unidade (somando todos os modelos), o produto é arquivado, sai da vitrine e não vira encomenda. Se um pedido for cancelado e o estoque voltar, ele reaparece sozinho.</span></span></label>
               <p className="text-[11px] text-zinc-500 sm:col-span-12">O saldo decide a modalidade na vitrine. A opção controla apenas se o produto pode continuar ativo quando o saldo chegar a zero.</p>
             </div>
           )}
@@ -592,9 +615,12 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
               </div>}
               <div className="flex flex-wrap items-center gap-2">
                 <button type="button" disabled={!variationTypes.length || variationTypes.some((type) => !(variationValues[type] || '').trim())} onClick={generateVariationRows} className="rounded-lg bg-indigo-700 px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">Gerar combinações</button>
+                {variationRows.length > 0 && variationPhotos.length > 0 && <button type="button" onClick={assignPhotosInOrder} className="rounded-lg border border-indigo-300 bg-white px-3 py-2 text-xs font-semibold text-indigo-900">Vincular fotos na ordem</button>}
                 {variationRows.length > 0 && <button type="button" onClick={() => updateVariationRows([])} className="rounded-lg border border-indigo-300 bg-white px-3 py-2 text-xs font-semibold text-indigo-900">Remover variações</button>}
               </div>
-              {variationRows.length > 0 ? <div className="overflow-x-auto rounded-lg border border-indigo-200 bg-white"><table className="min-w-full text-left text-[11px]"><thead className="bg-indigo-50 text-indigo-950"><tr><th className="px-2 py-2">Opção</th><th className="px-2 py-2">SKU</th><th className="px-2 py-2">Preço</th><th className="px-2 py-2">Valor Promocional</th><th className="px-2 py-2">Custo</th><th className="px-2 py-2">Estoque</th></tr></thead><tbody className="divide-y divide-indigo-100">{variationRows.map((row, index) => <tr key={`${variationSignature(row.options)}-${index}`}><td className="whitespace-nowrap px-2 py-2 font-semibold text-indigo-950">{Object.entries(row.options).map(([key, value]) => `${key}: ${value}`).join(' · ')}</td><td className="px-2 py-2"><input value={row.sku || ''} onChange={(event) => updateVariationRows(variationRows.map((item, rowIndex) => rowIndex === index ? { ...item, sku: event.target.value } : item))} className="w-28 rounded border px-2 py-1" /></td><td className="px-2 py-2"><input type="number" min="0" step="0.01" value={row.price} disabled={!variationHasCustomPrice} onChange={(event) => updateVariationRows(variationRows.map((item, rowIndex) => rowIndex === index ? { ...item, price: event.target.value } : item))} className="w-24 rounded border px-2 py-1 disabled:bg-stone-100 disabled:text-stone-500" /></td><td className="px-2 py-2"><input type="number" min="0" step="0.01" value={row.promoPrice ?? ''} placeholder="Opcional" aria-label="Valor promocional da variação" onChange={(event) => updateVariationRows(variationRows.map((item, rowIndex) => rowIndex === index ? { ...item, promoPrice: event.target.value === '' ? null : event.target.value } : item))} className="w-24 rounded border px-2 py-1" /></td><td className="px-2 py-2"><input type="number" min="0" step="0.01" value={row.cost} onChange={(event) => updateVariationRows(variationRows.map((item, rowIndex) => rowIndex === index ? { ...item, cost: event.target.value } : item))} className="w-24 rounded border px-2 py-1" /></td><td className="px-2 py-2"><input type="number" min="0" step="1" value={row.stock} onChange={(event) => updateVariationRows(variationRows.map((item, rowIndex) => rowIndex === index ? { ...item, stock: event.target.value } : item))} className="w-20 rounded border px-2 py-1" /></td></tr>)}</tbody></table></div> : <p className="text-[11px] text-indigo-800">Nenhuma variação cadastrada. Se o produto não tiver cor, tamanho ou outra opção, deixe todas as caixinhas desmarcadas.</p>}
+              {variationTypes.length > 0 && variationRows.length === 0 && <p role="status" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-950">Os modelos só são salvos depois de clicar em “Gerar combinações”.</p>}
+              {variationRows.length > 0 && <p className="text-[11px] text-indigo-800">Dica: envie as fotos do produto na galeria (abaixo) e toque na miniatura certa em cada modelo. O cliente verá a foto ao escolher o modelo. Sem estoque, o modelo aparece só como “Encomenda”.</p>}
+              {variationRows.length > 0 ? <div className="overflow-x-auto rounded-lg border border-indigo-200 bg-white"><table className="min-w-full text-left text-[11px]"><thead className="bg-indigo-50 text-indigo-950"><tr><th className="px-2 py-2">Opção</th><th className="px-2 py-2">Foto do modelo</th><th className="px-2 py-2">SKU</th><th className="px-2 py-2">Preço</th><th className="px-2 py-2">Valor Promocional</th><th className="px-2 py-2">Custo</th><th className="px-2 py-2">Estoque</th></tr></thead><tbody className="divide-y divide-indigo-100">{variationRows.map((row, index) => <tr key={`${variationSignature(row.options)}-${index}`}><td className="whitespace-nowrap px-2 py-2 font-semibold text-indigo-950">{Object.entries(row.options).map(([key, value]) => `${key}: ${value}`).join(' · ')}</td><td className="px-2 py-2"><div className="flex min-w-[9rem] items-center gap-2"><span className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-indigo-200 bg-stone-50">{row.imageUrl ? <ProductImage src={row.imageUrl} alt={`Foto de ${Object.values(row.options).join(' / ')}`} /> : <span className="flex h-full w-full items-center justify-center px-1 text-center text-[9px] leading-tight text-stone-400">sem foto</span>}</span>{variationPhotos.length > 0 ? <div className="flex max-w-[12rem] flex-wrap gap-1">{variationPhotos.map((photo, photoIndex) => <button type="button" key={photo.imageUrl} title={`Usar a foto ${photoIndex + 1}`} aria-label={`Usar a foto ${photoIndex + 1} neste modelo`} onClick={() => setRowPhoto(index, row.imageUrl === photo.imageUrl ? null : photo.imageUrl)} className={`h-8 w-8 overflow-hidden rounded border-2 ${row.imageUrl === photo.imageUrl ? 'border-indigo-700' : 'border-transparent opacity-70 hover:opacity-100'}`}><ProductImage src={photo.imageUrl} alt={`Foto ${photoIndex + 1}`} /></button>)}</div> : <span className="text-[10px] text-stone-500">Envie as fotos do produto na galeria abaixo.</span>}</div></td><td className="px-2 py-2"><input value={row.sku || ''} onChange={(event) => updateVariationRows(variationRows.map((item, rowIndex) => rowIndex === index ? { ...item, sku: event.target.value } : item))} className="w-28 rounded border px-2 py-1" /></td><td className="px-2 py-2"><input type="number" min="0" step="0.01" value={row.price} disabled={!variationHasCustomPrice} onChange={(event) => updateVariationRows(variationRows.map((item, rowIndex) => rowIndex === index ? { ...item, price: event.target.value } : item))} className="w-24 rounded border px-2 py-1 disabled:bg-stone-100 disabled:text-stone-500" /></td><td className="px-2 py-2"><input type="number" min="0" step="0.01" value={row.promoPrice ?? ''} placeholder="Opcional" aria-label="Valor promocional da variação" onChange={(event) => updateVariationRows(variationRows.map((item, rowIndex) => rowIndex === index ? { ...item, promoPrice: event.target.value === '' ? null : event.target.value } : item))} className="w-24 rounded border px-2 py-1" /></td><td className="px-2 py-2"><input type="number" min="0" step="0.01" value={row.cost} onChange={(event) => updateVariationRows(variationRows.map((item, rowIndex) => rowIndex === index ? { ...item, cost: event.target.value } : item))} className="w-24 rounded border px-2 py-1" /></td><td className="px-2 py-2"><input type="number" min="0" step="1" value={row.stock} onChange={(event) => updateVariationRows(variationRows.map((item, rowIndex) => rowIndex === index ? { ...item, stock: event.target.value } : item))} className="w-20 rounded border px-2 py-1" /></td></tr>)}</tbody></table></div> : <p className="text-[11px] text-indigo-800">Nenhuma variação cadastrada. Se o produto não tiver cor, tamanho ou outra opção, deixe todas as caixinhas desmarcadas.</p>}
             </div>
           )}
 
@@ -1027,7 +1053,8 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
             {!(!editingProd && formMode === 'KIT') && <>
               <div className="space-y-1">
                 <label className="block text-xs font-semibold text-zinc-700">Estoque atual (un.)</label>
-                <input type="number" step="1" min="0" required value={prodStock} onChange={(e) => setProdStock(e.target.value)} className="w-full px-3 py-2 text-sm bg-white border border-stone-300 rounded-lg font-mono" />
+                <input type="number" step="1" min="0" required value={prodStock} readOnly={formMode === 'PRODUCT' && variationRows.length > 0} onChange={(e) => setProdStock(e.target.value)} className="w-full px-3 py-2 text-sm bg-white border border-stone-300 rounded-lg font-mono read-only:bg-stone-100 read-only:text-zinc-600" />
+                {formMode === 'PRODUCT' && variationRows.length > 0 && <span className="text-[10px] font-semibold text-indigo-900">Soma automática do estoque dos {variationRows.length} modelos (edite o estoque em cada modelo, na tabela de variações).</span>}
                 {editingProd && <span className="text-[10px] text-zinc-500">Aumentos de saldo podem registrar o custo da nova compra; reduções mantêm o custo médio.</span>}
               </div>
               {editingProd && formMode === 'PRODUCT' && Number(prodStock) > Number(editingProd.stock) && <div className="col-span-2 sm:col-span-4 rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-950">
@@ -1095,7 +1122,7 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
             />
           </div>
 
-          {/* Galeria de Mídias do Produto: até 5 fotos e/ou 1 vídeo de até 30 segundos (Requisito 3) */}
+          {/* Galeria de Mídias do Produto: até 12 fotos e/ou 1 vídeo de até 30 segundos (Requisito 3) */}
           <div className="p-4 rounded-xl bg-stone-50 border border-stone-200 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-200 pb-3">
               <div>
@@ -1103,7 +1130,7 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
                   Fotos & Vídeo do Produto (Rolar para o lado na Vitrine)
                 </h3>
                 <p className="text-[11px] text-zinc-500">
-                  Adicione <strong>até 5 fotos</strong> do produto ou{' '}
+                  Adicione <strong>até {MAX_PRODUCT_PHOTOS} fotos</strong> do produto ou{' '}
                   <strong>1 vídeo de até 30 segundos</strong>. Na vitrine, o cliente pode rolar
                   para o lado para ver todas as fotos e o vídeo.
                 </p>
@@ -1112,12 +1139,12 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
               <div className="flex items-center gap-2 text-xs font-mono">
                 <span
                   className={`px-2.5 py-1 rounded border font-semibold ${
-                    currentPhotosCount >= 5
+                    currentPhotosCount >= MAX_PRODUCT_PHOTOS
                       ? 'bg-amber-50 border-amber-200 text-amber-800'
                       : 'bg-white border-stone-200 text-zinc-800'
                   }`}
                 >
-                  Fotos: {currentPhotosCount}/5
+                  Fotos: {currentPhotosCount}/{MAX_PRODUCT_PHOTOS}
                 </span>
                 <span
                   className={`px-2.5 py-1 rounded border font-semibold ${
@@ -1135,7 +1162,7 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label
                 className={`inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-lg border transition-colors ${
-                  currentPhotosCount >= 5
+                  currentPhotosCount >= MAX_PRODUCT_PHOTOS
                     ? 'bg-stone-100 text-zinc-400 border-stone-200 cursor-not-allowed'
                     : 'bg-white hover:bg-stone-100 text-zinc-900 border-stone-300 cursor-pointer'
                 }`}
@@ -1144,13 +1171,13 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
                 <span>
                   {uploadingImage
                     ? 'Enviando mídia...'
-                    : `Enviar Foto(s) do Computador/Celular (${currentPhotosCount}/5)`}
+                    : `Enviar Foto(s) do Computador/Celular (${currentPhotosCount}/${MAX_PRODUCT_PHOTOS})`}
                 </span>
                 <input
                   type="file"
                   accept="image/*"
                   multiple
-                  disabled={currentPhotosCount >= 5 || uploadingImage}
+                  disabled={currentPhotosCount >= MAX_PRODUCT_PHOTOS || uploadingImage}
                   onChange={handleImageFileUpload}
                   className="hidden"
                 />

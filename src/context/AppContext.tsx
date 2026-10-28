@@ -172,10 +172,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         headers.set('Authorization', `Bearer ${token}`);
       }
 
-      const response = await fetch(url, {
-        ...options,
-        headers,
-      });
+      // Consultas (GET) têm limite de tempo e 1 nova tentativa: ao voltar de outro app a conexão pode
+      // estar travada e, sem isso, a tela ficaria carregando para sempre. Gravações (POST/PUT...) não
+      // são repetidas nem canceladas, para nunca duplicar pedido ou pagamento.
+      const isRead = (options.method || 'GET').toUpperCase() === 'GET' && !options.signal;
+      const send = async (): Promise<Response> => {
+        if (!isRead) return fetch(url, { ...options, headers });
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 15000);
+        try {
+          return await fetch(url, { ...options, headers, signal: controller.signal });
+        } finally {
+          clearTimeout(timer);
+        }
+      };
+      let response: Response;
+      try {
+        response = await send();
+      } catch (networkError) {
+        if (!isRead) throw networkError;
+        try {
+          response = await send();
+        } catch {
+          throw new Error('Conexão lenta ou instável. Verifique sua internet e tente novamente.');
+        }
+      }
 
       const contentType = response.headers.get('content-type') || '';
       const isJson = contentType.includes('application/json');

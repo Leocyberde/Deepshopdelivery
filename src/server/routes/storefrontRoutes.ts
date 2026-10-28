@@ -98,7 +98,7 @@ export function registerStorefrontRoutes(app: Express) {
           const publicVariants = (variantsByProduct.get(p.id) || [])
             .filter((variant) => variant.stock > 0 || variant.allowPreorder)
             .map((variant) => ({
-              id: variant.id, sku: variant.sku, options: variant.options,
+              id: variant.id, sku: variant.sku, options: variant.options, imageUrl: variant.imageUrl,
               price: variant.price, promoPrice: variant.promoPrice,
               allowPreorder: variant.allowPreorder,
               availabilityMode: variant.stock > 0 ? 'DELIVERY' : 'PREORDER',
@@ -253,7 +253,7 @@ export function registerStorefrontRoutes(app: Express) {
       const publicVariants = variants
         .filter((variant) => variant.stock > 0 || variant.allowPreorder)
         .map((variant) => ({
-          id: variant.id, sku: variant.sku, options: variant.options,
+          id: variant.id, sku: variant.sku, options: variant.options, imageUrl: variant.imageUrl,
           price: variant.price, promoPrice: variant.promoPrice,
           allowPreorder: variant.allowPreorder,
           availabilityMode: variant.stock > 0 ? 'DELIVERY' : 'PREORDER',

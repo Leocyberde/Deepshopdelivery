@@ -93,6 +93,7 @@ export const products = pgTable('products', {
   fiscalUnidade: text('fiscal_unidade').notNull().default('UN'),
   fulfillmentType: text('fulfillment_type').notNull().default('DELIVERY'),
   allowPreorder: boolean('allow_preorder').notNull().default(true),
+  archiveOnStockout: boolean('archive_on_stockout').notNull().default(false),
   weight: numeric('weight', { precision: 10, scale: 3 }).default('0.000'), // kg
   viewsCount: integer('views_count').notNull().default(0),
   clicksCount: integer('clicks_count').notNull().default(0),
@@ -107,6 +108,7 @@ export const productVariants = pgTable('product_variants', {
   productId: integer('product_id').notNull().references(() => products.id, { onDelete: 'cascade' }),
   sku: text('sku'),
   options: jsonb('options').$type<Record<string, string>>().notNull().default({}),
+  imageUrl: text('image_url'),
   price: numeric('price', { precision: 10, scale: 2 }).notNull(),
   promoPrice: numeric('promo_price', { precision: 10, scale: 2 }),
   cost: numeric('cost', { precision: 14, scale: 6 }).notNull().default('0'),

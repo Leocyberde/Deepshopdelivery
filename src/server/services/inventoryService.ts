@@ -1,3 +1,4 @@
+import { eq, sql } from 'drizzle-orm';
 import * as schema from '../../db/schema.ts';
 
 export type InventoryMovementInput = {
@@ -44,4 +45,15 @@ export async function recordInventoryMovement(tx: any, input: InventoryMovementI
   }).returning();
 
   return movement;
+}
+
+/**
+ * Ajusta o saldo de um modelo (variação). O saldo do produto é ajustado separadamente pelo chamador,
+ * porque ele já controla o histórico de movimentações. Nunca deixa o saldo do modelo negativo.
+ */
+export async function adjustVariantStock(tx: any, variantId: number | null | undefined, delta: number) {
+  if (!variantId || !Number.isSafeInteger(delta) || delta === 0) return;
+  await tx.update(schema.productVariants)
+    .set({ stock: sql`GREATEST(${schema.productVariants.stock} + ${delta}, 0)`, updatedAt: new Date() })
+    .where(eq(schema.productVariants.id, variantId));
 }

@@ -48,7 +48,7 @@ import {
   getFreightRuleConfig,
   getPrimaryStoreId,
 } from '../services/storeHelpers.ts';
-import { recordInventoryMovement } from '../services/inventoryService.ts';
+import { adjustVariantStock, recordInventoryMovement } from '../services/inventoryService.ts';
 import { expireOverdueUnpaidOrders, PAYMENT_TIMEOUT_REASON_PREFIX, LEGACY_PAYMENT_TIMEOUT_REASON_PREFIX } from '../services/orderExpirationService.ts';
 import { getStoreRange, DEFAULT_STORE_TIMEZONE, tzToUtc } from '../../utils/timezone.ts';
 import { DEFAULT_STORE_HOURS, getStoreState, parseStoreHours, validateStoreHours } from '../services/storeStatusService.ts';
@@ -1538,7 +1538,7 @@ export function registerAdminRoutes(app: Express) {
             .update(schema.products)
             .set({
               stock: sql`${schema.products.stock} - ${totalToDeduct}`,
-              status: sql`CASE WHEN ${schema.products.stock} - ${totalToDeduct} <= 0 AND NOT ${schema.products.allowPreorder} THEN 'INACTIVE' ELSE ${schema.products.status} END`,
+              status: sql`CASE WHEN ${schema.products.stock} - ${totalToDeduct} <= 0 AND (NOT ${schema.products.allowPreorder}) THEN (CASE WHEN ${schema.products.archiveOnStockout} THEN 'ARCHIVED' ELSE 'INACTIVE' END) ELSE ${schema.products.status} END`,
               updatedAt: new Date(),
             })
             .where(
@@ -2134,7 +2134,7 @@ export function registerAdminRoutes(app: Express) {
               if (!prod || prod.stock < item.quantity) throw new Error(`Estoque insuficiente para confirmar o item "${item.productName}".`);
               const [deducted] = await tx.update(schema.products).set({
                 stock: sql`${schema.products.stock} - ${item.quantity}`,
-                status: sql`CASE WHEN ${schema.products.stock} - ${item.quantity} <= 0 AND NOT ${schema.products.allowPreorder} THEN 'INACTIVE' ELSE ${schema.products.status} END`,
+                status: sql`CASE WHEN ${schema.products.stock} - ${item.quantity} <= 0 AND (NOT ${schema.products.allowPreorder}) THEN (CASE WHEN ${schema.products.archiveOnStockout} THEN 'ARCHIVED' ELSE 'INACTIVE' END) ELSE ${schema.products.status} END`,
                 updatedAt: new Date(),
               }).where(and(eq(schema.products.id, item.productId), eq(schema.products.stock, prod.stock), sql`${schema.products.stock} >= ${item.quantity}`)).returning();
               if (!deducted) throw new Error(`Não foi possível descontar o estoque do item "${item.productName}".`);
@@ -2143,6 +2143,7 @@ export function registerAdminRoutes(app: Express) {
                 movementType: 'ORDER_STATUS_RESERVATION', reason: `Reserva de estoque ao alterar o pedido #${order.orderNumber}`,
                 actorUserId: req.user!.id, orderId: order.id, idempotencyKey: `order-status-reserve:${order.id}:${item.id}`,
               });
+              await adjustVariantStock(tx, item.variantId, -item.quantity);
               stockChanges.push({ productId: item.productId, delta: -item.quantity });
             }
           } else if (currentlyHasStockDeducted && !shouldHaveStockDeducted) {
@@ -2151,7 +2152,7 @@ export function registerAdminRoutes(app: Express) {
               if (!prod) throw new Error('Produto associado ao pedido não encontrado.');
               const [restored] = await tx.update(schema.products).set({
                 stock: sql`${schema.products.stock} + ${item.quantity}`,
-                status: sql`CASE WHEN ${schema.products.status} = 'ARCHIVED' THEN 'ARCHIVED' ELSE 'ACTIVE' END`,
+                status: sql`CASE WHEN ${schema.products.status} = 'ARCHIVED' AND NOT ${schema.products.archiveOnStockout} THEN 'ARCHIVED' ELSE 'ACTIVE' END`,
                 updatedAt: new Date(),
               }).where(and(eq(schema.products.id, item.productId), eq(schema.products.stock, prod.stock))).returning();
               if (!restored) throw new Error('Estoque alterado por outra operação.');
@@ -2161,6 +2162,7 @@ export function registerAdminRoutes(app: Express) {
                 reason: `Devolução de estoque na transição do pedido #${order.orderNumber} para ${status}`,
                 actorUserId: req.user!.id, orderId: order.id, idempotencyKey: `order-status-return:${order.id}:${item.id}:${status}`,
               });
+              await adjustVariantStock(tx, item.variantId, item.quantity);
               stockChanges.push({ productId: item.productId, delta: item.quantity });
             }
           }

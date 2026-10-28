@@ -3,7 +3,7 @@ import { eq, sql, inArray, and } from 'drizzle-orm';
 import { db } from '../../db/index.ts';
 import * as schema from '../../db/schema.ts';
 import { getSettingsMap } from './storeHelpers.ts';
-import { recordInventoryMovement } from './inventoryService.ts';
+import { adjustVariantStock, recordInventoryMovement } from './inventoryService.ts';
 
 export const PAYMENT_TIMEOUT_REASON_PREFIX = 'Prazo de pagamento expirado após ';
 export const LEGACY_PAYMENT_TIMEOUT_REASON_PREFIX = 'Prazo de 1 hora para pagamento expirou.';
@@ -107,13 +107,15 @@ export async function expireOverdueUnpaidOrders(): Promise<number> {
             for (const item of items) {
               if (item.fulfillmentType !== 'DELIVERY') continue;
               returns.set(item.productId, (returns.get(item.productId) || 0) + item.quantity);
+              // Devolve também o saldo do modelo (variação) escolhido pelo cliente.
+              await adjustVariantStock(tx, item.variantId, item.quantity);
             }
             for (const [productId, quantity] of returns) {
               const [product] = await tx.select().from(schema.products).where(eq(schema.products.id, productId));
               if (!product) throw new Error('Produto associado ao pedido não encontrado.');
               const [restored] = await tx.update(schema.products).set({
                 stock: sql`${schema.products.stock} + ${quantity}`,
-                status: sql`CASE WHEN ${schema.products.status} = 'ARCHIVED' THEN 'ARCHIVED' ELSE 'ACTIVE' END`,
+                status: sql`CASE WHEN ${schema.products.status} = 'ARCHIVED' AND NOT ${schema.products.archiveOnStockout} THEN 'ARCHIVED' ELSE 'ACTIVE' END`,
                 updatedAt: new Date(),
               }).where(and(eq(schema.products.id, productId), eq(schema.products.stock, product.stock))).returning();
               if (!restored) throw new Error('O estoque foi alterado por outra operação durante a expiração.');

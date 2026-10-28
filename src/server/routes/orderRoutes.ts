@@ -60,6 +60,12 @@ function toPaymentSummary(payment: InferSelectModel<typeof schema.payments> | un
     updatedAt: payment.updatedAt,
   };
 }
+/** Foto do modelo comprado (quando cadastrada) tem prioridade sobre a foto principal do produto. */
+async function loadVariantImages(): Promise<Map<number, string>> {
+  const rows = await db.select({ id: schema.productVariants.id, imageUrl: schema.productVariants.imageUrl }).from(schema.productVariants);
+  return new Map(rows.filter((row) => row.imageUrl).map((row) => [row.id, row.imageUrl as string]));
+}
+
 function toCustomerOrderItem(item: InferSelectModel<typeof schema.orderItems>, imageUrl: string | null) {
   return {
     id: item.id,
@@ -271,7 +277,7 @@ export function registerOrderRoutes(app: Express) {
           unitCost: string | null;
           fulfillmentType: 'DELIVERY' | 'PREORDER';
         }> = [];
-        const reservations: Array<{ productId: number; quantity: number; beforeStock: number; afterStock: number }> = [];
+        const reservations: Array<{ productId: number; variantId: number | null; quantity: number; beforeStock: number; afterStock: number }> = [];
         let hasPreorderPart = false;
         let hasDeliveryPart = false;
         const preorderWindow = calculatePreorderWindow(new Date(), Number(settingsMap.preorder_start_offset_days || 1), Number(settingsMap.preorder_window_days || 6));
@@ -333,16 +339,45 @@ export function registerOrderRoutes(app: Express) {
           }
           const deliveryQty = split.deliveryQty;
           if (deliveryQty > 0) {
-            const nextProdStock = effectiveProd.stock - deliveryQty;
-            const reservedRows = await tx
-              .update(variant ? schema.productVariants : schema.products)
-              .set({ stock: variant ? sql`${schema.productVariants.stock} - ${deliveryQty}` : sql`${schema.products.stock} - ${deliveryQty}`, updatedAt: new Date() })
-              .where(variant ? and(eq(schema.productVariants.id, variant.id), sql`${schema.productVariants.stock} >= ${deliveryQty}`) : and(eq(schema.products.id, prod.id), sql`${schema.products.stock} >= ${deliveryQty}`))
-              .returning();
-            if (reservedRows.length === 0) {
-              throw new Error(`Estoque alterado para "${prod.code} - ${prod.name}". Refaça a cotação antes de confirmar.`);
+            let beforeStock = effectiveProd.stock;
+            let afterStock = effectiveProd.stock - deliveryQty;
+            if (variant) {
+              // Baixa o saldo do modelo escolhido...
+              const reservedVariant = await tx
+                .update(schema.productVariants)
+                .set({ stock: sql`${schema.productVariants.stock} - ${deliveryQty}`, updatedAt: new Date() })
+                .where(and(eq(schema.productVariants.id, variant.id), sql`${schema.productVariants.stock} >= ${deliveryQty}`))
+                .returning();
+              if (reservedVariant.length === 0) {
+                throw new Error(`Estoque alterado para "${prod.code} - ${prod.name}". Refaça a cotação antes de confirmar.`);
+              }
+              // ...e o saldo total do produto (soma dos modelos), para a vitrine e o painel ficarem corretos.
+              const reservedProduct = await tx
+                .update(schema.products)
+                .set({
+                  stock: sql`GREATEST(${schema.products.stock} - ${deliveryQty}, 0)`,
+                  status: sql`CASE WHEN ${schema.products.archiveOnStockout} AND ${schema.products.stock} - ${deliveryQty} <= 0 THEN 'ARCHIVED' ELSE ${schema.products.status} END`,
+                  updatedAt: new Date(),
+                })
+                .where(eq(schema.products.id, prod.id))
+                .returning();
+              afterStock = reservedProduct[0].stock;
+              beforeStock = afterStock + deliveryQty;
+            } else {
+              const reservedRows = await tx
+                .update(schema.products)
+                .set({
+                  stock: sql`${schema.products.stock} - ${deliveryQty}`,
+                  status: sql`CASE WHEN ${schema.products.archiveOnStockout} AND ${schema.products.stock} - ${deliveryQty} <= 0 THEN 'ARCHIVED' ELSE ${schema.products.status} END`,
+                  updatedAt: new Date(),
+                })
+                .where(and(eq(schema.products.id, prod.id), sql`${schema.products.stock} >= ${deliveryQty}`))
+                .returning();
+              if (reservedRows.length === 0) {
+                throw new Error(`Estoque alterado para "${prod.code} - ${prod.name}". Refaça a cotação antes de confirmar.`);
+              }
             }
-            reservations.push({ productId: prod.id, quantity: deliveryQty, beforeStock: effectiveProd.stock, afterStock: nextProdStock });
+            reservations.push({ productId: prod.id, variantId: variant?.id ?? null, quantity: deliveryQty, beforeStock, afterStock });
             hasDeliveryPart = true;
           }
           if (split.preorderQty > 0) hasPreorderPart = true;
@@ -450,7 +485,7 @@ export function registerOrderRoutes(app: Express) {
             reason: `Reserva de estoque para o pedido #${newOrder.orderNumber}`,
             actorUserId: req.user!.id,
             orderId: newOrder.id,
-            idempotencyKey: `order-reserve:${newOrder.id}:${reservation.productId}`,
+            idempotencyKey: `order-reserve:${newOrder.id}:${reservation.productId}${reservation.variantId ? `:v${reservation.variantId}` : ''}`,
           });
         }
 
@@ -514,6 +549,7 @@ export function registerOrderRoutes(app: Express) {
       }
 
       const allImages = await db.select().from(schema.productImages);
+      const variantImages = await loadVariantImages();
       const enrichedItems = createdOrderResult.items.map((it) => {
         const prodImgs = allImages.filter((img) => img.productId === it.productId);
         const primary =
@@ -522,7 +558,7 @@ export function registerOrderRoutes(app: Express) {
           prodImgs[0];
         return {
           ...it,
-          imageUrl: primary ? primary.imageUrl : null,
+          imageUrl: (it.variantId && variantImages.get(it.variantId)) || (primary ? primary.imageUrl : null),
         };
       });
 
@@ -592,6 +628,7 @@ export function registerOrderRoutes(app: Express) {
 
       const allItems = await db.select().from(schema.orderItems);
       const allImages = await db.select().from(schema.productImages);
+      const variantImages = await loadVariantImages();
       const allHistory = await db
         .select()
         .from(schema.orderStatusHistory)
@@ -612,7 +649,7 @@ export function registerOrderRoutes(app: Express) {
               prodImgs.find((im) => im.isPrimary && im.mediaType !== 'VIDEO') ||
               prodImgs.find((im) => im.mediaType !== 'VIDEO') ||
               prodImgs[0];
-            return toCustomerOrderItem(i, primary ? primary.imageUrl : null);
+            return toCustomerOrderItem(i, (i.variantId && variantImages.get(i.variantId)) || (primary ? primary.imageUrl : null));
           });
         const history = allHistory.filter((h) => h.orderId === o.id);
         const isFreeDelivery = o.deliveryFee !== null && Number(o.deliveryFee) === 0;
@@ -673,13 +710,14 @@ export function registerOrderRoutes(app: Express) {
         .from(schema.orderItems)
         .where(eq(schema.orderItems.orderId, order.id));
       const allImages = await db.select().from(schema.productImages);
+      const variantImages = await loadVariantImages();
       const items = rawItems.map((i) => {
         const prodImgs = allImages.filter((img) => img.productId === i.productId);
         const primary =
           prodImgs.find((im) => im.isPrimary && im.mediaType !== 'VIDEO') ||
           prodImgs.find((im) => im.mediaType !== 'VIDEO') ||
           prodImgs[0];
-        return toCustomerOrderItem(i, primary ? primary.imageUrl : null);
+        return toCustomerOrderItem(i, (i.variantId && variantImages.get(i.variantId)) || (primary ? primary.imageUrl : null));
       });
 
       const history = await db
@@ -833,7 +871,7 @@ export function registerOrderRoutes(app: Express) {
             if (!product) throw new Error('Produto associado ao pedido não encontrado.');
             const [restored] = await tx.update(schema.products).set({
               stock: sql`${schema.products.stock} + ${quantity}`,
-              status: sql`CASE WHEN ${schema.products.status} = 'ARCHIVED' THEN 'ARCHIVED' ELSE 'ACTIVE' END`,
+              status: sql`CASE WHEN ${schema.products.status} = 'ARCHIVED' AND NOT ${schema.products.archiveOnStockout} THEN 'ARCHIVED' ELSE 'ACTIVE' END`,
               updatedAt: new Date(),
             }).where(and(eq(schema.products.id, productId), eq(schema.products.stock, product.stock))).returning();
             if (!restored) throw new Error('O estoque foi alterado por outra operação durante o cancelamento.');
