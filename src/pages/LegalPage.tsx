@@ -28,7 +28,7 @@ export const LegalPage: React.FC = () => {
         <Link to="/" className="text-xs font-semibold text-zinc-700 hover:text-zinc-900">Voltar para a loja</Link>
       </div>
       {error ? <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-sm text-red-800">{error}</div> : <div className="bg-white border border-stone-200 rounded-xl p-6 whitespace-pre-wrap text-sm leading-7 text-zinc-700">{data?.[config.key] || 'Carregando...'}</div>}
-      {data?.company && <div className="bg-stone-50 border border-stone-200 rounded-xl p-5 text-xs text-zinc-600 space-y-1"><div className="font-bold text-zinc-900">{data.company.name}</div>{data.company.cnpj && <div>CNPJ: {data.company.cnpj}</div>}{data.company.address && <div>{data.company.address}</div>}{data.company.email && <div>{data.company.email}</div>}{data.company.phone && <div>{data.company.phone}</div>}</div>}
+      {data?.company && <div className="bg-stone-50 border border-stone-200 rounded-xl p-5 text-xs text-zinc-600 space-y-1"><div className="font-bold text-zinc-900">{data.company.name}</div>{data.company.cnpj && <div>CNPJ: {data.company.cnpj}</div>}{data.company.email && <div>{data.company.email}</div>}{data.company.phone && <div>{data.company.phone}</div>}</div>}
     </main>
   );
 };

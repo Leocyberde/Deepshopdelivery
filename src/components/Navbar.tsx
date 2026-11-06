@@ -44,7 +44,7 @@ export const Navbar: React.FC = () => {
             <Link
               to="/"
               className="shrink-0 flex items-center pr-1"
-              title="DeepShop Delivery — Região de Itatiba"
+              title="DeepShop Delivery — Loja online e delivery local"
             >
               <DeepShopDeliveryDeliveryLogo size="sm" />
             </Link>

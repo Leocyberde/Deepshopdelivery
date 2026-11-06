@@ -236,7 +236,7 @@ export function registerAddressRoutes(app: Express) {
         return;
       }
 
-      if (!isServedAddress({ city, state })) { res.status(422).json({ error: 'Atendemos apenas Itatiba', code: 'CITY_NOT_SERVED' }); return; }
+      if (!isServedAddress({ city, state })) { res.status(422).json({ error: 'Delivery indisponível para este endereço', code: 'CITY_NOT_SERVED' }); return; }
 
       const created = await db.transaction(async (tx) => {
         if (isPrimary === true) {
@@ -320,7 +320,7 @@ export function registerAddressRoutes(app: Express) {
         return;
       }
 
-      if (!isServedAddress(existing) || !isServedAddress({ city, state })) { res.status(422).json({ error: 'Atendemos apenas Itatiba', code: 'CITY_NOT_SERVED' }); return; }
+      if (!isServedAddress(existing) || !isServedAddress({ city, state })) { res.status(422).json({ error: 'Delivery indisponível para este endereço', code: 'CITY_NOT_SERVED' }); return; }
       const locationChanged = didAddressLocationChange(existing, {
         zipCode: String(zipCode),
         street: String(street),
@@ -394,7 +394,7 @@ export function registerAddressRoutes(app: Express) {
       const addrId = Number(req.params.id);
       const [existing] = await db.select().from(schema.addresses).where(and(eq(schema.addresses.id, addrId), eq(schema.addresses.userId, req.user!.id)));
       if (!existing) { res.status(404).json({ error: 'Endereço não encontrado.' }); return; }
-      if (!isServedAddress(existing)) { res.status(422).json({ error: 'Atendemos apenas Itatiba' }); return; }
+      if (!isServedAddress(existing)) { res.status(422).json({ error: 'Delivery indisponível para este endereço' }); return; }
       const updated = await db.transaction(async (tx) => {
         await tx.update(schema.addresses).set({ isPrimary: false }).where(eq(schema.addresses.userId, req.user!.id));
         const [row] = await tx.update(schema.addresses).set({ isPrimary: true, updatedAt: new Date() }).where(eq(schema.addresses.id, addrId)).returning();

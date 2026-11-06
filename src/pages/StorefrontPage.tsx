@@ -758,19 +758,8 @@ export const StorefrontPage: React.FC = () => {
           <div className="lg:col-span-6 space-y-5">
             <div className="inline-flex flex-wrap items-center gap-3 p-3 rounded-2xl bg-white border border-stone-200 shadow-2xs">
               <DeepShopDeliveryDeliveryLogo size="lg" />
-              <span className="px-2.5 py-1 rounded-md bg-emerald-50 border border-emerald-200 text-[11px] font-bold text-emerald-800 inline-flex items-center gap-1">
-                <MapPin className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
-                <span>Região de Itatiba</span>
-              </span>
             </div>
 
-            <div className="text-xs font-semibold text-emerald-800 flex flex-wrap items-center gap-1.5">
-              <span>Delivery exclusivo para a região de Itatiba por enquanto</span>
-              <span aria-hidden="true"> · </span>
-              <span className="text-stone-500 font-medium">
-                Atendemos apenas Itatiba
-              </span>
-            </div>
 
             <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-zinc-900 leading-[1.15]">
               Produtos de utilidades, acessórios e novidades na palma da mão em poucas horas!
@@ -778,12 +767,7 @@ export const StorefrontPage: React.FC = () => {
 
             <p className="text-base text-zinc-600 leading-relaxed max-w-[60ch]">
               Bem-vindo ao <strong>DeepShop Delivery</strong>! Escolha utilidades domésticas,
-              acessórios, tecnologia e iluminação e receba na palma da mão em poucas horas.{' '}
-              <strong className="text-zinc-900">
-                Lembrando que nosso delivery expresso atende apenas a região de Itatiba por
-                enquanto
-              </strong>{' '}
-              Atendemos apenas Itatiba.
+              acessórios, tecnologia e iluminação e receba na palma da mão em poucas horas.
             </p>
 
             <div className="flex flex-wrap items-center gap-3 pt-1">
@@ -816,7 +800,7 @@ export const StorefrontPage: React.FC = () => {
         <div className="max-w-[1200px] mx-auto px-4 sm:px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-zinc-500">
           <div className="flex items-center gap-3">
             <DeepShopDeliveryDeliveryLogo size="sm" />
-            <span>— Produtos de utilidades e acessórios na palma da mão em poucas horas (Região de Itatiba)</span>
+            <span>— Produtos de utilidades e acessórios na palma da mão em poucas horas</span>
           </div>
           <div className="flex items-center gap-4">
             <Link

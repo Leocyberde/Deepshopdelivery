@@ -158,6 +158,7 @@ export async function initializeDatabase() {
     ALTER TABLE products ADD COLUMN IF NOT EXISTS clicks_count INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE products ADD COLUMN IF NOT EXISTS shares_count INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE products ADD COLUMN IF NOT EXISTS stock_minimum INTEGER NOT NULL DEFAULT 5;
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;
 
     CREATE TABLE IF NOT EXISTS product_variants (
       id SERIAL PRIMARY KEY,

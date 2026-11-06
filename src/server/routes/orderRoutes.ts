@@ -232,7 +232,7 @@ export function registerOrderRoutes(app: Express) {
         return;
       }
 
-      if (!isServedAddress(address)) { res.status(422).json({ error: 'Atendemos apenas Itatiba', code: 'CITY_NOT_SERVED' }); return; }
+      if (!isServedAddress(address)) { res.status(422).json({ error: 'Delivery indisponível para este endereço', code: 'CITY_NOT_SERVED' }); return; }
       if (idempotencyKey) {
         const [previousOrder] = await db.select().from(schema.orders).where(eq(schema.orders.idempotencyKey, idempotencyKey));
         if (previousOrder) {

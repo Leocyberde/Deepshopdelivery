@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AppProvider, useApp } from './context/AppContext.tsx';
 import { Navbar } from './components/Navbar.tsx';
@@ -12,6 +12,7 @@ import { CustomerAccountPage } from './pages/CustomerAccountPage.tsx';
 import { SupportCenterPage } from './pages/SupportCenterPage.tsx';
 import { AdminPanelPage } from './pages/AdminPanelPage.tsx';
 import { LegalPage } from './pages/LegalPage.tsx';
+import { InfoPage } from './pages/InfoPage.tsx';
 import { Footer } from './components/Footer.tsx';
 import { BottomNav } from './components/BottomNav.tsx';
 import { PwaUpdateBanner } from './components/PwaUpdateBanner.tsx';
@@ -29,6 +30,9 @@ export default function App() {
 
 const AppShell: React.FC = () => {
   const location = useLocation();
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [location.pathname, location.search]);
   const { user } = useApp();
   const isAdminRoute = location.pathname.startsWith('/admin');
   const showBottomNav = user?.role === 'CUSTOMER' && location.pathname !== '/checkout';
@@ -54,6 +58,9 @@ const AppShell: React.FC = () => {
               <Route path="/minha-conta/notificacoes" element={<CustomerAccountPage />} />
               <Route path="/minha-conta/perfil" element={<CustomerAccountPage />} />
               <Route path="/minha-conta/central-ajuda" element={<SupportCenterPage />} />
+              <Route path="/sobre" element={<InfoPage />} />
+              <Route path="/pagamento-seguranca" element={<InfoPage />} />
+              <Route path="/envio-entrega" element={<InfoPage />} />
               <Route path="/privacidade" element={<LegalPage />} />
               <Route path="/termos" element={<LegalPage />} />
               <Route path="/trocas" element={<LegalPage />} />

@@ -91,8 +91,8 @@ export function resolveAddressFreight(address: AddressFreightData): EvaluatedFre
   return {
     status: confirmed ? 'CONFIRMED' : 'PENDING', distanceKm: distance, fee: confirmed && address.deliveryFee !== null ? Number(address.deliveryFee) : null,
     source: address.deliveryFeeSource, origin: address.deliveryOrigin || null, notes: address.deliveryNotes || null,
-    isItatiba, deliveryMode: isItatiba ? 'DELIVERY' : 'UNAVAILABLE', deliveryModeMessage: isItatiba ? 'Atendemos apenas Itatiba' : 'Atendemos apenas Itatiba',
-    customerMessage: !isItatiba ? 'Atendemos apenas Itatiba' : address.deliveryInArea === false ? OUT_OF_AREA_MESSAGE : confirmed ? 'Frete automático por distância; valor final na cotação.' : 'Não conseguimos calcular o frete agora',
+    isItatiba, deliveryMode: isItatiba ? 'DELIVERY' : 'UNAVAILABLE', deliveryModeMessage: isItatiba ? 'Delivery indisponível para este endereço' : 'Delivery indisponível para este endereço',
+    customerMessage: !isItatiba ? 'Delivery indisponível para este endereço' : address.deliveryInArea === false ? OUT_OF_AREA_MESSAGE : confirmed ? 'Frete automático por distância; valor final na cotação.' : 'Não conseguimos calcular o frete agora',
   };
 }
 export function calculateSuggestedFreight(distanceKm: number, config: FreightRuleConfig = { baseDistanceKm: 4, baseFee: 7.5, extraKmFee: 1.5 }): number {

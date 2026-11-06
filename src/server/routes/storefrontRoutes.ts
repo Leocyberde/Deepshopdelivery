@@ -161,7 +161,6 @@ export function registerStorefrontRoutes(app: Express) {
         company: {
           name: settings.company_name || 'DeepShop Delivery',
           cnpj: settings.company_cnpj || '',
-          address: settings.company_address || '',
           email: settings.company_email || '',
         },
         privacy: settings.privacy_content || 'Política de Privacidade ainda não configurada.',

@@ -72,6 +72,7 @@ interface AdminProductsSectionProps {
   stockMinimum: string;
   setStockMinimum: (value: string) => void;
   onProductStatusChange: (product: any, status: 'ACTIVE' | 'INACTIVE' | 'ARCHIVED') => void;
+  onDeleteProduct: (product: any) => void;
   activeProductsList: any[];
   inactiveProductsList: any[];
   categories: any[];
@@ -172,7 +173,7 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
   products,
   productSearch, setProductSearch, productPage, setProductPage, productTotalCount, productTotalPages,
   productSort, setProductSort, productCategoryId, onProductCategoryChange,
-  activeProductCount, inactiveProductCount, stockMinimum, setStockMinimum, onProductStatusChange,
+  activeProductCount, inactiveProductCount, stockMinimum, setStockMinimum, onProductStatusChange, onDeleteProduct,
   activeProductsList,
   inactiveProductsList,
   categories,
@@ -1715,6 +1716,15 @@ export const AdminProductsSection: React.FC<AdminProductsSectionProps> = ({
                               </span>
                             </button>}
                             {p.status === 'ARCHIVED' && <button type="button" onClick={() => onProductStatusChange(p, p.stock > 0 ? 'ACTIVE' : 'INACTIVE')} className="inline-flex items-center gap-1 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white"><Check className="h-3.5 w-3.5" />Restaurar</button>}
+                            <button
+                              type="button"
+                              onClick={() => onDeleteProduct(p)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-red-700 hover:text-red-900 bg-red-50 hover:bg-red-100 rounded-lg transition-colors"
+                              title="Remover da lista sem apagar o histórico"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Remover da lista</span>
+                            </button>
                             <button
                               type="button"
                               onClick={() => openEditProduct(p)}

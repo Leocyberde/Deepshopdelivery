@@ -74,7 +74,7 @@ export const AdminSettingsSection: React.FC<AdminSettingsSectionProps> = ({
   // Disparo de Notificações / Promoção estilo iFood
   const [broadcastTitle, setBroadcastTitle] = useState('🔥 Novidades fresquinhas na loja!');
   const [broadcastMessage, setBroadcastMessage] = useState(
-    'Chegaram novidades imperdíveis com pronta entrega em Itatiba! Peça agora e receba em poucas horas.'
+    'Chegaram novidades imperdíveis com pronta entrega ! Peça agora e receba em poucas horas.'
   );
   const [sendingBroadcast, setSendingBroadcast] = useState(false);
 
@@ -417,7 +417,7 @@ psql -U postgres -d deepshopdelivery -f deepshopdelivery-postgresql-vps.sql`}
               required
               value={broadcastMessage}
               onChange={(e) => setBroadcastMessage(e.target.value)}
-              placeholder="Ex: Acabaram de chegar novos produtos com pronta entrega em Itatiba! Peça agora e receba em poucas horas."
+              placeholder="Ex: Acabaram de chegar novos produtos com pronta entrega ! Peça agora e receba em poucas horas."
               className="w-full px-3.5 py-2 text-sm bg-white border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#087BFF]"
             />
           </div>

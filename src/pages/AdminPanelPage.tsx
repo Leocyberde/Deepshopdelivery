@@ -1220,6 +1220,16 @@ ${kitProd.code} - ${kitProd.name}`)) return;
     }
   };
 
+  const handleDeleteProduct = async (prod: any) => {
+    if (!window.confirm(`Remover ${prod.code} - ${prod.name} da lista de produtos?
+
+O produto ficará oculto do painel e da vitrine, mas pedidos, relatórios financeiros, custos e movimentações continuarão preservados.`)) return;
+    try {
+      await apiFetch(`/api/admin/products/${prod.id}`, { method: 'DELETE' });
+      toast('Produto removido da lista; histórico preservado.', 'success');
+      await loadAdminData();
+    } catch (err: any) { toast(err?.message || 'Não foi possível remover o produto da lista.', 'error'); }
+  };
   const handleProductStatusChange = async (prod: any, status: 'ACTIVE' | 'INACTIVE' | 'ARCHIVED') => {
     if (status === 'ARCHIVED' && !window.confirm(`Arquivar ${prod.code} - ${prod.name}? O histórico será preservado e o registro não será excluído.`)) return;
     try {
@@ -1578,6 +1588,7 @@ ${kitProd.code} - ${kitProd.name}`)) return;
                 stockMinimum={prodStockMinimum}
                 setStockMinimum={setProdStockMinimum}
                 onProductStatusChange={handleProductStatusChange}
+                onDeleteProduct={handleDeleteProduct}
                 activeProductsList={activeProductsList}
                 inactiveProductsList={section === 'PREORDER_STOCKOUT' ? products : inactiveProductsList}
                 categories={categories}

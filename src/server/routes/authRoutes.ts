@@ -218,7 +218,7 @@ export function registerAuthRoutes(app: Express) {
           addrInput.state
       );
 
-      if (hasAddressFields && !isServedAddress(addrInput)) { res.status(422).json({ error: 'Atendemos apenas Itatiba', code: 'CITY_NOT_SERVED' }); return; }
+      if (hasAddressFields && !isServedAddress(addrInput)) { res.status(422).json({ error: 'Delivery indisponível para este endereço', code: 'CITY_NOT_SERVED' }); return; }
       const passwordHash = await bcrypt.hash(String(password), 10);
 
       // Cria o cliente, o endereço inicial (Requisito 3) e a notificação para o painel Admin em transação

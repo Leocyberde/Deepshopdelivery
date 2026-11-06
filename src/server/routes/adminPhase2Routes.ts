@@ -334,7 +334,7 @@ export function registerAdminPhase2Routes(app: Express) {
       if (!['ACTIVE', 'INACTIVE', 'ARCHIVED', 'NON_ACTIVE', 'PREORDER_STOCKOUT', 'ALL'].includes(status)) { res.status(400).json({ error: 'Filtro de status de produtos inválido.' }); return; }
       if (categoryId !== null && (!Number.isSafeInteger(categoryId) || categoryId <= 0)) { res.status(400).json({ error: 'Filtro de categoria inválido.' }); return; }
       const excludeKits = req.query.excludeKits === 'true';
-      const filters: any[] = [];
+      const filters: any[] = [sql`${schema.products.deletedAt} IS NULL`];
       if (status === 'NON_ACTIVE') filters.push(or(eq(schema.products.status, 'INACTIVE'), eq(schema.products.status, 'ARCHIVED')));
       else if (status === 'PREORDER_STOCKOUT') filters.push(and(eq(schema.products.status, 'ACTIVE'), sql`${schema.products.stock} <= 0`, eq(schema.products.allowPreorder, true)));
       else if (['ACTIVE', 'INACTIVE', 'ARCHIVED'].includes(status)) filters.push(eq(schema.products.status, status));
@@ -400,7 +400,7 @@ export function registerAdminPhase2Routes(app: Express) {
       const prefix = typeof req.query.prefix === 'string' ? req.query.prefix.trim().toUpperCase() : '';
       if (!/^[A-Z]$/.test(prefix)) { res.status(400).json({ error: 'Informe uma letra válida.' }); return; }
       const rows = await db.select({ code: schema.products.code, name: schema.products.name, status: schema.products.status })
-        .from(schema.products).where(ilike(schema.products.code, `${prefix}%`)).orderBy(asc(schema.products.code)).limit(1000);
+        .from(schema.products).where(and(sql`${schema.products.deletedAt} IS NULL`, ilike(schema.products.code, `${prefix}%`))).orderBy(asc(schema.products.code)).limit(1000);
       res.json({ prefix, products: rows });
     } catch (error) {
       logServerError('admin_product_codes_failed', error);
@@ -636,6 +636,29 @@ export function registerAdminPhase2Routes(app: Express) {
     }
   });
 
+  app.delete('/api/admin/products/:id', requireAuth, requireAdmin, async (req: AuthRequest, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isSafeInteger(id) || id <= 0) { res.status(400).json({ error: 'Produto inválido.' }); return; }
+      const [product] = await db.select().from(schema.products).where(and(eq(schema.products.id, id), sql`${schema.products.deletedAt} IS NULL`)).limit(1);
+      if (!product) { res.status(404).json({ error: 'Produto não encontrado ou já removido da lista.' }); return; }
+      if (!['INACTIVE', 'ARCHIVED'].includes(product.status)) { res.status(409).json({ error: 'Somente produtos inativos ou arquivados podem ser removidos da lista.' }); return; }
+      if (!product.isKit) {
+        const [activeKitRef] = await db.select({ id: schema.products.id }).from(schema.productKitItems)
+          .innerJoin(schema.products, eq(schema.productKitItems.kitProductId, schema.products.id))
+          .where(and(eq(schema.productKitItems.componentProductId, id), eq(schema.products.isKit, true), eq(schema.products.status, 'ACTIVE'), sql`${schema.products.deletedAt} IS NULL`)).limit(1);
+        if (activeKitRef) { res.status(409).json({ error: 'Desative os kits ativos que usam este produto antes de removê-lo da lista.' }); return; }
+      }
+      const [updated] = await db.update(schema.products).set({ deletedAt: new Date(), updatedAt: new Date() })
+        .where(and(eq(schema.products.id, id), sql`${schema.products.deletedAt} IS NULL`, or(eq(schema.products.status, 'INACTIVE'), eq(schema.products.status, 'ARCHIVED')))).returning();
+      if (!updated) { res.status(409).json({ error: 'Produto alterado por outra operação.' }); return; }
+      await audit(req, 'PRODUCT_HIDE_FROM_CATALOG', 'PRODUCT', id, { status: product.status, preserveHistory: true });
+      res.json({ id, deletedAt: updated.deletedAt, message: 'Produto removido da lista; pedidos, relatórios e movimentações foram preservados.' });
+    } catch (error) {
+      logServerError('admin_product_hide_failed', error);
+      res.status(500).json({ error: 'Não foi possível remover o produto da lista.' });
+    }
+  });
   app.put('/api/admin/products/:id/activate-stock', requireAuth, requireAdmin, (_req, res) => {
     res.status(409).json({ error: 'Ajustes de saldo devem ser feitos na área Estoque com motivo e chave idempotente.' });
   });
@@ -1091,5 +1114,5 @@ export function registerAdminPhase2Routes(app: Express) {
 }
 
 function neStatusArchived() {
-  return sql`${schema.products.status} <> 'ARCHIVED'`;
+  return sql`${schema.products.status} <> 'ARCHIVED' AND ${schema.products.deletedAt} IS NULL`;
 }

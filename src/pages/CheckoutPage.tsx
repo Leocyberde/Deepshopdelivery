@@ -93,7 +93,7 @@ export const CheckoutPage: React.FC = () => {
   const [number, setNumber] = useState('');
   const [complement, setComplement] = useState('');
   const [neighborhood, setNeighborhood] = useState('');
-  const [city, setCity] = useState('Itatiba');
+  const [city, setCity] = useState('');
   const [state, setState] = useState('SP');
   const [reference, setReference] = useState('');
   const [savingAddress, setSavingAddress] = useState(false);
@@ -467,10 +467,10 @@ export const CheckoutPage: React.FC = () => {
       setZipCode('');
       setReference('');
       if (isItatibaCity(created.city || city)) {
-        toast('Endereço em Itatiba cadastrado! Temos delivery para sua região.', 'success');
+        toast('Endereço cadastrado! A disponibilidade de Delivery foi verificada.', 'success');
       } else {
         toast(
-          'Endereço cadastrado! Atendemos apenas Itatiba.',
+          'Endereço cadastrado! Delivery indisponível para este endereço.',
           'info'
         );
       }
@@ -633,12 +633,12 @@ export const CheckoutPage: React.FC = () => {
                             {isItatibaCity(addr.city) ? (
                               <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-900">
                                 <Truck className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
-                                <span>Cidade: Itatiba — Temos delivery</span>
+                                <span>Cidade: este endereço — Temos delivery</span>
                               </div>
                             ) : (
                               <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-amber-50 border border-amber-200 text-xs font-semibold text-amber-900">
                                 <Truck className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-                                <span>Atendemos apenas Itatiba</span>
+                                <span>Delivery indisponível para este endereço</span>
                               </div>
                             )}
                           </div>
@@ -817,7 +817,7 @@ export const CheckoutPage: React.FC = () => {
                     ) : (
                       <span>
                         Cidade conferida: <strong>{city.trim()}</strong> —{' '}
-                        <strong>Atendemos apenas Itatiba</strong>
+                        <strong>Delivery indisponível para este endereço</strong>
                       </span>
                     )}
                   </div>
@@ -905,9 +905,9 @@ export const CheckoutPage: React.FC = () => {
               >
                 <Truck className="w-3.5 h-3.5 shrink-0" />
                 {isItatibaCity(selectedAddress.city) ? (
-                  <span>Cidade: Itatiba — Temos delivery</span>
+                  <span>Cidade: este endereço — Temos delivery</span>
                 ) : (
-                  <span>Atendemos apenas Itatiba</span>
+                  <span>Delivery indisponível para este endereço</span>
                 )}
               </div>
             )}

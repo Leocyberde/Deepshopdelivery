@@ -94,6 +94,7 @@ export const products = pgTable('products', {
   fulfillmentType: text('fulfillment_type').notNull().default('DELIVERY'),
   allowPreorder: boolean('allow_preorder').notNull().default(true),
   archiveOnStockout: boolean('archive_on_stockout').notNull().default(false),
+  deletedAt: timestamp('deleted_at'),
   weight: numeric('weight', { precision: 10, scale: 3 }).default('0.000'), // kg
   viewsCount: integer('views_count').notNull().default(0),
   clicksCount: integer('clicks_count').notNull().default(0),

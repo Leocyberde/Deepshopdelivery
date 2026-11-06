@@ -74,7 +74,7 @@ export async function executeLegacyFreight(req: AuthRequest) {
         result = computeOrderFreight({ distanceKm: geo.code === 'OK' ? Math.round(geo.distanceMeters! / 10) / 100 : null, itemsSubtotal: Number(order.subtotal), rules: freightRulesFromSettings(settings), customerFreeDeliveryUntil: customer?.until });
       }
       if (entry.action === 'CANCEL' || result?.status === 'OUT_OF_DELIVERY_AREA') {
-        const reason = entry.reason === 'CITY_NOT_SERVED' ? 'Atendemos apenas Itatiba' : result?.message || 'Não entregamos nessa região.';
+        const reason = entry.reason === 'CITY_NOT_SERVED' ? 'Delivery indisponível para este endereço' : result?.message || 'Não entregamos nessa região.';
         if (await cancelUnpaidLegacy(tx, order, reason, req.user!.id)) counts.cancelled++; else counts.skipped++;
         entries.push({ orderId: order.id, action: 'CANCELLED', reason });
       } else if (result.status === 'OK') {

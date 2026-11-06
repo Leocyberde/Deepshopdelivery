@@ -68,7 +68,7 @@ export const AuthPage: React.FC = () => {
   const [regNumber, setRegNumber] = useState('');
   const [regComplement, setRegComplement] = useState('');
   const [regNeighborhood, setRegNeighborhood] = useState('');
-  const [regCity, setRegCity] = useState('Itatiba');
+  const [regCity, setRegCity] = useState('');
   const [regState, setRegState] = useState('SP');
   const [regReference, setRegReference] = useState('');
   const [regCepLoading, setRegCepLoading] = useState(false);
@@ -137,8 +137,8 @@ export const AuthPage: React.FC = () => {
         if (found.city) setRegCity(found.city);
         if (found.state) setRegState(found.state);
         const cityCheckMsg = isItatibaCity(found.city)
-          ? 'Cidade: Itatiba — Temos delivery! Informe o número da residência.'
-          : `Cidade: ${found.city}/${found.state} — Atendemos apenas Itatiba.`;
+          ? 'Delivery disponível para este endereço. Informe o número da residência.'
+          : `Cidade: ${found.city}/${found.state} — Delivery indisponível para este endereço.`;
         setRegCepFeedback(`Endereço preenchido automaticamente! ${cityCheckMsg}`);
       } else {
         setRegCepFeedback('CEP não encontrado automaticamente. Preencha os campos manualmente.');
@@ -625,7 +625,7 @@ export const AuthPage: React.FC = () => {
                     required
                     value={regCity}
                     onChange={(e) => setRegCity(e.target.value)}
-                    placeholder="Ex: Itatiba"
+                    placeholder="Ex: este endereço"
                     className="w-full px-3 py-2 text-xs bg-white border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-900"
                   />
                 </div>
@@ -654,11 +654,11 @@ export const AuthPage: React.FC = () => {
                   <Truck className="w-4 h-4 shrink-0" />
                   {isItatibaCity(regCity) ? (
                     <span>
-                      <strong>Cidade: Itatiba — Temos delivery!</strong> Entrega rápida na região de Itatiba.
+                      <strong>Delivery disponível para este endereço.</strong> Entrega rápida na região de este endereço.
                     </span>
                   ) : (
                     <span>
-                      <strong>Cidade fora de Itatiba ({regCity.trim()}):</strong> Atendemos apenas Itatiba.
+                      <strong>Delivery indisponível para este endereço ({regCity.trim()}):</strong> Delivery indisponível para este endereço.
                     </span>
                   )}
                 </div>

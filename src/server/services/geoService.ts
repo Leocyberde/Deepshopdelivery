@@ -21,7 +21,7 @@ export function savedDistance(address: typeof schema.addresses.$inferSelect, set
   return address.deliveryDistanceKm == null ? null : Number(address.deliveryDistanceKm);
 }
 export function freightForSavedAddress(address: typeof schema.addresses.$inferSelect, settings: Record<string, string>, subtotal: number, until?: Date | null) {
-  if (!isServedAddress(address)) throw new FreightError('CITY_NOT_SERVED', 422, 'Atendemos apenas Itatiba');
+  if (!isServedAddress(address)) throw new FreightError('CITY_NOT_SERVED', 422, 'Delivery indisponível para este endereço');
   return computeOrderFreight({ distanceKm: savedDistance(address, settings), itemsSubtotal: subtotal, rules: freightRulesFromSettings(settings), customerFreeDeliveryUntil: until });
 }
 export function requireAvailableFreight(result: ReturnType<typeof computeOrderFreight>) {
@@ -85,7 +85,7 @@ export async function lookupDistance(address: Location, userId: number | null, f
 export async function calculateAddressDistance(id: number, userId: number | null, force = false) {
   const [address] = await db.select().from(schema.addresses).where(eq(schema.addresses.id, id));
   if (!address) throw new FreightError('NOT_FOUND', 404, 'Endereço não encontrado.');
-  if (!isServedAddress(address)) throw new FreightError('CITY_NOT_SERVED', 422, 'Atendemos apenas Itatiba');
+  if (!isServedAddress(address)) throw new FreightError('CITY_NOT_SERVED', 422, 'Delivery indisponível para este endereço');
   const map = await getSettingsMap();
   const geo = await lookupDistance(address, userId, force, map);
   const distanceKm = geo.code === 'OK' ? Math.round(geo.distanceMeters! / 10) / 100 : null;

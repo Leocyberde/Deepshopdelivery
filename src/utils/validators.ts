@@ -104,7 +104,7 @@ export async function lookupCepAddress(rawCep: string): Promise<CepLookupResult 
       cep: `${cleanCep.slice(0, 5)}-${cleanCep.slice(5)}`,
       street: 'Rua Francisco Glicério',
       neighborhood: 'Centro',
-      city: 'Itatiba',
+      city: '',
       state: 'SP',
       complement: '',
     };
